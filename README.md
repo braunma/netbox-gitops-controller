@@ -185,3 +185,41 @@ Executes the synchronization against the NetBox API.
 ```bash
 python src/main.py
 ```
+
+## 📚 Example Files
+
+This repository includes comprehensive **example inventory and definition files** that demonstrate all major features of the GitOps controller.
+
+### What's Included
+
+✅ **4 example sites** (Berlin DC, Frankfurt DC, Munich Lab, Hamburg DR)
+✅ **8 device roles** (Server, Switch, Storage, Patch Panel, etc.)
+✅ **12 IP prefixes** with VRF and VLAN mappings
+✅ **8 VLANs** across multiple sites
+✅ **6 racks** in different locations
+✅ **9 device instances** (servers, switches, storage, patch panels)
+✅ **Complete cabling examples** (auto-wiring demonstrations)
+✅ **AI/ML infrastructure** (GPU-capable servers, high-speed networking)
+✅ **Structured cabling** (patch panels with front/rear port mappings)
+
+### Getting Started with Examples
+
+See **[EXAMPLES.md](./EXAMPLES.md)** for:
+- Detailed explanation of each example file
+- Key concepts demonstrated (VRFs, VLANs, cabling, etc.)
+- How to customize examples for your environment
+- Common scenarios and troubleshooting
+
+### Quick Test
+
+To see the examples in action:
+
+```bash
+# Preview what would be created
+python src/main.py --dry-run
+
+# Apply to your NetBox instance (requires .env configuration)
+python src/main.py
+```
+
+**Note**: The examples create a complete test infrastructure suitable for learning and development. For production use, customize the files to match your actual environment.

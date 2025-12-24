@@ -1,0 +1,234 @@
+# Server Inventory - Active Compute Equipment
+# Concrete server instances with interface configurations and cabling
+
+# ========================================
+# Berlin DC - Web Servers
+# ========================================
+
+- name: "berlin-srv-web-01"
+  site_slug: "berlin-dc"
+  device_type_slug: "poweredge-r740"
+  role_slug: "server"
+  rack_slug: "berlin-rack-a01"
+  position: 10
+  face: "front"
+  status: "active"
+  serial: "WEB01-SN-ABCDE"
+  asset_tag: "ASSET-001"
+  tags: ["gitops", "production"]
+
+  interfaces:
+    # iDRAC Management
+    - name: "idrac"
+      type: "1000base-t"
+      enabled: true
+      description: "Dell iDRAC interface"
+      ip:
+        address: "10.10.10.101/24"
+        dns_name: "berlin-srv-web-01-idrac.example.com"
+        status: "active"
+        vrf: "Management"
+
+    # Production Network (eth0 - 25G)
+    - name: "eth0"
+      type: "1000base-t"
+      enabled: true
+      description: "Primary production interface"
+      ip:
+        address: "10.10.20.101/24"
+        dns_name: "berlin-srv-web-01.example.com"
+        status: "active"
+        vrf: "Production"
+      address_role: "primary"
+      link:
+        peer_device: "berlin-leaf-01"
+        peer_port: "Eth1/1"
+        cable_type: "dac-active"
+
+    # Redundant Network (eth1)
+    - name: "eth1"
+      type: "1000base-t"
+      enabled: true
+      description: "Secondary network interface"
+
+- name: "berlin-srv-web-02"
+  site_slug: "berlin-dc"
+  device_type_slug: "poweredge-r740"
+  role_slug: "server"
+  rack_slug: "berlin-rack-a01"
+  position: 12
+  face: "front"
+  status: "active"
+  serial: "WEB02-SN-FGHIJ"
+  asset_tag: "ASSET-002"
+  tags: ["gitops", "production"]
+
+  interfaces:
+    - name: "idrac"
+      type: "1000base-t"
+      enabled: true
+      description: "Dell iDRAC interface"
+      ip:
+        address: "10.10.10.102/24"
+        dns_name: "berlin-srv-web-02-idrac.example.com"
+        status: "active"
+        vrf: "Management"
+
+    - name: "eth0"
+      type: "1000base-t"
+      enabled: true
+      description: "Primary production interface"
+      ip:
+        address: "10.10.20.102/24"
+        dns_name: "berlin-srv-web-02.example.com"
+        status: "active"
+        vrf: "Production"
+      address_role: "primary"
+      link:
+        peer_device: "berlin-leaf-01"
+        peer_port: "Eth1/2"
+        cable_type: "dac-active"
+
+    - name: "eth1"
+      type: "1000base-t"
+      enabled: true
+      description: "Secondary network interface"
+
+# ========================================
+# Berlin DC - AI/ML Server with GPU Modules
+# ========================================
+
+- name: "berlin-srv-ai-01"
+  site_slug: "berlin-dc"
+  device_type_slug: "poweredge-xe9680"
+  role_slug: "server"
+  rack_slug: "berlin-rack-b01"
+  position: 5
+  face: "front"
+  status: "active"
+  serial: "AI01-SN-XYZ123"
+  asset_tag: "ASSET-AI-001"
+  tags: ["gitops", "ai-ml", "high-performance"]
+
+  # GPU Modules (example - requires module_bays in device type)
+  # modules:
+  #   - name: "GPU1"
+  #     module_type_slug: "nvidia-h100-80gb"
+  #     status: "active"
+  #     serial: "GPU-H100-001"
+  #     description: "Primary GPU for AI training"
+  #     tags: ["gitops"]
+
+  interfaces:
+    - name: "idrac"
+      type: "1000base-t"
+      enabled: true
+      description: "Dell iDRAC interface"
+      ip:
+        address: "10.10.10.201/24"
+        dns_name: "berlin-srv-ai-01-idrac.example.com"
+        status: "active"
+        vrf: "Management"
+
+    - name: "eth0"
+      type: "1000base-t"
+      enabled: true
+      description: "Management interface"
+      ip:
+        address: "10.10.20.201/24"
+        dns_name: "berlin-srv-ai-01.example.com"
+        status: "active"
+        vrf: "Production"
+
+    # High-speed AI/ML network
+    - name: "eth2"
+      type: "100gbase-x-qsfp28"
+      enabled: true
+      description: "AI/ML compute network"
+      ip:
+        address: "10.10.40.201/24"
+        dns_name: "berlin-srv-ai-01-compute.example.com"
+        status: "active"
+        vrf: "Production"
+      address_role: "primary"
+      link:
+        peer_device: "berlin-leaf-01"
+        peer_port: "Eth1/3"
+        cable_type: "dac-active"
+      mtu: 9000
+
+    - name: "eth3"
+      type: "100gbase-x-qsfp28"
+      enabled: true
+      description: "AI/ML compute network (redundant)"
+      mtu: 9000
+
+# ========================================
+# Berlin DC - Storage System
+# ========================================
+
+- name: "berlin-storage-01"
+  site_slug: "berlin-dc"
+  device_type_slug: "isilon-a300"
+  role_slug: "storage"
+  rack_slug: "berlin-rack-a02"
+  position: 20
+  face: "front"
+  status: "active"
+  serial: "STOR01-SN-9999"
+  asset_tag: "ASSET-STOR-001"
+  tags: ["gitops"]
+
+  interfaces:
+    - name: "eth0"
+      type: "25gbase-x-sfp28"
+      enabled: true
+      description: "Storage network interface"
+      ip:
+        address: "10.10.30.10/24"
+        dns_name: "berlin-storage-01.example.com"
+        status: "active"
+        vrf: "Storage"
+      address_role: "primary"
+      link:
+        peer_device: "berlin-leaf-02"
+        peer_port: "Eth1/1"
+        cable_type: "dac-active"
+      mtu: 9000
+
+# ========================================
+# Munich Lab - Test Server
+# ========================================
+
+- name: "munich-lab-srv-01"
+  site_slug: "munich-lab"
+  device_type_slug: "poweredge-r740"
+  role_slug: "server"
+  rack_slug: "munich-lab-rack-01"
+  position: 10
+  face: "front"
+  status: "active"
+  serial: "LAB-SRV-001"
+  tags: ["gitops", "lab", "development"]
+
+  interfaces:
+    - name: "idrac"
+      type: "1000base-t"
+      enabled: true
+      description: "Dell iDRAC interface"
+      ip:
+        address: "192.168.100.10/24"
+        dns_name: "munich-lab-srv-01-idrac.lab.example.com"
+        status: "active"
+        vrf: "Lab"
+
+    - name: "eth0"
+      type: "1000base-t"
+      enabled: true
+      description: "Primary lab interface"
+      ip:
+        address: "192.168.200.10/24"
+        dns_name: "munich-lab-srv-01.lab.example.com"
+        status: "active"
+        vrf: "Lab"
+      address_role: "primary"

@@ -1,0 +1,124 @@
+# Patch Panel Inventory - Passive Fiber Infrastructure
+# Patch panels for structured cabling
+
+# ========================================
+# Berlin DC - Fiber Patch Panels
+# ========================================
+
+- name: "berlin-pp-01"
+  site_slug: "berlin-dc"
+  device_type_slug: "pp-12-sm-lc"
+  role_slug: "patch-panel"
+  rack_slug: "berlin-rack-a01"
+  position: 42
+  face: "front"
+  status: "active"
+  tags: ["gitops"]
+
+  # Front Ports (facing the room)
+  front_ports:
+    - name: "1"
+      type: "lc"
+      label: "To Rack A02 Port 1"
+      rear_port: "1"
+      rear_port_position: 1
+      description: "Fiber link to adjacent rack"
+
+    - name: "2"
+      type: "lc"
+      label: "To Rack A02 Port 2"
+      rear_port: "2"
+      rear_port_position: 1
+
+    - name: "3"
+      type: "lc"
+      label: "Reserved"
+      rear_port: "3"
+      rear_port_position: 1
+
+  # Rear Ports (facing the wall/backbone)
+  rear_ports:
+    - name: "1"
+      type: "lc"
+      label: "Backbone to MDF"
+      description: "Connection to main distribution frame"
+
+    - name: "2"
+      type: "lc"
+      label: "Backbone to MDF"
+
+    - name: "3"
+      type: "lc"
+      label: "Reserved"
+
+- name: "berlin-pp-02"
+  site_slug: "berlin-dc"
+  device_type_slug: "pp-12-sm-lc"
+  role_slug: "patch-panel"
+  rack_slug: "berlin-rack-a02"
+  position: 42
+  face: "front"
+  status: "active"
+  tags: ["gitops"]
+
+  front_ports:
+    - name: "1"
+      type: "lc"
+      label: "Cross-connect"
+      rear_port: "1"
+      rear_port_position: 1
+
+  rear_ports:
+    - name: "1"
+      type: "lc"
+      label: "Backbone"
+
+# ========================================
+# Berlin DC - Multi-mode Patch Panel
+# ========================================
+
+- name: "berlin-pp-mm-01"
+  site_slug: "berlin-dc"
+  device_type_slug: "patchpanel-mm-48"
+  role_slug: "patch-panel"
+  rack_slug: "berlin-rack-b01"
+  position: 42
+  face: "front"
+  status: "active"
+  tags: ["gitops"]
+
+  front_ports:
+    - name: "1"
+      type: "lc"
+      label: "Short-range fiber port 1"
+      rear_port: "1"
+      rear_port_position: 1
+
+  rear_ports:
+    - name: "1"
+      type: "lc"
+      label: "Backbone port 1"
+
+# ========================================
+# Frankfurt DC - Patch Panel
+# ========================================
+
+- name: "frankfurt-pp-01"
+  site_slug: "frankfurt-dc"
+  device_type_slug: "pp-12-sm-lc"
+  role_slug: "patch-panel"
+  rack_slug: "frankfurt-rack-c01"
+  position: 42
+  face: "front"
+  status: "active"
+  tags: ["gitops"]
+
+  front_ports:
+    - name: "1"
+      type: "lc"
+      rear_port: "1"
+      rear_port_position: 1
+
+  rear_ports:
+    - name: "1"
+      type: "lc"
