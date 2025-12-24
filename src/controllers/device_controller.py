@@ -1,93 +1,85 @@
-from typing import Optional, Literal, List, Union, Set
+from typing import Optional, Literal, List, Union, Set, Tuple, Dict
 from src.models import DeviceConfig, InterfaceConfig
 from src.client import NetBoxClient
-from src.syncers.base import MANAGED_TAG_SLUG
+from src.constants import (
+    MANAGED_TAG_SLUG,
+    ROLE_PATCH_PANEL,
+    TERMINATION_INTERFACE,
+    TERMINATION_FRONT_PORT,
+    TERMINATION_REAR_PORT,
+    ENDPOINT_INTERFACES,
+    ENDPOINT_FRONT_PORTS,
+    ENDPOINT_REAR_PORTS,
+    DEFAULT_CABLE_TYPE,
+    DEFAULT_CABLE_STATUS,
+    DEFAULT_LENGTH_UNIT,
+    WAIT_AFTER_CABLE_DELETE,
+    WAIT_AFTER_MODULE_DELETE,
+    LOG_PREFIX_CABLE,
+    LOG_PREFIX_MODULE,
+    LOG_PREFIX_BAYS,
+)
+from src.utils import (
+    normalize_color,
+    extract_tag_ids_and_slugs,
+    is_managed_by_gitops,
+    get_termination_type,
+    cable_connects_to,
+    safe_sleep,
+    extract_device_role_slug,
+    log_error,
+    log_warning,
+    log_success,
+    log_info,
+    log_debug,
+    log_dry_run,
+)
 from rich.console import Console
-import time 
 
 console = Console()
 
-# --- Typdefinitionen ---
+# Type alias for termination types
 TerminationType = Literal['dcim.interface', 'dcim.frontport', 'dcim.rearport']
-TERM_INTERFACE: TerminationType = 'dcim.interface'
-TERM_FRONT: TerminationType = 'dcim.frontport'
-TERM_REAR: TerminationType = 'dcim.rearport'
-# -----------------------
 
 class DeviceController:
     def __init__(self, client: NetBoxClient):
         self.client = client
 
     # --------------------------------------------------------------------------
-    # HILFSFUNKTIONEN
+    # HELPER FUNCTIONS
     # --------------------------------------------------------------------------
-    
-    COLOR_MAP = {
-        'purple': '800080', 'blue': '0000ff', 'yellow': 'ffff00', 
-        'red': 'ff0000', 'white': 'ffffff', 'black': '000000', 
-        'gray': '808080', 'orange': 'ffa500', 'green': '008000'
-    }
-
-    def _normalize_color(self, color_input):
-        if not color_input: return ''
-        raw = color_input.lower().strip()
-        return self.COLOR_MAP.get(raw, raw).replace('#', '')
-
-    def _get_termination_type(self, obj: Union[dict, object]) -> TerminationType:
-        """Ermittelt den NetBox Type String (dcim.interface, frontport, rearport)."""
-        if obj is None: return TERM_INTERFACE
-        if isinstance(obj, dict):
-            ep = obj.get('_endpoint')
-            if ep == 'front_ports': return TERM_FRONT
-            if ep == 'rear_ports': return TERM_REAR
-            return TERM_INTERFACE
-
-        url = getattr(obj, 'url', '')
-        if '/front-ports/' in url: return TERM_FRONT
-        if '/rear-ports/' in url: return TERM_REAR
-        
-        return TERM_INTERFACE
-
-    def _extract_tag_ids_and_slugs(self, tags: list) -> tuple[Set[int], Set[str]]:
-        ids: Set[int] = set()
-        slugs: Set[str] = set()
-        for tag in tags or []:
-            if isinstance(tag, int): ids.add(tag)
-            elif isinstance(tag, dict):
-                if 'id' in tag: ids.add(tag['id'])
-                if 'slug' in tag: slugs.add(tag['slug'])
-        return ids, slugs
-
-    def _is_managed(self, cable_obj: Optional[dict]) -> bool:
-        if not cable_obj: return False
-        tag_ids, tag_slugs = self._extract_tag_ids_and_slugs(cable_obj.get('tags'))
-        if self.client.managed_tag_id in tag_ids: return True
-        return MANAGED_TAG_SLUG in tag_slugs
-
-    def _cable_connects_to(self, cable: dict, object_id: int) -> bool:
-        terminations = cable.get('a_terminations', []) + cable.get('b_terminations', [])
-        for term in terminations or []:
-            term_id = term.get('object_id') or term.get('id')
-            if term_id == object_id: return True
-        return False
 
     def _safe_delete(self, cable_obj: Optional[dict], reason: str, force: bool = False) -> bool:
-        if not cable_obj: return False
-        if not force and not self._is_managed(cable_obj):
-            console.print(f"[dim yellow]Skipping unmanaged cable deletion: {reason}[/dim yellow]")
+        """
+        Safely delete a cable after checking if it's managed by gitops.
+
+        Args:
+            cable_obj: Cable object to delete
+            reason: Reason for deletion (for logging)
+            force: Force deletion even if not managed
+
+        Returns:
+            True if deleted, False otherwise
+        """
+        if not cable_obj:
             return False
+
+        if not force and not is_managed_by_gitops(cable_obj, self.client.managed_tag_id):
+            log_warning(f"Skipping unmanaged cable deletion: {reason}")
+            return False
+
         cable_id = cable_obj.get('id')
         if not cable_id:
-            console.print("[red]Refusing to delete cable without ID[/red]")
+            log_error("Refusing to delete cable without ID")
             return False
 
         try:
             self.client.delete_by_id('dcim', 'cables', cable_id)
-            console.print(f"[red]- Deleted Cable (ID {cable_id}) because {reason}[/red]")
-            time.sleep(1.0)  # Increased wait time after deletion
+            log_warning(f"- Deleted Cable (ID {cable_id}) because {reason}")
+            safe_sleep(WAIT_AFTER_CABLE_DELETE, self.client.dry_run)
             return True
         except Exception as e:
-            console.print(f"[red]Failed to delete cable: {e}[/red]")
+            log_error(f"Failed to delete cable", e)
             return False
 
     # --------------------------------------------------------------------------
