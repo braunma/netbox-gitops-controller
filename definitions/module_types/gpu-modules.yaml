@@ -1,0 +1,40 @@
+# Module Type Definitions
+# Blueprints for installable modules (e.g., GPUs, NICs, etc.)
+
+# NVIDIA AI/ML GPUs
+- model: "NVIDIA H200 141GB"
+  slug: "nvidia-h200-141gb"
+  manufacturer: "NVIDIA"
+  description: "NVIDIA H200 Tensor Core GPU with 141GB HBM3 memory"
+  tags: ["gitops", "ai-ml"]
+
+- model: "NVIDIA H100 80GB"
+  slug: "nvidia-h100-80gb"
+  manufacturer: "NVIDIA"
+  description: "NVIDIA H100 Tensor Core GPU with 80GB HBM3 memory"
+  tags: ["gitops", "ai-ml"]
+
+- model: "NVIDIA A100 80GB"
+  slug: "nvidia-a100-80gb"
+  manufacturer: "NVIDIA"
+  description: "NVIDIA A100 Tensor Core GPU with 80GB HBM2e memory"
+  tags: ["gitops", "ai-ml"]
+
+- model: "NVIDIA L40S"
+  slug: "nvidia-l40s"
+  manufacturer: "NVIDIA"
+  description: "NVIDIA L40S GPU for AI inference and graphics"
+  tags: ["gitops"]
+
+# Network Interface Cards
+- model: "Mellanox ConnectX-7 200GbE"
+  slug: "mellanox-cx7-200g"
+  manufacturer: "NVIDIA"
+  description: "Mellanox ConnectX-7 200GbE network adapter"
+  tags: ["gitops"]
+
+- model: "Intel E810 100GbE"
+  slug: "intel-e810-100g"
+  manufacturer: "Intel"
+  description: "Intel Ethernet Network Adapter E810 100GbE"
+  tags: ["gitops"]

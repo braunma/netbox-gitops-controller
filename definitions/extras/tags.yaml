@@ -1,0 +1,37 @@
+# Custom Tags
+# Tags for organizing and categorizing objects
+
+- name: "GitOps Managed"
+  slug: "gitops"
+  color: "00bcd4"
+  description: "Managed by GitOps Controller - can be safely modified/deleted by automation"
+
+- name: "Production"
+  slug: "production"
+  color: "f44336"
+  description: "Production environment"
+
+- name: "Development"
+  slug: "development"
+  color: "4caf50"
+  description: "Development environment"
+
+- name: "Disaster Recovery"
+  slug: "disaster-recovery"
+  color: "ff9800"
+  description: "Disaster recovery site"
+
+- name: "Lab"
+  slug: "lab"
+  color: "9c27b0"
+  description: "Laboratory/testing environment"
+
+- name: "AI/ML Workload"
+  slug: "ai-ml"
+  color: "673ab7"
+  description: "AI/ML compute infrastructure"
+
+- name: "High Performance"
+  slug: "high-performance"
+  color: "e91e63"
+  description: "High performance computing"
