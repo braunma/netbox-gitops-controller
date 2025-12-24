@@ -198,18 +198,18 @@ class FrontPortConfig(BaseModel):
     label: Optional[str] = None
     description: Optional[str] = None
     tags: List[Union[str, int]] = Field(default_factory=list)
-    
-    # Mapping zum Rear Port
+
+    # Mapping to rear port
     rear_port: str
     rear_port_position: int = 1
-    
-    # Optional: Direktes Patching
+
+    # Optional: Direct patching
     link: Optional[LinkConfig] = None
 
 class ModuleConfig(BaseModel):
-    """Modul Konfiguration (z.B. installierte GPU)."""
-    name: str                   # Muss dem Bay-Namen entsprechen
-    module_type_slug: str       # Referenz zum Bauplan
+    """Module configuration (e.g., installed GPU)."""
+    name: str                   # Must match the bay name
+    module_type_slug: str       # Reference to module type blueprint
     status: str = "active"
     serial: Optional[str] = None
     asset_tag: Optional[str] = None

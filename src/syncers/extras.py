@@ -12,5 +12,5 @@ class ExtrasSyncer(BaseSyncer):
                 app='extras',
                 endpoint='tags',
                 lookup_data={'slug': tag.slug},
-                create_data=tag.model_dump()
+                create_data=tag.model_dump(exclude_none=True)
             )
