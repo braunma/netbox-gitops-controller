@@ -1,0 +1,71 @@
+stages:
+  - debug    # Hilft bei Problemen
+  - validate # Läuft bei Push
+  - plan     # Läuft bei Merge Requests
+  - apply    # Läuft auf Main (Manuell)
+
+image: nexus.denbi.bihealth.org:8089/admin/pynetbox:v1.0
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  # WICHTIG: Damit Python das src-Modul findet!
+  PYTHONPATH: "$CI_PROJECT_DIR"
+
+cache:
+  paths:
+    - .cache/pip
+
+before_script:
+  - echo "🔧 Setting up environment..."
+  - pip install -r requirements.txt
+
+# --- OPTIONAL: DEBUGGING ---
+# Dieser Job startet NICHT automatisch (wegen when: manual).
+# Du musst ihn in der Pipeline-Ansicht anklicken, falls du Probleme debuggen willst.
+debug_environment:
+  stage: debug
+  script:
+    - echo "📂 Listing src directory:"
+    - ls -l src/
+    - echo "📄 Content of src/main.py (Last 10 lines):"
+    - tail -n 10 src/main.py
+    - echo "❓ Testing Help Output:"
+    - python src/main.py --help || true
+  when: manual
+
+# --- STAGE 1: VALIDATE ---
+# Prüft Syntax und Logik auf jedem Branch
+validate_data:
+  stage: validate
+  script:
+    - echo "🔍 Validating Data Models..."
+    # WICHTIG: Kein 'sync' hier, da dein Skript im Single-Command Modus läuft
+    - python src/main.py --dry-run
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+
+# --- STAGE 2: PLAN ---
+# Zeigt im Merge Request, was passieren würde
+plan_changes:
+  stage: plan
+  script:
+    - echo "📜 Generating Sync Plan..."
+    # WICHTIG: Kein 'sync' hier
+    - python src/main.py --dry-run
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+
+# --- STAGE 3: APPLY ---
+# Schreibt die Änderungen in NetBox (nur auf Main)
+apply_changes:
+  stage: apply
+  script:
+    - echo "🚀 Applying changes to NetBox..."
+    # WICHTIG: Kein 'sync' hier und KEIN --dry-run
+    - python src/main.py
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: production

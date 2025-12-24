@@ -1,0 +1,22 @@
+- model: "PowerEdge R7615"
+  slug: "poweredge-r7615"
+  manufacturer: "Dell"   
+  u_height: 2
+  is_full_depth: true
+  tags: ["gitops"]
+  interfaces:
+    - name: "idrac"
+      type: "1000base-t"
+      mgmt_only: true
+    - name: "NIC.Embedded.1-1-1"
+      type: "1000base-t" 
+    - name: "NIC.Embedded.2-1-1"
+      type: "1000base-t"
+    - name: "NIC.Integrated.1-1-1" 
+      type: "100gbase-x-qsfp28"
+    - name: "NIC.Integrated.1-2-1"
+      type: "100gbase-x-qsfp28"
+    - name: "NIC.Slot.3-1-1"
+      type: "100gbase-x-qsfp28"
+    - name: "NIC.Slot.3-2-1" 
+      type: "100gbase-x-qsfp28"

@@ -1,0 +1,29 @@
+- slug: "isilon-a300-chassis"
+  model: "Isilon A300 Chassis"
+  manufacturer: "Dell"
+  u_height: 4
+  is_full_depth: true
+  subdevice_role: "parent"
+  device_bays:
+    - name: "Node 1"
+      label: "Node 1"
+    - name: "Node 2"
+      label: "Node 2"
+    - name: "Node 3"
+      label: "Node 3"
+    - name: "Node 4"
+      label: "Node 4"
+
+- slug: "isilon-a300-node"
+  model: "Isilon A300 Node"
+  manufacturer: "Dell"
+  u_height: 0
+  subdevice_role: "child"
+  interfaces:
+    - name: "ext-1"
+      type: "10gbase-x-sfpp"
+    - name: "ext-2"
+      type: "10gbase-x-sfpp"
+    - name: "idrac"
+      type: "1000base-t"
+      mgmt_only: true

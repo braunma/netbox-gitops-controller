@@ -1,0 +1,27 @@
+- model: "PowerEdge XE9680 "
+  slug: "poweredge-xe9680"
+  manufacturer: "Dell"   
+  u_height: 6
+  is_full_depth: true
+  tags: ["gitops"]
+  interfaces:
+    - name: "idrac"
+      type: "1000base-t"
+      mgmt_only: true
+    - name: "NIC.Embedded.1-1-1"
+      type: "1000base-t" 
+    - name: "NIC.Embedded.2-1-1"
+      type: "1000base-t"
+    - name: "NIC.Slot.33-1-1" 
+      type: "100gbase-x-qsfp28"
+    - name: "NIC.Slot.33-2-1"
+      type: "100gbase-x-qsfp28"
+  module_bays:
+    - name: "GPU Slot 1"
+    - name: "GPU Slot 2"
+    - name: "GPU Slot 3"
+    - name: "GPU Slot 4"
+    - name: "GPU Slot 5"
+    - name: "GPU Slot 6"
+    - name: "GPU Slot 7"
+    - name: "GPU Slot 8"

@@ -1,0 +1,18 @@
+- model: "PowerEdge R740"
+  slug: "poweredge-r740"
+  manufacturer: "Dell"   # Das Skript wird "Dell" automatisch als Manufacturer anlegen
+  u_height: 2
+  is_full_depth: true
+  tags: ["gitops"]
+  interfaces:
+    - name: "idrac"
+      type: "1000base-t"
+      mgmt_only: true
+    - name: "eth0"
+      type: "1000base-t" # Oder "100gbase-sr4"
+    - name: "eth1"
+      type: "1000base-t"
+    - name: "eth2" # NEU
+      type: "100gbase-x-qsfp28"
+    - name: "eth3" # NEU
+      type: "100gbase-x-qsfp28"
