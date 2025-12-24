@@ -9,6 +9,9 @@ from typing import Final
 # ============================================================================
 # TAG CONFIGURATION
 # ============================================================================
+# GitOps managed tag configuration
+# Single Source of Truth: NetBoxClient._ensure_tag() creates/verifies this tag
+# All syncers receive the tag ID (no duplicate creation logic)
 MANAGED_TAG_SLUG: Final[str] = "gitops"
 MANAGED_TAG_NAME: Final[str] = "GitOps Managed"
 MANAGED_TAG_COLOR: Final[str] = "00bcd4"  # Cyan
