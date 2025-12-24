@@ -115,12 +115,12 @@ class DeviceController:
 
         console.print(f"[dim][BAYS] Checking {len(templates)} bay template(s) for {nb_device.name}[/dim]")
 
-        # Die existierenden Bays am Gerät holen (Die Realität)
+        # Get existing bays on the device (current reality)
         existing_bays = {
             b.name: b for b in self.client.nb.dcim.device_bays.filter(device_id=nb_device.id)
         }
 
-        # Abgleich: Fehlt was?
+        # Comparison: What's missing?
         for tmpl in templates:
             if tmpl.name not in existing_bays:
                 console.print(f"[yellow][BAYS] Missing bay '{tmpl.name}' on {nb_device.name} – creating...[/yellow]")
@@ -207,10 +207,10 @@ class DeviceController:
             return
 
         # =====================================================================
-        # D. INSTALLATION IN DEN SLOT (Der "Bay-Centric" Weg)
+        # D. INSTALLATION INTO SLOT (The "Bay-Centric" Way)
         # =====================================================================
         if nb_device and device_bay_id:
-            # Check: Ist der Node schon drin?
+            # Check: Is the node already installed?
             current_bay = getattr(nb_device, 'device_bay', None)
             
             if not current_bay or current_bay.id != device_bay_id:
@@ -252,7 +252,7 @@ class DeviceController:
                         
                 except Exception as e:
                     console.print(f"[red bold]✗ Failed to install module: {e}[/red bold]")
-                    # DEBUG INFO: Hilft zu verstehen, warum NetBox ablehnt
+                    # DEBUG INFO: Helps understand why NetBox rejects
                     console.print(f"[dim red]Info: Ensure Device Type {desired_device.device_type_slug} has u_height=0![/dim red]")
             else:
                 console.print(f"[dim green]✓ Already in correct Device Bay[/dim green]")
@@ -336,11 +336,11 @@ class DeviceController:
         device_id = nb_device_data["id"]
         console.print(f"[bold cyan][MODULE][/bold cyan] Reconciling modules for {nb_device_data['name']}")
 
-        # 1. Vorhandene Module Bays am Gerät finden (Die Slots)
-        # Wir bauen ein Mapping: Name -> ID
+        # 1. Find existing module bays on the device (the slots)
+        # Build a mapping: Name -> ID
         bays = {b.name: b.id for b in self.client.nb.dcim.module_bays.filter(device_id=device_id)}
-        
-        # 2. Bereits installierte Module finden
+
+        # 2. Find already installed modules
         installed_modules = {m.module_bay.id: m for m in self.client.nb.dcim.modules.filter(device_id=device_id)}
 
         for mod_cfg in modules_cfg:
@@ -389,11 +389,11 @@ class DeviceController:
             if self.client.managed_tag_id and self.client.managed_tag_id > 0:
                 payload["tags"] = [self.client.managed_tag_id]
 
-            # 3. Reconciliation Logik (Idempotenz)
+            # 3. Reconciliation logic (idempotency)
             existing_mod = installed_modules.get(bay_id)
-            
+
             if existing_mod:
-                # Prüfen, ob es der richtige Typ ist
+                # Check if it's the correct type
                 if existing_mod.module_type.id == module_type_id:
                     console.print(f"[dim][MODULE] Correct module already in {mod_cfg.name} – skipping[/dim]")
                     

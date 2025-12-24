@@ -8,17 +8,17 @@ class ModuleTypeSyncer(BaseSyncer):
         console.rule("[bold]Syncing Module Types[/bold]")
         
         for mt in module_types:
-            # 1. Payload vorbereiten
+            # 1. Prepare payload
             payload = mt.model_dump(exclude_none=True)
-            
-            # 2. Manufacturer ID holen
+
+            # 2. Get manufacturer ID
             manufacturer_slug = mt.manufacturer.lower().replace(" ", "-")
             manufacturer_id = self._get_cached_id('dcim', 'manufacturers', manufacturer_slug)
-            
+
             if not manufacturer_id and self.dry_run: manufacturer_id = 0
             payload['manufacturer'] = manufacturer_id
-            
-            # 3. In NetBox sicherstellen
+
+            # 3. Ensure in NetBox
             self.ensure_object(
                 app='dcim',
                 endpoint='module_types',
