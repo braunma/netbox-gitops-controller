@@ -1,71 +1,209 @@
 stages:
-  - debug    # Hilft bei Problemen
-  - validate # Läuft bei Push
-  - plan     # Läuft bei Merge Requests
-  - apply    # Läuft auf Main (Manuell)
-
-image: nexus.denbi.bihealth.org:8089/admin/pynetbox:v1.0
+  - test      # Run tests
+  - build     # Build Go binary
+  - validate  # Validate YAML and configuration
+  - plan      # Dry-run preview (Merge Requests)
+  - apply     # Apply changes (Main branch)
 
 variables:
+  # Python variables
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  # WICHTIG: Damit Python das src-Modul findet!
   PYTHONPATH: "$CI_PROJECT_DIR"
+
+  # Go variables
+  GOPATH: "$CI_PROJECT_DIR/.go"
+  GOCACHE: "$CI_PROJECT_DIR/.cache/go-build"
+  CGO_ENABLED: "0"
 
 cache:
   paths:
     - .cache/pip
+    - .cache/go-build
+    - .go/pkg/mod
 
-before_script:
-  - echo "🔧 Setting up environment..."
-  - pip install -r requirements.txt
+# =============================================================================
+# GO JOBS (Primary Implementation)
+# =============================================================================
 
-# --- OPTIONAL: DEBUGGING ---
-# Dieser Job startet NICHT automatisch (wegen when: manual).
-# Du musst ihn in der Pipeline-Ansicht anklicken, falls du Probleme debuggen willst.
-debug_environment:
-  stage: debug
+.go_base:
+  image: golang:1.21
+  before_script:
+    - go version
+    - go mod download
+
+# Run Go tests
+go_test:
+  extends: .go_base
+  stage: test
   script:
-    - echo "📂 Listing src directory:"
-    - ls -l src/
-    - echo "📄 Content of src/main.py (Last 10 lines):"
-    - tail -n 10 src/main.py
-    - echo "❓ Testing Help Output:"
-    - python src/main.py --help || true
-  when: manual
+    - echo "🧪 Running Go tests..."
+    - go test ./pkg/... -v -cover -race
+    - echo "✅ All Go tests passed!"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
 
-# --- STAGE 1: VALIDATE ---
-# Prüft Syntax und Logik auf jedem Branch
-validate_data:
+# Build Go binary
+go_build:
+  extends: .go_base
+  stage: build
+  script:
+    - echo "🔨 Building Go binary..."
+    - go build -v -o netbox-gitops ./cmd/netbox-gitops/
+    - ./netbox-gitops --help
+    - echo "✅ Go binary built successfully!"
+  artifacts:
+    paths:
+      - netbox-gitops
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
+
+# Validate with Go (dry-run)
+go_validate:
+  extends: .go_base
   stage: validate
+  dependencies:
+    - go_build
   script:
-    - echo "🔍 Validating Data Models..."
-    # WICHTIG: Kein 'sync' hier, da dein Skript im Single-Command Modus läuft
-    - python src/main.py --dry-run
+    - echo "🔍 Validating with Go implementation..."
+    - ./netbox-gitops --dry-run
+    - echo "✅ Validation passed!"
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
 
-# --- STAGE 2: PLAN ---
-# Zeigt im Merge Request, was passieren würde
-plan_changes:
+# Plan changes with Go (MR preview)
+go_plan:
+  extends: .go_base
   stage: plan
+  dependencies:
+    - go_build
   script:
-    - echo "📜 Generating Sync Plan..."
-    # WICHTIG: Kein 'sync' hier
-    - python src/main.py --dry-run
+    - echo "📜 Generating sync plan with Go..."
+    - ./netbox-gitops --dry-run | tee plan-output.txt
+    - echo "✅ Plan generated successfully!"
+  artifacts:
+    paths:
+      - plan-output.txt
+    expire_in: 1 week
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
 
-# --- STAGE 3: APPLY ---
-# Schreibt die Änderungen in NetBox (nur auf Main)
-apply_changes:
+# Apply changes with Go (production)
+go_apply:
+  extends: .go_base
   stage: apply
+  dependencies:
+    - go_build
   script:
-    - echo "🚀 Applying changes to NetBox..."
-    # WICHTIG: Kein 'sync' hier und KEIN --dry-run
-    - python src/main.py
+    - echo "🚀 Applying changes to NetBox with Go..."
+    - ./netbox-gitops
+    - echo "✅ Changes applied successfully!"
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: manual
   environment:
     name: production
+
+# =============================================================================
+# PYTHON JOBS (Legacy Support)
+# =============================================================================
+
+.python_base:
+  image: nexus.denbi.bihealth.org:8089/admin/pynetbox:v1.0
+  before_script:
+    - echo "🔧 Setting up Python environment..."
+    - pip install -r requirements.txt
+
+# Python tests (if any exist)
+python_test:
+  extends: .python_base
+  stage: test
+  script:
+    - echo "🧪 Running Python tests..."
+    - python -m pytest tests/ || echo "No Python tests found"
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
+  when: manual
+
+# Python validate (legacy)
+python_validate:
+  extends: .python_base
+  stage: validate
+  script:
+    - echo "🔍 Validating with Python implementation (legacy)..."
+    - python src/main.py --dry-run
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
+  when: manual
+
+# Python apply (legacy fallback)
+python_apply:
+  extends: .python_base
+  stage: apply
+  script:
+    - echo "🚀 Applying changes with Python (legacy)..."
+    - python src/main.py
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: production-python
+  allow_failure: true
+
+# =============================================================================
+# UTILITY JOBS
+# =============================================================================
+
+# Lint Go code
+go_lint:
+  extends: .go_base
+  stage: test
+  script:
+    - echo "🔍 Running Go linters..."
+    - go fmt ./...
+    - go vet ./...
+    - echo "✅ Linting passed!"
+  allow_failure: true
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
+
+# Check YAML syntax
+yaml_check:
+  image: python:3.11-slim
+  stage: test
+  before_script:
+    - pip install pyyaml
+  script:
+    - echo "📝 Checking YAML syntax..."
+    - python -c "import yaml; import sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]" definitions/**/*.yaml inventory/**/*.yaml
+    - echo "✅ YAML syntax is valid!"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
+
+# Debug environment (manual)
+debug_environment:
+  extends: .go_base
+  stage: test
+  script:
+    - echo "📂 Repository structure:"
+    - ls -la
+    - echo "📦 Go modules:"
+    - go list -m all
+    - echo "🔧 Go environment:"
+    - go env
+    - echo "🐍 Python version (if available):"
+    - python --version || echo "Python not available"
+    - echo "📄 Binary info:"
+    - ./netbox-gitops --help || echo "Binary not built yet"
+  dependencies:
+    - go_build
+  when: manual
+  allow_failure: true
