@@ -1,0 +1,69 @@
+# VLAN Definitions
+# Layer 2 broadcast domains
+
+# Berlin DC VLANs
+- vid: 10
+  name: "Management"
+  site_slug: "berlin-dc"
+  status: "active"
+  group_slug: "berlin-dc-vlans"
+  description: "Management network for out-of-band access"
+  tags: ["gitops"]
+
+- vid: 20
+  name: "Server-Production"
+  site_slug: "berlin-dc"
+  status: "active"
+  group_slug: "berlin-dc-vlans"
+  description: "Production server network"
+  tags: ["gitops", "production"]
+
+- vid: 30
+  name: "Storage"
+  site_slug: "berlin-dc"
+  status: "active"
+  group_slug: "berlin-dc-vlans"
+  description: "Storage network (iSCSI/NFS)"
+  tags: ["gitops"]
+
+- vid: 40
+  name: "AI-Compute"
+  site_slug: "berlin-dc"
+  status: "active"
+  group_slug: "berlin-dc-vlans"
+  description: "AI/ML compute network"
+  tags: ["gitops", "ai-ml"]
+
+# Frankfurt DC VLANs
+- vid: 10
+  name: "Management"
+  site_slug: "frankfurt-dc"
+  status: "active"
+  group_slug: "frankfurt-dc-vlans"
+  description: "Management network"
+  tags: ["gitops"]
+
+- vid: 20
+  name: "Server-Production"
+  site_slug: "frankfurt-dc"
+  status: "active"
+  group_slug: "frankfurt-dc-vlans"
+  description: "Production server network"
+  tags: ["gitops", "production"]
+
+# Munich Lab VLANs
+- vid: 100
+  name: "Lab-Management"
+  site_slug: "munich-lab"
+  status: "active"
+  group_slug: "munich-lab-vlans"
+  description: "Lab management network"
+  tags: ["gitops", "lab"]
+
+- vid: 200
+  name: "Lab-Testing"
+  site_slug: "munich-lab"
+  status: "active"
+  group_slug: "munich-lab-vlans"
+  description: "Lab testing network"
+  tags: ["gitops", "lab", "development"]
