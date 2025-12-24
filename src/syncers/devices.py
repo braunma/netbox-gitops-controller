@@ -1,3 +1,9 @@
+"""
+DEPRECATED: This module is no longer used.
+Device synchronization is now handled by DeviceController in Phase 3.
+This file is kept for reference but should not be imported.
+"""
+
 from src.syncers.base import BaseSyncer
 from rich.console import Console
 

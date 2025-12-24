@@ -8,7 +8,7 @@ class DCIMSyncer(BaseSyncer):
     def sync_sites(self, sites):
         console.rule("[bold]Syncing Sites[/bold]")
         for site in sites:
-            # Das war gut so, lassen wir so!
+            # This was good, let's keep it!
             self.ensure_object(
                 app='dcim', 
                 endpoint='sites', 
@@ -19,13 +19,13 @@ class DCIMSyncer(BaseSyncer):
     def sync_racks(self, racks):
         console.rule("[bold]Syncing Racks[/bold]")
         for rack in racks:
-            # FIX: Nicht den Cache fragen, sondern NetBox LIVE fragen!
-            # Wenn die Site gerade erst erstellt wurde, kennt der Cache sie noch nicht.
-            # Wir nutzen self.nb (pynetbox object), das im BaseSyncer verfügbar sein sollte.
+            # FIX: Don't query the cache, query NetBox LIVE!
+            # If the site was just created, the cache doesn't know it yet.
+            # We use self.nb (pynetbox object), which should be available in BaseSyncer.
             
             site_obj = self.nb.dcim.sites.get(slug=rack.site_slug)
             
-            # Fallback: Falls Slug fehlschlägt, versuche Name (für Robustheit)
+            # Fallback: If slug fails, try name (for robustness)
             if not site_obj:
                  site_obj = self.nb.dcim.sites.get(name=rack.site_slug)
 
@@ -33,8 +33,8 @@ class DCIMSyncer(BaseSyncer):
                 console.print(f"[red]Error: Site '{rack.site_slug}' not found for Rack '{rack.name}' (Live Lookup failed)[/red]")
                 continue
 
-            # 2. Daten vorbereiten
-            # Wir setzen explizit die ID, die wir gerade frisch von der API bekommen haben
+            # 2. Prepare data
+            # We explicitly set the ID that we just got fresh from the API
             payload = rack.model_dump(exclude={'site_slug'}, exclude_none=True)
             payload['site'] = site_obj.id
 
@@ -42,7 +42,7 @@ class DCIMSyncer(BaseSyncer):
             self.ensure_object(
                 app='dcim', 
                 endpoint='racks', 
-                # WICHTIG: Lookup muss site_id enthalten, sonst findet er das Rack evtl. global
+                # IMPORTANT: Lookup must contain site_id, otherwise it might find the rack globally
                 lookup_data={'site_id': site_obj.id, 'name': rack.name}, 
                 create_data=payload
             )

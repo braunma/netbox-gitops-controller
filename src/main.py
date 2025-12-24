@@ -25,14 +25,14 @@ from src.models import (
     RoleModel,
     PrefixModel,
     
-    # Device Models (Strict Mode für Controller)
+    # Device Models (Strict Mode for Controller)
     DeviceConfig
 )
 
 # ==========================================
 # 2. IMPORT SYNCERS (LEGACY & NEW)
 # ==========================================
-# Legacy Syncers (für Foundation & Network)
+# Legacy Syncers (for Foundation & Network)
 from src.syncers.dcim import DCIMSyncer
 from src.syncers.ipam import IPAMSyncer
 from src.syncers.extras import ExtrasSyncer
@@ -40,7 +40,7 @@ from src.syncers.module_types import ModuleTypeSyncer
 from src.syncers.device_types import DeviceTypeSyncer
 from src.syncers.roles import RoleSyncer
 
-# New Controller (für Devices & Cables)
+# New Controller (for Devices & Cables)
 from src.client import NetBoxClient
 from src.controllers.device_controller import DeviceController
 
@@ -59,7 +59,7 @@ def run_sync(dry_run: bool = False):
     Phase 3: Devices & Cables (Controller Engine - High Performance)
     """
     
-    # SSL Warnungen unterdrücken
+    # Suppress SSL warnings
     urllib3.disable_warnings()
     
     url = os.getenv("NETBOX_URL")
@@ -73,11 +73,11 @@ def run_sync(dry_run: bool = False):
     # CLIENTS INITIALISIEREN
     # =========================================================================
     
-    # Legacy Client (für Phase 1 & 2)
+    # Legacy Client (for Phase 1 & 2)
     nb = pynetbox.api(url, token=token)
     nb.http_session.verify = False 
     
-    # New Client (für Phase 3 - Devices & Cables)
+    # New Client (for Phase 3 - Devices & Cables)
     new_client = NetBoxClient(url, token, dry_run=dry_run)
     
     # =========================================================================
@@ -151,7 +151,7 @@ def run_sync(dry_run: bool = False):
         console.print("[cyan]Loading global caches...[/cyan]")
         new_client.reload_global_cache()
         
-        # 2. Site-spezifische Caches laden (für alle verwendeten Sites)
+        # 2. Load site-specific caches (for all sites used)
         unique_sites = set(dev.site_slug for dev in all_devices)
         console.print(f"[cyan]Loading site caches for: {', '.join(sorted(unique_sites))}[/cyan]")
         
@@ -203,7 +203,7 @@ def sync(
 
 
 # =========================================================================
-# CALLBACK: Macht 'sync' zum Default Command (für CI/CD Kompatibilität)
+# CALLBACK: Makes 'sync' the default command (for CI/CD compatibility)
 # =========================================================================
 @app.callback(invoke_without_command=True)
 def main(
