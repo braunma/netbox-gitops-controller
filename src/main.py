@@ -70,7 +70,7 @@ def run_sync(dry_run: bool = False):
         raise typer.Exit(code=1)
 
     # =========================================================================
-    # CLIENTS INITIALISIEREN
+    # INITIALIZE CLIENTS
     # =========================================================================
     
     # Legacy Client (for Phase 1 & 2)
@@ -147,21 +147,21 @@ def run_sync(dry_run: bool = False):
         # =====================================================================
         console.rule("[bold magenta]Phase 3: Devices & Cables (Controller Engine)[/bold magenta]")
         
-        # 1. Globale Caches laden (einmalig)
+        # 1. Load global caches (once)
         console.print("[cyan]Loading global caches...[/cyan]")
         new_client.reload_global_cache()
-        
+
         # 2. Load site-specific caches (for all sites used)
         unique_sites = set(dev.site_slug for dev in all_devices)
         console.print(f"[cyan]Loading site caches for: {', '.join(sorted(unique_sites))}[/cyan]")
-        
+
         for site_slug in sorted(unique_sites):
             new_client.reload_cache(site_slug)
-        
-        # 3. Controller initialisieren
+
+        # 3. Initialize controller
         controller = DeviceController(new_client)
-        
-        # 4. Reconciliation Loop (Devices + Cables in einem Durchlauf)
+
+        # 4. Reconciliation loop (devices + cables in one pass)
         console.print(f"[cyan]Reconciling {len(all_devices)} devices...[/cyan]")
         for idx, dev in enumerate(all_devices, 1):
             console.print(f"\n[dim]──── Device {idx}/{len(all_devices)}: {dev.name} ────[/dim]")
@@ -216,7 +216,7 @@ def main(
     Syncs Infrastructure as Code definitions to NetBox.
     """
     if ctx.invoked_subcommand is None:
-        # Kein Command angegeben → 'sync' als Default ausführen
+        # No command specified → run 'sync' as default
         run_sync(dry_run=dry_run)
 
 

@@ -21,7 +21,7 @@ class IPAMSyncer(BaseSyncer):
             self.ensure_object(
                 app='ipam',
                 endpoint='vrfs',
-                lookup_data={'name': vrf.name}, # VRF Namen müssen unique sein
+                lookup_data={'name': vrf.name},  # VRF names must be unique
                 create_data=payload
             )
 
@@ -61,7 +61,7 @@ class IPAMSyncer(BaseSyncer):
                 console.print(f"[red]Error: Site {vlan.site_slug} not found for VLAN {vlan.name}[/red]")
                 continue
 
-            # 2. VLAN Group ID auflösen
+            # 2. Resolve VLAN Group ID
             group_id = None
             if vlan.group_slug:
                 group_id = self._get_cached_id('ipam', 'vlan_groups', vlan.group_slug)
@@ -87,20 +87,20 @@ class IPAMSyncer(BaseSyncer):
 
     def sync_prefixes(self, prefixes):
         console.rule("[bold]Syncing Prefixes[/bold]")
-        
+
         for pfx in prefixes:
-            # 1. Site auflösen
+            # 1. Resolve Site
             site_id = self._get_cached_id('dcim', 'sites', pfx.site_slug)
-            
-            # 2. VRF auflösen (NEU)
+
+            # 2. Resolve VRF
             vrf_id = None
             if pfx.vrf_name:
                 vrf_id = self._get_cached_id('ipam', 'vrfs', pfx.vrf_name)
                 if not vrf_id:
                      console.print(f"[red]Error: VRF '{pfx.vrf_name}' not found for Prefix {pfx.prefix}[/red]")
-                     # Wir fahren fort, das Prefix landet dann aber im Global Table (oder wir skippen, je nach Wunsch)
+                     # Continue - prefix will be created in Global Table
 
-            # 3. VLAN auflösen
+            # 3. Resolve VLAN
             vlan_id = None
             if pfx.vlan_name:
                 if not site_id:

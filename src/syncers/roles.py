@@ -11,6 +11,6 @@ class RoleSyncer(BaseSyncer):
                 app='dcim',
                 endpoint='device_roles',
                 lookup_data={'slug': role.slug},
-                # FIX: exclude_none=True für Konsistenz
+                # FIX: exclude_none=True for consistency
                 create_data=role.model_dump(exclude_none=True)
             )
