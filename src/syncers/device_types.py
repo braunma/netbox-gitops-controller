@@ -23,14 +23,14 @@ class DeviceTypeSyncer(BaseSyncer):
             manufacturer_slug = dt.manufacturer.lower().replace(" ", "-")
             manufacturer_id = self._get_cached_id('dcim', 'manufacturers', manufacturer_slug)
             
-            # Dry Run Fallback für Manufacturer
-            if not manufacturer_id and self.dry_run: 
+            # Dry Run Fallback for Manufacturer
+            if not manufacturer_id and self.dry_run:
                 manufacturer_id = 0
             
             payload['manufacturer'] = manufacturer_id
-            
+
             # =====================================================
-            # KRITISCH: subdevice_role explizit setzen
+            # CRITICAL: Explicitly set subdevice_role
             # =====================================================
             if hasattr(dt, 'subdevice_role') and dt.subdevice_role:
                 payload['subdevice_role'] = dt.subdevice_role
@@ -49,7 +49,7 @@ class DeviceTypeSyncer(BaseSyncer):
                 continue
 
             # =========================================================
-            # A. REAR PORTS (Zuerst)
+            # A. REAR PORTS (First)
             # =========================================================
             if hasattr(dt, 'rear_ports') and dt.rear_ports:
                 rp_payloads = [p.model_dump(exclude_none=True) for p in dt.rear_ports]
@@ -63,11 +63,11 @@ class DeviceTypeSyncer(BaseSyncer):
                 )
 
             # =========================================================
-            # B. FRONT PORTS (Mit Mapping)
+            # B. FRONT PORTS (With Mapping)
             # =========================================================
             if hasattr(dt, 'front_ports') and dt.front_ports:
-                
-                # Map bauen
+
+                # Build mapping
                 rear_port_map = {}
                 if not self.dry_run:
                     all_rps = self.nb.dcim.rear_port_templates.filter(device_type_id=dt_obj.id)
@@ -112,7 +112,7 @@ class DeviceTypeSyncer(BaseSyncer):
                 )
                 
             # =========================================================
-            # D. MODULE BAYS (Die GPU Steckplätze)
+            # D. MODULE BAYS (GPU Slots)
             # =========================================================
             if hasattr(dt, 'module_bays') and dt.module_bays:
                 mb_payloads = [m.model_dump(exclude_none=True) for m in dt.module_bays]
@@ -126,7 +126,7 @@ class DeviceTypeSyncer(BaseSyncer):
                 )
 
             # =========================================================
-            # E. DEVICE BAYS (NEU: Für Isilon/Blade Slots)
+            # E. DEVICE BAYS (NEW: For Isilon/Blade Slots)
             # =========================================================
             if hasattr(dt, 'device_bays') and dt.device_bays:
                 db_payloads = [b.model_dump(exclude_none=True) for b in dt.device_bays]
