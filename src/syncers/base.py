@@ -4,9 +4,6 @@ from rich.console import Console
 
 from src.constants import (
     MANAGED_TAG_SLUG,
-    MANAGED_TAG_NAME,
-    MANAGED_TAG_COLOR,
-    MANAGED_TAG_DESCRIPTION,
     TEMPLATE_ENDPOINTS,
     FIELD_TRANSFORMS,
 )
@@ -23,40 +20,62 @@ from src.utils import (
 console = Console()
 
 class BaseSyncer:
-    def __init__(self, nb, dry_run: bool = False):
+    """
+    Base syncer class for legacy NetBox resource synchronization.
+
+    CACHING STRATEGY (Legacy - Lazy Loading):
+    =========================================
+    This syncer uses lazy-load caching for backward compatibility with the legacy
+    Python synchronization engine. Cache entries are loaded on-demand when first accessed
+    via _get_cached_id().
+
+    IMPORTANT FOR GO MIGRATION:
+    - Lazy loading reduces initial memory footprint but requires synchronization locks
+    - NOT ideal for concurrent goroutines (race conditions on cache writes)
+    - New Go code should use EAGER loading (see NetBoxClient)
+    - Keep this strategy only for legacy Python syncers that run sequentially
+
+    TAG MANAGEMENT:
+    ==============
+    - Accepts managed_tag_id from NetBoxClient (single source of truth)
+    - No longer creates tags internally (removed _ensure_managed_tag_exists)
+    - Injects managed tag via _prepare_payload() for all resources
+    """
+
+    def __init__(self, nb, managed_tag_id: int, dry_run: bool = False):
+        """
+        Initialize base syncer.
+
+        Args:
+            nb: PyNetBox API instance
+            managed_tag_id: ID of the GitOps managed tag (from NetBoxClient)
+            dry_run: Dry-run mode flag
+        """
         self.nb = nb
         self.dry_run = dry_run
         self.cache = {}
-        self.managed_tag_id = self._ensure_managed_tag_exists()
-
-    def _ensure_managed_tag_exists(self) -> int:
-        """
-        Ensure the gitops managed tag exists in NetBox.
-
-        Returns:
-            Tag ID or 0 in dry-run mode, None on error
-        """
-        if self.dry_run:
-            return 0
-
-        try:
-            tag = self.nb.extras.tags.get(slug=MANAGED_TAG_SLUG)
-            if not tag:
-                log_success(f"Creating system tag: {MANAGED_TAG_SLUG}")
-                tag = self.nb.extras.tags.create(
-                    name=MANAGED_TAG_NAME,
-                    slug=MANAGED_TAG_SLUG,
-                    color=MANAGED_TAG_COLOR,
-                    description=MANAGED_TAG_DESCRIPTION
-                )
-            return tag.id
-        except Exception as e:
-            log_error("Could not ensure gitops tag exists", e)
-            return None
+        self.managed_tag_id = managed_tag_id
 
     def _get_cached_id(self, app: str, endpoint: str, identifier: str) -> int | None:
         """
-        Get cached ID for an object, loading cache if needed.
+        Get cached ID for an object, loading cache if needed (LAZY LOADING).
+
+        This implements the lazy-load caching pattern: cache entries are loaded
+        on-demand when first accessed. Subsequent lookups hit the in-memory cache.
+
+        GO MIGRATION NOTE:
+        - This pattern requires synchronization (mutex) in concurrent scenarios
+        - Race condition: multiple goroutines could try to populate same cache key
+        - Recommendation: DO NOT use this pattern in Go - use eager loading instead
+        - If you must use lazy loading in Go:
+            var cacheMutex sync.RWMutex
+            cacheMutex.RLock()
+            if cached { cacheMutex.RUnlock(); return cached }
+            cacheMutex.RUnlock()
+            cacheMutex.Lock()
+            // double-check after acquiring write lock
+            // populate cache
+            cacheMutex.Unlock()
 
         Args:
             app: NetBox app (e.g., 'dcim', 'ipam')
