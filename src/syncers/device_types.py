@@ -10,7 +10,7 @@ class DeviceTypeSyncer(BaseSyncer):
         
         for dt in device_types:
             # 1. Device Type Payload
-            # WICHTIG: 'device_bays' muss hier excluded werden
+            # IMPORTANT: 'device_bays' must be excluded here
             payload = dt.model_dump(
                 exclude={
                     'interfaces', 'front_ports', 'rear_ports', 

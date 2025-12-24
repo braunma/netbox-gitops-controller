@@ -83,41 +83,41 @@ class PrefixModel(BaseModel):
 # =========================================================
 
 class InterfaceTemplateModel(BaseModel):
-    """Interface Template für Device Types."""
+    """Interface Template for Device Types."""
     name: str
     type: str
     mgmt_only: bool = False
     lag_name: Optional[str] = None
 
 class PortTemplateModel(BaseModel):
-    """Port Template für Patchfelder (Front/Rear)."""
+    """Port Template for patch panels (Front/Rear)."""
     name: str
     type: str = "8p8c"
     rear_port: Optional[str] = None
 
 class ModuleBayTemplateModel(BaseModel):
-    """Modul-Steckplatz Template (z.B. für GPUs)."""
+    """Module Bay Template (e.g., for GPUs)."""
     name: str
     label: Optional[str] = None
     description: Optional[str] = None
     position: Optional[str] = None
 
 class DeviceBayTemplateConfig(BaseModel):
-    """Device Bay Template (z.B. für Chassis Nodes)."""
+    """Device Bay Template (e.g., for Chassis Nodes)."""
     name: str
     label: Optional[str] = None
     description: Optional[str] = None
 
 class ModuleTypeModel(BaseModel):
-    """Bauplan für ein Modul (z.B. NVIDIA H200)."""
-    model: str           # Anzeigename
-    slug: str            # Eindeutige ID
-    manufacturer: str    # Hersteller-Slug
+    """Blueprint for a module (e.g., NVIDIA H200)."""
+    model: str           # Display name
+    slug: str            # Unique ID
+    manufacturer: str    # Manufacturer slug
     description: Optional[str] = None
     tags: List[str] = []
 
 class DeviceTypeModel(BaseModel):
-    """Device Type Definition (Bauplan für Geräte)."""
+    """Device Type Definition (Blueprint for devices)."""
     model: str
     slug: str
     manufacturer: str
@@ -138,7 +138,7 @@ class DeviceTypeModel(BaseModel):
 # =========================================================
 
 class LinkConfig(BaseModel):
-    """Kabelverbindung Definition."""
+    """Cable connection definition."""
     peer_device: str
     peer_port: str
     cable_type: Optional[str] = "cat6a"
@@ -157,7 +157,7 @@ class IPConfig(BaseModel):
     address_role: Optional[str] = None
 
 class InterfaceConfig(BaseModel):
-    """Interface Konfiguration (für konkrete Devices)."""
+    """Interface Configuration (for concrete devices)."""
     name: str
     type: str = "1000base-t"
     enabled: bool = True

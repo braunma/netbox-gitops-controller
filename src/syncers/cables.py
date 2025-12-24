@@ -1,4 +1,12 @@
+"""
+DEPRECATED: This module is no longer used.
+Cable synchronization is now handled by DeviceController in Phase 3.
+This file is kept for reference but should not be imported.
+"""
+
 from src.syncers.base import BaseSyncer, MANAGED_TAG_SLUG
+from src.utils import normalize_color, extract_tag_ids_and_slugs
+from src.constants import CABLE_COLOR_MAP
 from rich.console import Console
 
 console = Console()
@@ -10,13 +18,6 @@ class CableSyncer(BaseSyncer):
         'interfaces': 'dcim.interface',
         'front_ports': 'dcim.frontport',
         'rear_ports': 'dcim.rearport'
-    }
-
-    # Color Mapping: Name -> Hex
-    COLOR_MAP = {
-        'purple': '800080', 'blue': '0000ff', 'yellow': 'ffff00', 
-        'red': 'ff0000', 'white': 'ffffff', 'black': '000000', 
-        'gray': '808080', 'orange': 'ffa500', 'green': '008000'
     }
 
     def sync_cables(self, devices):
@@ -38,15 +39,29 @@ class CableSyncer(BaseSyncer):
                         self._process_link(dev_id, dev_def.name, item.name, endpoint, item.link)
 
     def _is_managed(self, cable_obj):
-        """Prüft, ob ein Kabel den GitOps Tag hat."""
+        """Check if a cable has the GitOps tag."""
         if not cable_obj or not cable_obj.tags:
             return False
-        # Tags können Objekte oder Brief-Dicts sein
-        tags = [t.slug for t in cable_obj.tags]
-        return MANAGED_TAG_SLUG in tags
+        # Convert tags to dict format for extraction
+        tags_list = []
+        for t in cable_obj.tags:
+            if isinstance(t, dict):
+                tags_list.append(t)
+            elif hasattr(t, 'slug'):
+                tag_dict = {'slug': t.slug}
+                if hasattr(t, 'id'):
+                    tag_dict['id'] = t.id
+                tags_list.append(tag_dict)
+
+        tag_ids, tag_slugs = extract_tag_ids_and_slugs(tags_list)
+
+        # Check both tag ID and slug
+        if self.managed_tag_id and self.managed_tag_id in tag_ids:
+            return True
+        return MANAGED_TAG_SLUG in tag_slugs
 
     def _safe_delete(self, cable_obj, reason_msg):
-        """Löscht Kabel NUR wenn es gemanaged ist."""
+        """Delete cable ONLY if it is managed."""
         if self._is_managed(cable_obj):
             if self.dry_run:
                 console.print(f"[yellow][DRY-RUN] Would DELETE {reason_msg} (Tag: {MANAGED_TAG_SLUG})[/yellow]")
@@ -82,7 +97,7 @@ class CableSyncer(BaseSyncer):
             return
 
         # 4. Prepare Desired Attributes
-        desired_color = self._normalize_color(link_def.color)
+        desired_color = normalize_color(link_def.color)
         desired_type = link_def.cable_type or 'cat6'
         
         # 5. Idempotency Check
@@ -105,7 +120,7 @@ class CableSyncer(BaseSyncer):
                 
                 # Check TAGS
                 if not self._is_managed(existing_cable):
-                    # Wenn das Kabel stimmt, aber keinen Tag hat -> Taggen ("Adoptieren")
+                    # If the cable is correct but has no tag -> Tag it ("Adopt")
                     changes['tags'] = [self.managed_tag_id]
 
                 if changes:
@@ -179,11 +194,6 @@ class CableSyncer(BaseSyncer):
             if hasattr(term_obj, 'object_id'): return term_obj.object_id
             if hasattr(term_obj, 'id'): return term_obj.id
         return None
-
-    def _normalize_color(self, color_input):
-        if not color_input: return ''
-        raw = color_input.lower().strip()
-        return self.COLOR_MAP.get(raw, raw).replace('#', '')
 
     def _get_type_str(self, term_obj):
         if 'interfaces' in term_obj.url: return 'dcim.interface'
