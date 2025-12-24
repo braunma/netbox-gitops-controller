@@ -201,6 +201,8 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	// Inject managed tag
 	payload = c.tagManager.InjectTag(payload, c.managedTagID)
 
+	c.logger.Debug("  → Applying %s with lookup: %v", endpoint, lookup)
+
 	// Try to find existing object
 	existing, err := c.Filter(app, endpoint, lookup)
 	if err != nil {
@@ -209,7 +211,8 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 
 	if len(existing) == 0 {
 		// Create new object
-		c.logger.Success("Creating %s: %v", endpoint, lookup)
+		c.logger.Success("  ✓ Creating %s: %v", endpoint, c.formatLookup(lookup))
+		c.printDiff("CREATE", nil, payload)
 		return c.Create(app, endpoint, payload)
 	}
 
@@ -223,15 +226,97 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	// Calculate diff
 	changes := c.calculateDiff(obj, payload)
 	if len(changes) > 0 {
-		c.logger.Info("Updating %s: %v", endpoint, lookup)
+		c.logger.Info("  ⟳ Updating %s (ID: %d): %v", endpoint, objID, c.formatLookup(lookup))
+		c.printDiff("UPDATE", obj, changes)
 		if err := c.Update(app, endpoint, objID, changes); err != nil {
 			return nil, fmt.Errorf("failed to update object: %w", err)
 		}
+		c.logger.Success("  ✓ Update complete")
 	} else {
-		c.logger.Debug("No changes needed for %s: %v", endpoint, lookup)
+		c.logger.Debug("  = No changes for %s (ID: %d)", endpoint, objID)
 	}
 
 	return obj, nil
+}
+
+// formatLookup formats lookup criteria for display
+func (c *NetBoxClient) formatLookup(lookup map[string]interface{}) string {
+	if name, ok := lookup["name"]; ok {
+		return fmt.Sprintf("name=%v", name)
+	}
+	if slug, ok := lookup["slug"]; ok {
+		return fmt.Sprintf("slug=%v", slug)
+	}
+	// Return first key-value pair
+	for k, v := range lookup {
+		return fmt.Sprintf("%s=%v", k, v)
+	}
+	return "{}"
+}
+
+// printDiff prints a visual diff for pipeline console visibility
+func (c *NetBoxClient) printDiff(action string, existing Object, changes map[string]interface{}) {
+	if c.dryRun {
+		return // Dry run already shows the action
+	}
+
+	if action == "CREATE" {
+		c.logger.Debug("    ┌─ Changes ────────────────────")
+		for key, val := range changes {
+			if key == "tags" {
+				continue // Skip tags in diff
+			}
+			c.logger.Success("    │ + %s: %v", key, c.formatValue(val))
+		}
+		c.logger.Debug("    └──────────────────────────────")
+		return
+	}
+
+	if action == "UPDATE" {
+		c.logger.Debug("    ┌─ Changes ────────────────────")
+		for key, newVal := range changes {
+			if key == "tags" {
+				continue
+			}
+
+			oldVal := existing[key]
+			// Handle nested objects
+			if oldMap, ok := oldVal.(map[string]interface{}); ok {
+				if id, ok := oldMap["id"]; ok {
+					oldVal = id
+				}
+			}
+
+			c.logger.Warning("    │ ~ %s:", key)
+			c.logger.Warning("    │   - %v", c.formatValue(oldVal))
+			c.logger.Success("    │   + %v", c.formatValue(newVal))
+		}
+		c.logger.Debug("    └──────────────────────────────")
+	}
+}
+
+// formatValue formats a value for display
+func (c *NetBoxClient) formatValue(val interface{}) string {
+	if val == nil {
+		return "<nil>"
+	}
+
+	switch v := val.(type) {
+	case string:
+		return fmt.Sprintf("\"%s\"", v)
+	case []interface{}:
+		if len(v) == 0 {
+			return "[]"
+		}
+		return fmt.Sprintf("[...%d items]", len(v))
+	case map[string]interface{}:
+		if id, ok := v["id"]; ok {
+			return fmt.Sprintf("{id: %v}", id)
+		}
+		return "{...}"
+	default:
+		return fmt.Sprintf("%v", v)
+	}
 }
 
 // calculateDiff compares existing object with desired state
