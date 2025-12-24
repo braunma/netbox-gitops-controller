@@ -1,0 +1,26 @@
+# Site Definitions - Data Center Locations
+# These represent physical locations where equipment is installed
+
+- name: "Berlin DC"
+  slug: "berlin-dc"
+  status: "active"
+  time_zone: "Europe/Berlin"
+  tags: ["gitops", "production"]
+
+- name: "Frankfurt DC"
+  slug: "frankfurt-dc"
+  status: "active"
+  time_zone: "Europe/Berlin"
+  tags: ["gitops", "production"]
+
+- name: "Munich Lab"
+  slug: "munich-lab"
+  status: "active"
+  time_zone: "Europe/Berlin"
+  tags: ["gitops", "development"]
+
+- name: "Hamburg DR"
+  slug: "hamburg-dr"
+  status: "active"
+  time_zone: "Europe/Berlin"
+  tags: ["gitops", "disaster-recovery"]

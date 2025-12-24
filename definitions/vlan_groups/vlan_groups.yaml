@@ -1,0 +1,26 @@
+# VLAN Group Definitions
+# Groups organize VLANs and can enforce VLAN ID uniqueness within a scope
+
+- name: "Berlin DC VLANs"
+  slug: "berlin-dc-vlans"
+  site_slug: "berlin-dc"
+  description: "VLAN group for Berlin data center"
+  min_vid: 1
+  max_vid: 4094
+  tags: ["gitops"]
+
+- name: "Frankfurt DC VLANs"
+  slug: "frankfurt-dc-vlans"
+  site_slug: "frankfurt-dc"
+  description: "VLAN group for Frankfurt data center"
+  min_vid: 1
+  max_vid: 4094
+  tags: ["gitops"]
+
+- name: "Munich Lab VLANs"
+  slug: "munich-lab-vlans"
+  site_slug: "munich-lab"
+  description: "VLAN group for Munich lab"
+  min_vid: 1
+  max_vid: 4094
+  tags: ["gitops", "lab"]
