@@ -87,14 +87,14 @@ class DeviceController:
     # --------------------------------------------------------------------------
     def _reconcile_device_bays(self, nb_device: object):
         """
-        Prüft, ob das Gerät alle Bays hat, die sein Device Type vorschreibt.
-        Legt fehlende Bays am Gerät an (Self-Healing für Chassis).
+        Check if the device has all bays that its Device Type requires.
+        Create missing bays on the device (Self-Healing for Chassis).
         """
-        # Sicherstellen, dass wir eine Device Type ID haben
+        # Ensure we have a Device Type ID
         if not hasattr(nb_device, 'device_type') or not nb_device.device_type:
             return
 
-        # Device Type Object sicher laden
+        # Safely load Device Type Object
         dt_obj = nb_device.device_type
         if not hasattr(dt_obj, 'id'):
             try:
@@ -104,13 +104,13 @@ class DeviceController:
         
         dt_id = dt_obj.id
 
-        # FIX: Korrekter API-Parameter für NetBox
+        # FIX: Correct API parameter for NetBox
         templates = self.client.nb.dcim.device_bay_templates.filter(
-            device_type_id=dt_id  # ← WICHTIG: device_type_id, nicht devicetype_id
+            device_type_id=dt_id  # ← IMPORTANT: device_type_id, not devicetype_id
         )
         
         if not templates:
-            # Kein Template = Kein Bay-fähiges Gerät → Silent Skip (kein Spam)
+            # No template = No bay-capable device → Silent skip (no spam)
             return
 
         console.print(f"[dim][BAYS] Checking {len(templates)} bay template(s) for {nb_device.name}[/dim]")
@@ -143,7 +143,7 @@ class DeviceController:
     # HAUPT-LOGIK (reconcile) - BAY-CENTRIC APPROACH
     # --------------------------------------------------------------------------
     def reconcile(self, desired_device: DeviceConfig):
-        # 1. Basis-IDs auflösen
+        # 1. Resolve base IDs
         site_id = self.client.get_id('sites', desired_device.site_slug)
         role_id = self.client.get_id('roles', desired_device.role_slug)
         type_id = self.client.get_id('device_types', desired_device.device_type_slug)
@@ -174,8 +174,8 @@ class DeviceController:
                 return
             device_bay_id = bay_obj.id
 
-        # B. Payload für Device Erstellung
-        # Wir erstellen es ZUERST immer im Rack (oder inherited Rack), damit es valide ist.
+        # B. Payload for Device Creation
+        # We ALWAYS create it FIRST in the rack (or inherited rack) to make it valid.
         final_rack_id = yaml_rack_id if yaml_rack_id else parent_rack_id
         
         exclude_fields = {'interfaces', 'site_slug', 'role_slug', 'device_type_slug', 'rack_slug', 
@@ -187,7 +187,7 @@ class DeviceController:
         if final_rack_id:
             device_payload['rack'] = final_rack_id
 
-        # Child-Cleaning für Erstellung (noch nicht im Bay, aber Position weg, falls Child)
+        # Child-Cleaning for creation (not yet in bay, but position removed if child)
         if device_bay_id:
             device_payload.pop('position', None)
             device_payload.pop('face', None)
@@ -218,28 +218,28 @@ class DeviceController:
                 
                 try:
                     if not self.client.dry_run:
-                        # SCHRITT 1: Node "frei machen"
-                        # Ein Gerät kann nicht in einen Slot, wenn es:
-                        # a) Eine eigene Rack-ID hat
-                        # b) Eine Position (HE) hat
-                        # c) Ein 'face' hat
-                        # Wir löschen das jetzt alles, damit es "schwebt".
+                        # STEP 1: "Free" the node
+                        # A device cannot go into a slot if it:
+                        # a) Has its own Rack-ID
+                        # b) Has a position (U)
+                        # c) Has a 'face'
+                        # We delete all of this now so it "floats".
                         console.print(f"[dim]  1. Detaching node from rack...[/dim]")
                         
-                        # Fix für dein GUI Problem: Wir vergeben KEIN Rack beim Update.
-                        # Wir löschen es. NetBox zieht sich das Rack später vom Parent.
+                        # Fix for GUI problem: We do NOT assign a rack during update.
+                        # We delete it. NetBox will pull the rack from the parent later.
                         nb_device.update({
                             'rack': None,
                             'position': None,
                             'face': None
                         })
                         
-                        # SCHRITT 2: Den SLOT updaten (nicht das Gerät!)
-                        # Wir greifen uns den Slot und sagen "Du hast jetzt Inhalt"
+                        # STEP 2: Update the SLOT (not the device!)
+                        # We grab the slot and say "You now have content"
                         console.print(f"[dim]  2. Updating Bay {desired_device.device_bay}...[/dim]")
                         bay_obj = self.client.nb.dcim.device_bays.get(device_bay_id)
                         
-                        # Das ist der API-Standardweg für "Insert Blade"
+                        # This is the standard API way for "Insert Blade"
                         success = bay_obj.update({'installed_device': nb_device.id})
                         
                         if success:
@@ -370,7 +370,7 @@ class DeviceController:
                 except Exception:
                     pass
 
-            # Payload für das Modul zusammenbauen
+            # Assemble the payload for the module
             payload = {
                 "device": device_id,
                 "module_bay": bay_id,
@@ -415,16 +415,16 @@ class DeviceController:
                             console.print(f"[dim green][MODULE] Module already has gitops tag ✓[/dim green]")
                     continue
                 else:
-                    # Falsches Modul: Löschen und neu setzen
+                    # Wrong module: Delete and reset
                     console.print(f"[red][MODULE] Wrong module in {mod_cfg.name} – deleting[/red]")
                     if not self.client.dry_run:
                         existing_mod.delete()
-                        time.sleep(0.1)
+                        safe_sleep(WAIT_AFTER_MODULE_DELETE, self.client.dry_run)
                     else:
                         console.print(f"[yellow][DRY-RUN] Would delete module in {mod_cfg.name}[/yellow]")
                         continue
 
-            # 4. Modul anlegen
+            # 4. Create module
             try:
                 if not self.client.dry_run:
                     new_mod = self.client.nb.dcim.modules.create(payload)
@@ -436,7 +436,7 @@ class DeviceController:
                 console.print(f"[red]Payload was: {payload}[/red]")
 
     # --------------------------------------------------------------------------
-    # Kabel-Logik (Fixed Version)
+    # Cable Logic (Fixed Version)
     # --------------------------------------------------------------------------
     
     def _reconcile_cables(self, nb_device_data: dict, config: DeviceConfig):
@@ -584,7 +584,7 @@ class DeviceController:
             )
 
             # --------------------------------------------------------------
-            # D. Bestehendes Kabel am lokalen Port prüfen
+            # D. Check existing cable at local port
             # --------------------------------------------------------------
             existing = local.get("cable")
             if existing:
@@ -639,7 +639,7 @@ class DeviceController:
                     console.print(f"[yellow]Warning processing peer cable: {e}[/yellow]")
 
             # --------------------------------------------------------------
-            # F. Kabel anlegen (FIXED)
+            # F. Create cable (FIXED)
             # --------------------------------------------------------------
             cable_data = {
                 "a_terminations": [
