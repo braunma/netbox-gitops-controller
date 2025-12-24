@@ -59,7 +59,7 @@ coverage.xml
 .hypothesis/
 .pytest_cache/
 
-# Go (for future migration)
+# Go
 *.exe
 *.exe~
 *.dll
@@ -69,3 +69,4 @@ coverage.xml
 *.out
 /vendor/
 /Godeps/
+bin/
