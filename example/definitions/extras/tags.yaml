@@ -1,0 +1,17 @@
+# Example Tags for Testing
+# These are sample tags used by the test suite
+
+- name: "GitOps Managed"
+  slug: "gitops"
+  color: "00bcd4"
+  description: "Managed by GitOps Controller - can be safely modified/deleted by automation"
+
+- name: "Production"
+  slug: "production"
+  color: "f44336"
+  description: "Production environment"
+
+- name: "Development"
+  slug: "development"
+  color: "4caf50"
+  description: "Development environment"

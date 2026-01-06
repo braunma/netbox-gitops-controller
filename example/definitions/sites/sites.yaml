@@ -1,0 +1,14 @@
+# Example Sites for Testing
+# These represent physical data center locations
+
+- name: "Berlin DC"
+  slug: "berlin-dc"
+  status: "active"
+  time_zone: "Europe/Berlin"
+  tags: ["gitops", "production"]
+
+- name: "Test Lab"
+  slug: "test-lab"
+  status: "active"
+  time_zone: "Europe/Berlin"
+  tags: ["gitops", "development"]
