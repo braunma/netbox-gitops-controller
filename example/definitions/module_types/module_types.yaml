@@ -1,0 +1,6 @@
+# Example Module Types for Testing
+
+- manufacturer: "Example Vendor"
+  model: "Example 10G SFP+ Module"
+  part_number: "EX-SFP-10G"
+  comments: "Example 10G SFP+ module for testing"

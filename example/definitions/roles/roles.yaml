@@ -1,0 +1,22 @@
+# Example Device Roles for Testing
+# These classify devices by their function
+
+- name: "Server"
+  slug: "server"
+  color: "4caf50"
+  vm_role: false
+
+- name: "Switch"
+  slug: "switch"
+  color: "2196f3"
+  vm_role: false
+
+- name: "Storage"
+  slug: "storage"
+  color: "ff9800"
+  vm_role: false
+
+- name: "Patch Panel"
+  slug: "patch-panel"
+  color: "9e9e9e"
+  vm_role: false

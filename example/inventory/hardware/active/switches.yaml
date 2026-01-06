@@ -1,0 +1,20 @@
+# Example Switch Inventory for Testing
+
+- name: "example-switch-01"
+  device_type_slug: "example-switch-48"
+  role_slug: "switch"
+  site_slug: "berlin-dc"
+  rack_slug: "rack-a01"
+  position: 1
+  face: "front"
+  status: "active"
+  tags: ["gitops", "production"]
+  interfaces:
+    - name: "GigabitEthernet1/0/1"
+      type: "1000base-t"
+      enabled: true
+      description: "Uplink port 1"
+    - name: "GigabitEthernet1/0/2"
+      type: "1000base-t"
+      enabled: true
+      description: "Uplink port 2"

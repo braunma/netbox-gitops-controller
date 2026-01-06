@@ -1,0 +1,22 @@
+# Example VLANs for Testing
+
+- name: "Management"
+  vid: 100
+  site_slug: "berlin-dc"
+  status: "active"
+  description: "Management VLAN"
+  tags: ["gitops"]
+
+- name: "Production Network"
+  vid: 200
+  site_slug: "berlin-dc"
+  status: "active"
+  description: "Production network VLAN"
+  tags: ["gitops", "production"]
+
+- name: "Test Network"
+  vid: 1000
+  site_slug: "test-lab"
+  status: "active"
+  description: "Test network VLAN"
+  tags: ["gitops", "development"]
