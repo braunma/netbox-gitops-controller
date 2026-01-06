@@ -71,7 +71,7 @@ coverage.xml
 /Godeps/
 bin/
 
-# Private data - exclude actual definitions and inventory
+# Private data - exclude actual definitions and inventory from repository root
 # (Tests use example/ directory instead)
-definitions/
-inventory/
+/definitions/
+/inventory/
