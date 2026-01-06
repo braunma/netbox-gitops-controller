@@ -1,0 +1,13 @@
+# Example VRF (Virtual Routing and Forwarding) Definitions for Testing
+
+- name: "Management"
+  rd: "65000:10"
+  description: "Management VRF - isolated routing for management interfaces"
+  enforce_unique: true
+  tags: ["gitops"]
+
+- name: "Production"
+  rd: "65000:100"
+  description: "Production VRF - isolated routing for production workloads"
+  enforce_unique: true
+  tags: ["gitops", "production"]

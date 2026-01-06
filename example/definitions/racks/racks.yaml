@@ -1,0 +1,25 @@
+# Example Racks for Testing
+
+- name: "Rack A-01"
+  slug: "rack-a01"
+  site_slug: "berlin-dc"
+  status: "active"
+  u_height: 42
+  desc_units: true
+  tags: ["gitops"]
+
+- name: "Rack A-02"
+  slug: "rack-a02"
+  site_slug: "berlin-dc"
+  status: "active"
+  u_height: 42
+  desc_units: true
+  tags: ["gitops"]
+
+- name: "Test Rack"
+  slug: "test-rack"
+  site_slug: "test-lab"
+  status: "active"
+  u_height: 24
+  desc_units: true
+  tags: ["gitops", "development"]

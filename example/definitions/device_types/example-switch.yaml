@@ -1,0 +1,7 @@
+# Example Switch Device Type
+manufacturer: "Example Vendor"
+model: "Example Switch 48"
+slug: "example-switch-48"
+u_height: 1
+is_full_depth: true
+comments: "Example 48-port switch for testing"

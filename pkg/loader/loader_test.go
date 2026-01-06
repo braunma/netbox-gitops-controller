@@ -21,15 +21,15 @@ func TestDataLoaderInitialization(t *testing.T) {
 	}
 }
 
-// Integration tests for actual YAML files
+// Integration tests for example YAML files
 func TestLoadDefinitionFiles(t *testing.T) {
 	// Skip if not in project directory
-	if _, err := os.Stat("../../definitions"); os.IsNotExist(err) {
-		t.Skip("Skipping integration test - definitions directory not found")
+	if _, err := os.Stat("../../example/definitions"); os.IsNotExist(err) {
+		t.Skip("Skipping integration test - example definitions directory not found")
 	}
 
 	logger := utils.NewLogger(true)
-	loader := NewDataLoader("../..", logger)
+	loader := NewDataLoader("../../example", logger)
 
 	t.Run("Load Tags", func(t *testing.T) {
 		tags, err := loader.LoadTags("definitions/extras")
@@ -265,12 +265,12 @@ func TestLoadDefinitionFiles(t *testing.T) {
 
 func TestLoadInventoryFiles(t *testing.T) {
 	// Skip if not in project directory
-	if _, err := os.Stat("../../inventory"); os.IsNotExist(err) {
-		t.Skip("Skipping integration test - inventory directory not found")
+	if _, err := os.Stat("../../example/inventory"); os.IsNotExist(err) {
+		t.Skip("Skipping integration test - example inventory directory not found")
 	}
 
 	logger := utils.NewLogger(true)
-	loader := NewDataLoader("../..", logger)
+	loader := NewDataLoader("../../example", logger)
 
 	t.Run("Load Active Devices", func(t *testing.T) {
 		devices, err := loader.LoadDevices("inventory/hardware/active")
@@ -339,14 +339,14 @@ func TestLoadInventoryFiles(t *testing.T) {
 
 func TestYAMLFileValidation(t *testing.T) {
 	// Skip if not in project directory
-	if _, err := os.Stat("../../definitions"); os.IsNotExist(err) {
-		t.Skip("Skipping integration test - definitions directory not found")
+	if _, err := os.Stat("../../example/definitions"); os.IsNotExist(err) {
+		t.Skip("Skipping integration test - example definitions directory not found")
 	}
 
 	// Find all YAML files
 	yamlFiles := []string{}
 
-	definitionsRoot := "../../definitions"
+	definitionsRoot := "../../example/definitions"
 	err := filepath.Walk(definitionsRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -357,10 +357,10 @@ func TestYAMLFileValidation(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Failed to walk definitions directory: %v", err)
+		t.Fatalf("Failed to walk example definitions directory: %v", err)
 	}
 
-	inventoryRoot := "../../inventory"
+	inventoryRoot := "../../example/inventory"
 	err = filepath.Walk(inventoryRoot, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return err
@@ -371,7 +371,7 @@ func TestYAMLFileValidation(t *testing.T) {
 		return nil
 	})
 	if err != nil {
-		t.Fatalf("Failed to walk inventory directory: %v", err)
+		t.Fatalf("Failed to walk example inventory directory: %v", err)
 	}
 
 	if len(yamlFiles) == 0 {

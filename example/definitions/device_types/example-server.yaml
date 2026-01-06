@@ -1,0 +1,7 @@
+# Example Server Device Type
+manufacturer: "Example Vendor"
+model: "Example Server R100"
+slug: "example-server-r100"
+u_height: 2
+is_full_depth: true
+comments: "Example 2U rack server for testing"

@@ -19,21 +19,39 @@ This Python tool enables **declarative management** (Infrastructure as Code) for
 
 ```text
 .
-├── definitions/          # Global Definitions (Blueprints)
-│   ├── sites.yaml        # Data Center Locations
-│   ├── device_types.yaml # Hardware Models (incl. Interface Templates)
-│   ├── roles.yaml        # Device Roles (e.g., Server, Leaf Switch)
-│   ├── vlans.yaml        # Global VLAN Definitions
-│   └── prefixes.yaml     # IP Subnets / Prefixes
-├── inventory/            # Concrete Hardware (Instances)
+├── definitions/          # Your Private Definitions (gitignored)
+│   ├── sites/           # Data Center Locations
+│   ├── device_types/    # Hardware Models (incl. Interface Templates)
+│   ├── roles/           # Device Roles (e.g., Server, Leaf Switch)
+│   ├── vlans/           # VLAN Definitions
+│   ├── prefixes/        # IP Subnets / Prefixes
+│   └── ...              # Other NetBox object types
+├── inventory/           # Your Private Hardware Inventory (gitignored)
 │   └── hardware/
-│       ├── active/       # Active Servers & Switches
-│       └── passive/      # Patch Panels, PDUs
-└── src/                  # Core Logic (Do not modify manually)
-    ├── main.py           # Entry Point
-    ├── base.py           # Core Logic (Idempotency, Caching, Tagging)
-    └── syncers/          # Type-specific synchronization logic
+│       ├── active/      # Active Servers & Switches
+│       └── passive/     # Patch Panels, PDUs
+├── example/             # Public Example Data for Tests
+│   ├── definitions/     # Example definitions (for learning/testing)
+│   └── inventory/       # Example inventory (for learning/testing)
+├── pkg/                 # Go Implementation (Core Logic)
+│   ├── client/          # NetBox API Client
+│   ├── loader/          # YAML Data Loader
+│   ├── models/          # Data Models
+│   ├── reconciler/      # Synchronization Logic
+│   └── utils/           # Utilities
+└── cmd/                 # Command-Line Interface
+    └── netbox-gitops/   # Main Entry Point
 ```
+
+### 🔒 Private Data vs. Public Examples
+
+**Important**: This repository separates your private data from public examples:
+
+- **`definitions/` and `inventory/`**: Your actual private data (excluded from git via `.gitignore`)
+- **`example/`**: Public example data used for tests and documentation (committed to git)
+
+When you run the application, it uses your private `definitions/` and `inventory/` directories.
+When you run tests, they use the `example/` directory.
 
 -----
 
