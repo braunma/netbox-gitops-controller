@@ -1,0 +1,20 @@
+# Example Server Inventory for Testing
+
+- name: "example-server-01"
+  device_type_slug: "example-server-r100"
+  role_slug: "server"
+  site_slug: "berlin-dc"
+  rack_slug: "rack-a01"
+  position: 10
+  face: "front"
+  status: "active"
+  tags: ["gitops", "production"]
+  interfaces:
+    - name: "eth0"
+      type: "1000base-t"
+      enabled: true
+      description: "Management interface"
+    - name: "eth1"
+      type: "10gbase-x-sfpp"
+      enabled: true
+      description: "Data interface"
