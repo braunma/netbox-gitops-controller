@@ -152,7 +152,7 @@ go_validate:
     - go_build
   script:
     - echo "🔍 Validating with Go implementation..."
-    - ./netbox-gitops --data-dir=example --dry-run
+    - ./netbox-gitops --dry-run
     - echo "✅ Validation passed!"
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
@@ -166,7 +166,7 @@ go_plan:
     - go_build
   script:
     - echo "📜 Generating sync plan with Go..."
-    - ./netbox-gitops --data-dir=example --dry-run | tee plan-output.txt
+    - ./netbox-gitops --dry-run | tee plan-output.txt
     - echo "✅ Plan generated successfully!"
   artifacts:
     paths:
@@ -306,8 +306,8 @@ debug_environment:
     - python --version || echo "Python not available"
     - echo "📄 Binary info:"
     - ./netbox-gitops --help || echo "Binary not built yet"
-    - echo "🧪 Testing --data-dir flag:"
-    - ./netbox-gitops --data-dir=example --help || echo "Data dir flag test failed"
+    - echo "🧪 Testing data directory access:"
+    - ls -la definitions/ inventory/ || echo "Data directories not found"
   dependencies:
     - go_build
   when: manual
