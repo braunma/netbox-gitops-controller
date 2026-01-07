@@ -240,9 +240,13 @@ func (dr *DeviceReconciler) reconcileIPAddress(deviceID, ifaceID int, iface *mod
 
 	payload := map[string]interface{}{
 		"address":              ipConfig.Address,
-		"status":               ipConfig.Status,
 		"assigned_object_type": "dcim.interface",
 		"assigned_object_id":   ifaceID,
+	}
+
+	// Only include status if explicitly set (NetBox rejects empty string)
+	if ipConfig.Status != "" {
+		payload["status"] = ipConfig.Status
 	}
 
 	if ipConfig.DNSName != "" {
