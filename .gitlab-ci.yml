@@ -212,8 +212,9 @@ python_test:
     - if: $RUN_TESTS == "false"
       when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: manual
     - if: $CI_COMMIT_BRANCH
-  when: manual
+      when: manual
 
 python_validate:
   extends: .python_base
@@ -224,8 +225,9 @@ python_validate:
     - python src/main.py --dry-run
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: manual
     - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
-  when: manual
+      when: manual
 
 python_apply:
   extends: .python_base
