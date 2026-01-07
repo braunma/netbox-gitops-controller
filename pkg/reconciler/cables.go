@@ -3,6 +3,7 @@ package reconciler
 import (
 	"fmt"
 	"sort"
+	"strings"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
@@ -23,6 +24,42 @@ func NewCableReconciler(c *client.NetBoxClient) *CableReconciler {
 		logger:        c.Logger(),
 		processedPairs: make(map[string]bool),
 	}
+}
+
+// cableColorMap maps color names to hex codes (matches Python constants.py:CABLE_COLOR_MAP)
+var cableColorMap = map[string]string{
+	"purple": "800080",
+	"blue":   "0000ff",
+	"yellow": "ffff00",
+	"red":    "ff0000",
+	"white":  "ffffff",
+	"black":  "000000",
+	"gray":   "808080",
+	"grey":   "808080",
+	"orange": "ffa500",
+	"green":  "008000",
+}
+
+// normalizeColor converts color names to hex codes and strips # prefix
+// Matches Python utils.py:normalize_color (lines 44-50)
+func normalizeColor(colorInput string) string {
+	if colorInput == "" {
+		return ""
+	}
+
+	// Convert to lowercase and trim
+	raw := strings.ToLower(strings.TrimSpace(colorInput))
+
+	// Try to map color name to hex
+	if hexCode, ok := cableColorMap[raw]; ok {
+		return hexCode
+	}
+
+	// Already hex format, strip # if present
+	raw = strings.TrimPrefix(raw, "#")
+
+	// Return as-is (could be hex without #, or invalid)
+	return raw
 }
 
 // CableEndpoint represents one end of a cable
@@ -197,11 +234,13 @@ func (cr *CableReconciler) verifyCable(cable client.Object, aEnd, bEnd *CableEnd
 		}
 	}
 
-	// Check color
+	// Check color (normalize color name to hex for comparison)
 	if link.Color != "" {
+		normalizedColor := normalizeColor(link.Color)
 		if color, ok := cable["color"].(string); ok {
-			if color != link.Color {
-				cr.logger.Debug("│ Cable color mismatch: %s != %s", color, link.Color)
+			// NetBox stores color without # prefix
+			if color != normalizedColor {
+				cr.logger.Debug("│ Cable color mismatch: %s != %s (normalized: %s)", color, link.Color, normalizedColor)
 				return false
 			}
 		}
@@ -244,8 +283,9 @@ func (cr *CableReconciler) createCable(aEnd, bEnd *CableEndpoint, link *models.L
 			cr.logger.Debug("│   Type: %s", link.CableType)
 		}
 		if link.Color != "" {
-			payload["color"] = link.Color
-			cr.logger.Debug("│   Color: %s", link.Color)
+			normalizedColor := normalizeColor(link.Color)
+			payload["color"] = normalizedColor
+			cr.logger.Debug("│   Color: %s (normalized: %s)", link.Color, normalizedColor)
 		}
 		if link.Length > 0 {
 			payload["length"] = link.Length
@@ -283,7 +323,7 @@ func (cr *CableReconciler) updateCable(cable client.Object, link *models.LinkCon
 		updates["type"] = link.CableType
 	}
 	if link.Color != "" {
-		updates["color"] = link.Color
+		updates["color"] = normalizeColor(link.Color)
 	}
 	if link.Length > 0 {
 		updates["length"] = link.Length
