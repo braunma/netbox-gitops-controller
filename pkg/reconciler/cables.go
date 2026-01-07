@@ -417,26 +417,24 @@ func (cr *CableReconciler) checkAndCleanPeerPort(aEnd, bEnd *CableEndpoint, link
 	cr.logger.Warning("│ Peer port has cable to DIFFERENT device")
 	cr.logger.Warning("│ Existing cable ID %d blocks our connection", cableID)
 
-	// Check if the existing cable is managed by GitOps
-	tags, _ := existingCable["tags"].([]interface{})
-	isManaged := false
-	managedTagID := cr.client.ManagedTagID()
-	for _, tag := range tags {
-		if tagMap, ok := tag.(map[string]interface{}); ok {
-			if tagID, ok := tagMap["id"].(float64); ok && int(tagID) == managedTagID {
-				isManaged = true
-				break
-			}
-		}
+	// Python device_controller.py lines 628-637:
+	// Special handling for backbone cables (rearport to rearport between patch panels)
+	// vs. regular blocking cables - but BOTH use force=True to skip managed check
+
+	// Check if this is a backbone cable scenario (B-end is rearport to patch panel)
+	if bEnd.ObjectType == "dcim.rearport" {
+		// This would be a patch panel backbone cable
+		// Python checks: if term_b_type == "dcim.rearport" and is_dst_pp
+		// If the existing cable doesn't connect to our A-end, it's the wrong backbone
+		cr.logger.Info("│ Deleting wrong backbone cable ID %d (forced)", cableID)
+	} else {
+		// Regular blocking cable on frontport or interface
+		cr.logger.Info("│ Deleting blocking cable ID %d (forced)", cableID)
 	}
 
-	if !isManaged {
-		cr.logger.Warning("│ Cannot delete unmanaged cable - skipping")
-		return false, fmt.Errorf("peer port has unmanaged cable (ID: %d), cannot connect", cableID)
-	}
-
-	// Delete the blocking cable (matches Python behavior)
-	cr.logger.Info("│ Deleting blocking cable ID %d", cableID)
+	// Delete the cable (matches Python force=True behavior - no managed check)
+	// Python: self._safe_delete(peer_cable, reason, force=True)
+	// With force=True, Python skips the is_managed_by_gitops check (line 67)
 	if !cr.client.IsDryRun() {
 		if err := cr.client.Delete("dcim", "cables", cableID); err != nil {
 			return false, fmt.Errorf("failed to delete blocking cable: %w", err)
