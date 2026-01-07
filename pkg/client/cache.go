@@ -68,8 +68,9 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 
 	// Load site-specific resources with composite keys
 	resources := map[string]string{
-		"vlans": "ipam/vlans",
-		"racks": "dcim/racks",
+		"vlans":       "ipam/vlans",
+		"racks":       "dcim/racks",
+		"vlan_groups": "ipam/vlan-groups", // Can be site-specific or global
 	}
 
 	for resource, path := range resources {
@@ -78,6 +79,14 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 		if err := cm.loadResource(resource, path, filters, siteID); err != nil {
 			return fmt.Errorf("failed to load %s: %w", resource, err)
 		}
+	}
+
+	// Also load global VLAN groups (those without site_id)
+	if err := cm.loadResource("vlan_groups", "ipam/vlan-groups", map[string]interface{}{
+		"site_id": "null", // NetBox filter for null site
+	}, 0); err != nil {
+		cm.client.logger.Warning("Failed to load global VLAN groups: %v", err)
+		// Don't fail - this is not critical
 	}
 
 	return nil

@@ -121,9 +121,17 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 		}
 
 		if vlan.GroupSlug != "" {
-			groupID, ok := nr.client.Cache().GetID("vlan_groups", vlan.GroupSlug)
+			// VLAN groups can be site-specific OR global
+			// Try site-scoped lookup first (most common), then global fallback
+			groupID, ok := nr.client.Cache().GetSiteID("vlan_groups", siteID, vlan.GroupSlug)
+			if !ok {
+				// Fallback: try global VLAN group (no site)
+				groupID, ok = nr.client.Cache().GetGlobalID("vlan_groups", vlan.GroupSlug)
+			}
 			if ok {
 				payload["group"] = groupID
+			} else {
+				nr.logger.Warning("VLAN group %s not found for VLAN %s", vlan.GroupSlug, vlan.Name)
 			}
 		}
 
@@ -174,11 +182,25 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 		}
 
 		if prefix.VLANName != "" {
-			// Need to find VLAN by name
-			// This is a simplified lookup - in production you'd need site context
-			vlanID, ok := nr.client.Cache().GetID("vlans", prefix.VLANName)
-			if ok {
-				payload["vlan"] = vlanID
+			// CRITICAL: VLAN lookup must be site-aware to avoid cache collisions
+			// If prefix has a site, use site-scoped VLAN lookup
+			if prefix.SiteSlug != "" {
+				siteID, ok := nr.client.Cache().GetGlobalID("sites", prefix.SiteSlug)
+				if ok {
+					vlanID, ok := nr.client.Cache().GetSiteID("vlans", siteID, prefix.VLANName)
+					if ok {
+						payload["vlan"] = vlanID
+					} else {
+						nr.logger.Warning("VLAN %s not found at site %s for prefix %s", prefix.VLANName, prefix.SiteSlug, prefix.Prefix)
+					}
+				}
+			} else {
+				// Fallback: prefix has no site, try legacy lookup (rare case)
+				nr.logger.Warning("Prefix %s has VLAN but no site - using legacy lookup", prefix.Prefix)
+				vlanID, ok := nr.client.Cache().GetID("vlans", prefix.VLANName)
+				if ok {
+					payload["vlan"] = vlanID
+				}
 			}
 		}
 
