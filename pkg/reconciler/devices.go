@@ -86,19 +86,26 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		"status":      device.Status,
 	}
 
+	// Handle rack assignment and related fields (position, face)
+	// These fields can only be set if a rack is assigned
+	var hasRack bool
 	if device.RackSlug != "" {
 		rackID, ok := dr.client.Cache().GetID("racks", device.RackSlug)
 		if ok {
 			payload["rack"] = rackID
+			hasRack = true
 		}
 	}
 
-	if device.Position > 0 {
-		payload["position"] = device.Position
-	}
-
-	if device.Face != "" {
-		payload["face"] = device.Face
+	// Only set position and face if we have a rack assigned
+	// NetBox API requirement: face cannot be set without a rack
+	if hasRack {
+		if device.Position > 0 {
+			payload["position"] = device.Position
+		}
+		if device.Face != "" {
+			payload["face"] = device.Face
+		}
 	}
 
 	if device.Serial != "" {
