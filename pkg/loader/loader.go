@@ -178,7 +178,8 @@ func (dl *DataLoader) loadFromFolder(folder string, target interface{}) error {
 	return nil
 }
 
-// loadFile loads a single YAML file
+// loadFile loads a single YAML file and appends items to target
+// Matches Python loader.py line 56: results.extend([model(**item) for item in data])
 func (dl *DataLoader) loadFile(path string, target interface{}) error {
 	file, err := os.Open(path)
 	if err != nil {
@@ -197,15 +198,88 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		return fmt.Errorf("failed to unmarshal YAML: %w", err)
 	}
 
-	// Re-marshal and unmarshal into target type
-	// This is a bit inefficient but ensures type safety
-	data, err := yaml.Marshal(items)
-	if err != nil {
-		return fmt.Errorf("failed to re-marshal items: %w", err)
-	}
-
-	if err := yaml.Unmarshal(data, target); err != nil {
-		return fmt.Errorf("failed to unmarshal into target: %w", err)
+	// Get current target slice and append items from this file
+	// We need to use reflection to append to the slice properly
+	switch t := target.(type) {
+	case *[]*models.Site:
+		var newItems []*models.Site
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal sites: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.Rack:
+		var newItems []*models.Rack
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal racks: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.Role:
+		var newItems []*models.Role
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal roles: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.Tag:
+		var newItems []*models.Tag
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal tags: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.VLAN:
+		var newItems []*models.VLAN
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal vlans: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.VLANGroup:
+		var newItems []*models.VLANGroup
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal vlan groups: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.VRF:
+		var newItems []*models.VRF
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal vrfs: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.Prefix:
+		var newItems []*models.Prefix
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal prefixes: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.DeviceType:
+		var newItems []*models.DeviceType
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal device types: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.ModuleType:
+		var newItems []*models.ModuleType
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal module types: %w", err)
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.DeviceConfig:
+		var newItems []*models.DeviceConfig
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal devices: %w", err)
+		}
+		*t = append(*t, newItems...)
+	default:
+		return fmt.Errorf("unsupported target type: %T", target)
 	}
 
 	return nil
