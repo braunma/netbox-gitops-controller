@@ -24,6 +24,24 @@
 #   PYTHON_IMAGE               Python image for utilities
 #                              Default: "python:3.11-slim"
 #
+# PIPELINE SPEED CONTROLS:
+# ------------------------
+# Speed up your pipelines by skipping optional quality checks and tests.
+# Set these per-pipeline run or as project variables:
+#
+#   RUN_QUALITY_CHECKS         Skip linting and YAML validation
+#                              Set to "false" to skip (default: "true")
+#                              Skips: go_lint, yaml_check
+#
+#   RUN_TESTS                  Skip test execution
+#                              Set to "false" to skip (default: "true")
+#                              Skips: go_test, python_test
+#
+# HOW TO USE:
+# 1. Per-pipeline: GitLab → CI/CD → Run Pipeline → Add variable
+# 2. Project-wide: GitLab → Settings → CI/CD → Variables
+# 3. Example: Set RUN_QUALITY_CHECKS=false for faster development iterations
+#
 # =============================================================================
 
 stages:
@@ -46,6 +64,21 @@ variables:
   GOLANG_IMAGE: "golang:1.24"
   PYTHON_IMAGE: "python:3.11-slim"
   PYTHON_LEGACY_IMAGE: "python:3.11"  # Override with your custom image if needed
+
+  # ===========================================================================
+  # PIPELINE CONTROL VARIABLES
+  # Set these per-pipeline to skip optional jobs and speed up execution
+  # ===========================================================================
+
+  # RUN_QUALITY_CHECKS: Controls linting and YAML validation jobs
+  # Set to "false" to skip quality checks (faster pipeline)
+  # Default: "true" - runs all quality checks
+  RUN_QUALITY_CHECKS: "true"
+
+  # RUN_TESTS: Controls test execution (go_test, python_test)
+  # Set to "false" to skip tests (faster pipeline)
+  # Default: "true" - runs all tests
+  RUN_TESTS: "true"
 
   # ===========================================================================
   # BUILD CONFIGURATION
@@ -89,6 +122,8 @@ go_test:
     - go test ./pkg/... -v -cover -race
     - echo "✅ All Go tests passed!"
   rules:
+    - if: $RUN_TESTS == "false"
+      when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
@@ -174,6 +209,8 @@ python_test:
     - python -m pytest tests/ || echo "No Python tests found"
   allow_failure: true
   rules:
+    - if: $RUN_TESTS == "false"
+      when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
   when: manual
@@ -217,6 +254,8 @@ go_lint:
     - echo "✅ Linting passed!"
   allow_failure: true
   rules:
+    - if: $RUN_QUALITY_CHECKS == "false"
+      when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
@@ -244,6 +283,8 @@ yaml_check:
       print('✅ All found YAML files are valid!')
       "
   rules:
+    - if: $RUN_QUALITY_CHECKS == "false"
+      when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
