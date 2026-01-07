@@ -417,26 +417,10 @@ func (cr *CableReconciler) checkAndCleanPeerPort(aEnd, bEnd *CableEndpoint, link
 	cr.logger.Warning("│ Peer port has cable to DIFFERENT device")
 	cr.logger.Warning("│ Existing cable ID %d blocks our connection", cableID)
 
-	// Check if the existing cable is managed by GitOps
-	tags, _ := existingCable["tags"].([]interface{})
-	isManaged := false
-	managedTagID := cr.client.ManagedTagID()
-	for _, tag := range tags {
-		if tagMap, ok := tag.(map[string]interface{}); ok {
-			if tagID, ok := tagMap["id"].(float64); ok && int(tagID) == managedTagID {
-				isManaged = true
-				break
-			}
-		}
-	}
-
-	if !isManaged {
-		cr.logger.Warning("│ Cannot delete unmanaged cable - skipping")
-		return false, fmt.Errorf("peer port has unmanaged cable (ID: %d), cannot connect", cableID)
-	}
-
-	// Delete the blocking cable (matches Python behavior)
-	cr.logger.Info("│ Deleting blocking cable ID %d", cableID)
+	// Delete the blocking cable (matches Python behavior with force=True)
+	// Python: self._safe_delete(peer_cable, "blocking target port", force=True)
+	// The force=True parameter in Python skips the managed check, so we do the same here
+	cr.logger.Info("│ Deleting blocking cable ID %d (forced)", cableID)
 	if !cr.client.IsDryRun() {
 		if err := cr.client.Delete("dcim", "cables", cableID); err != nil {
 			return false, fmt.Errorf("failed to delete blocking cable: %w", err)
