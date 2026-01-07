@@ -86,19 +86,25 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		"status":      device.Status,
 	}
 
+	// Track if rack was successfully set (needed for position/face validation)
+	rackSet := false
 	if device.RackSlug != "" {
 		rackID, ok := dr.client.Cache().GetID("racks", device.RackSlug)
 		if ok {
 			payload["rack"] = rackID
+			rackSet = true
 		}
 	}
 
-	if device.Position > 0 {
-		payload["position"] = device.Position
-	}
+	// Only set position and face if rack is assigned (NetBox requirement)
+	if rackSet {
+		if device.Position > 0 {
+			payload["position"] = device.Position
+		}
 
-	if device.Face != "" {
-		payload["face"] = device.Face
+		if device.Face != "" {
+			payload["face"] = device.Face
+		}
 	}
 
 	if device.Serial != "" {
