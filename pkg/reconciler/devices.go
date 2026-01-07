@@ -753,7 +753,12 @@ func (dr *DeviceReconciler) reconcileRearPorts(deviceID int, device *models.Devi
 
 // reconcilePendingCables processes all pending cable connections
 func (dr *DeviceReconciler) reconcilePendingCables() error {
-	// Build a lookup map for all ports by device+name
+	// Build a lookup map ONLY for source ports (which are already known from device reconciliation)
+	// DO NOT pre-cache peer ports - they must be looked up dynamically based on source device role
+	// This is because the same port name (e.g., pp-rack-a-01[2]) can be BOTH:
+	//   - A frontport (when accessed from server/switch)
+	//   - A rearport (when used for patch panel backbone cables)
+	// Python does fresh role-based lookups for each cable (device_controller.py:536-558)
 	portLookup := make(map[string]portInfo)
 
 	dr.logger.Debug("Building port lookup table from %d pending cables...", len(dr.pendingCables))
@@ -765,15 +770,9 @@ func (dr *DeviceReconciler) reconcilePendingCables() error {
 			device:     pc.sourceDevice,
 			port:       pc.sourcePort,
 		}
-
-		// Also try to find the peer port (using role-based logic to determine port type)
-		peerKey := fmt.Sprintf("%s::%s", pc.link.PeerDevice, pc.link.PeerPort)
-		if _, exists := portLookup[peerKey]; !exists {
-			// Query NetBox for peer port, passing source role for correct port type determination
-			if peerInfo := dr.findPort(pc.link.PeerDevice, pc.link.PeerPort, pc.sourceRole); peerInfo != nil {
-				portLookup[peerKey] = *peerInfo
-			}
-		}
+		// NOTE: We do NOT pre-cache peer ports here!
+		// Peer ports will be looked up dynamically during cable reconciliation
+		// using role-based logic (findPort with sourceRole parameter)
 	}
 
 	dr.logger.Debug("Port lookup table built with %d entries", len(portLookup))
@@ -781,18 +780,21 @@ func (dr *DeviceReconciler) reconcilePendingCables() error {
 	// Now reconcile each cable
 	for _, pc := range dr.pendingCables {
 		sourceKey := fmt.Sprintf("%s::%s", pc.sourceDevice, pc.sourcePort)
-		peerKey := fmt.Sprintf("%s::%s", pc.link.PeerDevice, pc.link.PeerPort)
 
 		source, sourceOK := portLookup[sourceKey]
-		peer, peerOK := portLookup[peerKey]
 
 		if !sourceOK {
 			dr.logger.Warning("Source port not found: %s", sourceKey)
 			continue
 		}
 
-		if !peerOK {
-			dr.logger.Warning("Peer port not found: %s (from %s)", peerKey, sourceKey)
+		// Look up peer port dynamically using role-based logic (NOT from cached lookup)
+		// This ensures pp-rack-a-01[2] is found as frontport when source is server,
+		// but as rearport when source is patch-panel (for backbone cables)
+		peerInfo := dr.findPort(pc.link.PeerDevice, pc.link.PeerPort, pc.sourceRole)
+		if peerInfo == nil {
+			dr.logger.Warning("Peer port not found: %s::%s (from %s, role=%s)",
+				pc.link.PeerDevice, pc.link.PeerPort, sourceKey, pc.sourceRole)
 			continue
 		}
 
@@ -805,16 +807,16 @@ func (dr *DeviceReconciler) reconcilePendingCables() error {
 		}
 
 		bEnd := &CableEndpoint{
-			DeviceName: peer.device,
-			PortName:   peer.port,
-			ObjectType: peer.objectType,
-			ObjectID:   peer.objectID,
+			DeviceName: peerInfo.device,
+			PortName:   peerInfo.port,
+			ObjectType: peerInfo.objectType,
+			ObjectID:   peerInfo.objectID,
 		}
 
 		// Reconcile the cable
 		if err := dr.cableReconciler.ReconcileCable(aEnd, bEnd, pc.link); err != nil {
 			return fmt.Errorf("failed to reconcile cable %s[%s] <-> %s[%s]: %w",
-				source.device, source.port, peer.device, peer.port, err)
+				source.device, source.port, peerInfo.device, peerInfo.port, err)
 		}
 	}
 
