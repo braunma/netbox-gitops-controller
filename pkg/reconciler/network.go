@@ -91,10 +91,25 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 	nr.logger.Info("Reconciling %d VLANs...", len(vlans))
 
 	for _, vlan := range vlans {
-		// Get site ID
-		siteID, ok := nr.client.Cache().GetID("sites", vlan.SiteSlug)
-		if !ok {
+		// Get site ID using LIVE lookup (not cache) - matches Python ipam.py pattern
+		sites, err := nr.client.Filter("dcim", "sites", map[string]interface{}{
+			"slug": vlan.SiteSlug,
+		})
+		if err != nil || len(sites) == 0 {
+			// Fallback: Try by name
+			sites, err = nr.client.Filter("dcim", "sites", map[string]interface{}{
+				"name": vlan.SiteSlug,
+			})
+		}
+
+		if err != nil || len(sites) == 0 {
 			nr.logger.Warning("Site %s not found for VLAN %s, skipping", vlan.SiteSlug, vlan.Name)
+			continue
+		}
+
+		siteID := utils.GetIDFromObject(sites[0])
+		if siteID == 0 {
+			nr.logger.Warning("Site %s has invalid ID for VLAN %s, skipping", vlan.SiteSlug, vlan.Name)
 			continue
 		}
 
@@ -124,7 +139,7 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			"vid":     vlan.VID,
 		}
 
-		_, err := nr.client.Apply("ipam", "vlans", lookup, payload)
+		_, err = nr.client.Apply("ipam", "vlans", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN %s: %w", vlan.Name, err)
 		}

@@ -66,6 +66,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 	dataLoader := loader.NewDataLoader(dataDir, logger)
 
 	// =========================================================================
+	// LOAD GLOBAL CACHES (MUST BE BEFORE PHASE 1)
+	// =========================================================================
+	// Python does this in main.py lines 154-156 BEFORE device reconciliation
+	// We need to load it even earlier because foundation reconciler needs it
+	logger.Info("Loading global caches...")
+	if err := c.Cache().LoadGlobal(); err != nil {
+		logger.Error("Failed to load global caches", err)
+		return err
+	}
+
+	// =========================================================================
 	// PHASE 1: FOUNDATION
 	// =========================================================================
 	logger.Info("═══════════════════════════════════════════════════════")
@@ -202,13 +213,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 	logger.Info("═══════════════════════════════════════════════════════")
 	logger.Info("Phase 3: Devices")
 	logger.Info("═══════════════════════════════════════════════════════")
-
-	// Load global caches
-	logger.Info("Loading global caches...")
-	if err := c.Cache().LoadGlobal(); err != nil {
-		logger.Error("Failed to load global caches", err)
-		return err
-	}
 
 	// Load devices from inventory
 	activeDevices, err := dataLoader.LoadDevices(buildPath(dataDir, "inventory/hardware/active"))

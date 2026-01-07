@@ -61,10 +61,26 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 	fr.logger.Info("Reconciling %d racks...", len(racks))
 
 	for _, rack := range racks {
-		// Get site ID
-		siteID, ok := fr.client.Cache().GetID("sites", rack.SiteSlug)
-		if !ok {
+		// Get site ID using LIVE lookup (not cache) - matches Python dcim.py lines 26-30
+		// This is critical because the site might have been just created and not in cache yet
+		sites, err := fr.client.Filter("dcim", "sites", map[string]interface{}{
+			"slug": rack.SiteSlug,
+		})
+		if err != nil || len(sites) == 0 {
+			// Fallback: Try by name
+			sites, err = fr.client.Filter("dcim", "sites", map[string]interface{}{
+				"name": rack.SiteSlug,
+			})
+		}
+
+		if err != nil || len(sites) == 0 {
 			fr.logger.Warning("Site %s not found for rack %s, skipping", rack.SiteSlug, rack.Name)
+			continue
+		}
+
+		siteID := utils.GetIDFromObject(sites[0])
+		if siteID == 0 {
+			fr.logger.Warning("Site %s has invalid ID for rack %s, skipping", rack.SiteSlug, rack.Name)
 			continue
 		}
 
@@ -89,7 +105,7 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 			"name":    rack.Name,
 		}
 
-		_, err := fr.client.Apply("dcim", "racks", lookup, payload)
+		_, err = fr.client.Apply("dcim", "racks", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile rack %s: %w", rack.Name, err)
 		}
