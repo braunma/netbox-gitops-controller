@@ -82,8 +82,10 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	var finalRackID int
 
 	// Get rack ID from YAML config if specified
+	// CRITICAL: Use site-scoped lookup - racks are site-specific
+	// (matches Python line 157 pattern but fixes cache collision bug)
 	if device.RackSlug != "" {
-		if rackID, ok := dr.client.Cache().GetID("racks", device.RackSlug); ok {
+		if rackID, ok := dr.client.Cache().GetSiteID("racks", siteID, device.RackSlug); ok {
 			yamlRackID = rackID
 		}
 	}
@@ -441,11 +443,17 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 
 		bayID := utils.GetIDFromObject(bays[0])
 
+		// Default status to "active" if not provided (matches Python line 378)
+		status := module.Status
+		if status == "" {
+			status = "active"
+		}
+
 		payload := map[string]interface{}{
 			"device":      deviceID,
 			"module_bay":  bayID,
 			"module_type": moduleTypeID,
-			"status":      module.Status,
+			"status":      status,
 		}
 
 		// Add serial - always set to empty string if not provided (matches Python behavior)
