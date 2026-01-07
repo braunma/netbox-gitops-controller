@@ -78,6 +78,22 @@ func (cr *CableReconciler) ReconcileCable(aEnd, bEnd *CableEndpoint, link *model
 		}
 		cr.logger.Success("│ Result: Cable updated successfully")
 	} else {
+		// CRITICAL: Check if peer port already has a cable (Python device_controller.py lines 607-639)
+		// This prevents "Duplicate termination" errors
+		cr.logger.Debug("│ No existing cable found")
+		cr.logger.Debug("│ Checking peer port for existing cables...")
+
+		skipCreation, err := cr.checkAndCleanPeerPort(aEnd, bEnd, link)
+		if err != nil {
+			return fmt.Errorf("failed to check peer port: %w", err)
+		}
+
+		if skipCreation {
+			// Peer already has correct cable - idempotent, no action needed
+			cr.logger.Debug("└────────────────────────────────────────────────")
+			return nil
+		}
+
 		// Create new cable
 		cr.logger.Info("│ Action: Creating new cable")
 		if err := cr.createCable(aEnd, bEnd, link); err != nil {
@@ -286,6 +302,139 @@ func (cr *CableReconciler) updateCable(cable client.Object, link *models.LinkCon
 	}
 
 	return cr.client.Update("dcim", "cables", cableID, updates)
+}
+
+// checkAndCleanPeerPort checks if the peer port (B-end) already has a cable
+// Returns (skipCreation, error) - skipCreation=true means cable already exists correctly
+// Matches Python device_controller.py lines 607-639: "Peer-Port prüfen (Stray cables)"
+func (cr *CableReconciler) checkAndCleanPeerPort(aEnd, bEnd *CableEndpoint, link *models.LinkConfig) (bool, error) {
+	// Determine the endpoint type to query
+	var endpoint string
+	switch bEnd.ObjectType {
+	case "dcim.interface":
+		endpoint = "interfaces"
+	case "dcim.frontport":
+		endpoint = "front-ports"
+	case "dcim.rearport":
+		endpoint = "rear-ports"
+	default:
+		return false, fmt.Errorf("unknown endpoint type: %s", bEnd.ObjectType)
+	}
+
+	// Fetch the fresh peer port object to check if it has a cable
+	peerPorts, err := cr.client.Filter("dcim", endpoint, map[string]interface{}{
+		"id": bEnd.ObjectID,
+	})
+	if err != nil || len(peerPorts) == 0 {
+		// If we can't find the port, proceed anyway - it might be a timing issue
+		cr.logger.Debug("│ Could not fetch peer port (may be OK): %v", err)
+		return false, nil
+	}
+
+	peerPort := peerPorts[0]
+
+	// Check if peer port has an existing cable
+	cableRef, hasCable := peerPort["cable"]
+	if !hasCable || cableRef == nil {
+		cr.logger.Debug("│ Peer port has no existing cable")
+		return false, nil
+	}
+
+	// Extract cable ID from the reference
+	var cableID int
+	switch v := cableRef.(type) {
+	case float64:
+		cableID = int(v)
+	case map[string]interface{}:
+		if id, ok := v["id"].(float64); ok {
+			cableID = int(id)
+		}
+	}
+
+	if cableID == 0 {
+		cr.logger.Debug("│ Peer port cable reference is invalid")
+		return false, nil
+	}
+
+	// Fetch the existing cable on the peer port
+	existingCable, err := cr.client.Get("dcim", "cables", cableID)
+	if err != nil || existingCable == nil {
+		cr.logger.Debug("│ Could not fetch peer cable ID %d: %v", cableID, err)
+		return false, nil
+	}
+
+	cr.logger.Debug("│ Peer port already has cable ID: %d", cableID)
+
+	// Check if this cable connects to our A-end (correct cable - idempotent case)
+	if cr.cableConnectsTo(existingCable, aEnd.ObjectID) {
+		cr.logger.Info("│ Peer port already has correct cable (ID: %d)", cableID)
+		cr.logger.Info("│ Action: No changes needed (idempotent)")
+		// This is OK - the cable already exists correctly, skip creation
+		return true, nil
+	}
+
+	// The peer has a cable to a DIFFERENT device - this is a conflict
+	cr.logger.Warning("│ Peer port has cable to DIFFERENT device")
+	cr.logger.Warning("│ Existing cable ID %d blocks our connection", cableID)
+
+	// Check if the existing cable is managed by GitOps
+	tags, _ := existingCable["tags"].([]interface{})
+	isManaged := false
+	managedTagID := cr.client.ManagedTagID()
+	for _, tag := range tags {
+		if tagMap, ok := tag.(map[string]interface{}); ok {
+			if tagID, ok := tagMap["id"].(float64); ok && int(tagID) == managedTagID {
+				isManaged = true
+				break
+			}
+		}
+	}
+
+	if !isManaged {
+		cr.logger.Warning("│ Cannot delete unmanaged cable - skipping")
+		return false, fmt.Errorf("peer port has unmanaged cable (ID: %d), cannot connect", cableID)
+	}
+
+	// Delete the blocking cable (matches Python behavior)
+	cr.logger.Info("│ Deleting blocking cable ID %d", cableID)
+	if !cr.client.IsDryRun() {
+		if err := cr.client.Delete("dcim", "cables", cableID); err != nil {
+			return false, fmt.Errorf("failed to delete blocking cable: %w", err)
+		}
+		cr.logger.Success("│ Deleted blocking cable")
+	} else {
+		cr.logger.DryRun("DELETE", "Blocking cable ID %d", cableID)
+	}
+
+	return false, nil
+}
+
+// cableConnectsTo checks if a cable has a termination connecting to the specified object ID
+// Matches Python _cable_connects_to helper
+func (cr *CableReconciler) cableConnectsTo(cable client.Object, targetObjectID int) bool {
+	// Check A terminations
+	if aTerms, ok := cable["a_terminations"].([]interface{}); ok {
+		for _, term := range aTerms {
+			if termMap, ok := term.(map[string]interface{}); ok {
+				if objID, ok := termMap["object_id"].(float64); ok && int(objID) == targetObjectID {
+					return true
+				}
+			}
+		}
+	}
+
+	// Check B terminations
+	if bTerms, ok := cable["b_terminations"].([]interface{}); ok {
+		for _, term := range bTerms {
+			if termMap, ok := term.(map[string]interface{}); ok {
+				if objID, ok := termMap["object_id"].(float64); ok && int(objID) == targetObjectID {
+					return true
+				}
+			}
+		}
+	}
+
+	return false
 }
 
 // Reset clears the processed pairs cache (call between reconciliation runs)
