@@ -222,6 +222,13 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 
 // reconcileInterfaces reconciles device interfaces
 func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.DeviceConfig) error {
+	// Get device's site ID for site-aware VLAN lookups
+	// VLANs with the same name can exist at different sites, so we use site-scoped cache
+	siteID, ok := dr.client.Cache().GetGlobalID("sites", device.SiteSlug)
+	if !ok {
+		return fmt.Errorf("site %s not found in cache", device.SiteSlug)
+	}
+
 	for i, iface := range device.Interfaces {
 		dr.logger.Debug("    Interface %d/%d: %s", i+1, len(device.Interfaces), iface.Name)
 
@@ -251,19 +258,27 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 			payload["mode"] = iface.Mode
 		}
 
+		// CRITICAL: Use site-scoped cache lookup for VLANs
+		// VLANs are cached with composite keys: "site-{siteID}:{vlanName}"
+		// This prevents collisions when multiple sites have VLANs with same name
+		// (Enterprise fix: matches Python pattern but with proper site scoping)
 		if iface.UntaggedVLAN != "" {
-			vlanID, ok := dr.client.Cache().GetID("vlans", iface.UntaggedVLAN)
+			vlanID, ok := dr.client.Cache().GetSiteID("vlans", siteID, iface.UntaggedVLAN)
 			if ok {
 				payload["untagged_vlan"] = vlanID
 				dr.logger.Debug("      Untagged VLAN: %s (ID: %d)", iface.UntaggedVLAN, vlanID)
+			} else {
+				dr.logger.Warning("      Untagged VLAN %s not found at site %s (ID: %d)", iface.UntaggedVLAN, device.SiteSlug, siteID)
 			}
 		}
 
 		if len(iface.TaggedVLANs) > 0 {
 			var vlanIDs []int
 			for _, vlanName := range iface.TaggedVLANs {
-				if vlanID, ok := dr.client.Cache().GetID("vlans", vlanName); ok {
+				if vlanID, ok := dr.client.Cache().GetSiteID("vlans", siteID, vlanName); ok {
 					vlanIDs = append(vlanIDs, vlanID)
+				} else {
+					dr.logger.Warning("      Tagged VLAN %s not found at site %s (ID: %d)", vlanName, device.SiteSlug, siteID)
 				}
 			}
 			if len(vlanIDs) > 0 {
