@@ -220,7 +220,14 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	obj := existing[0]
 	objID := utils.GetIDFromObject(obj)
 	if objID == 0 {
-		return nil, fmt.Errorf("object has no ID")
+		// Enhanced error message with object details for debugging
+		c.logger.Error("Failed to extract ID from object: %+v", nil, obj)
+		if idVal, exists := obj["id"]; exists {
+			c.logger.Error("ID field exists but has unexpected type: %T with value: %v", nil, idVal, idVal)
+		} else {
+			c.logger.Error("ID field does not exist in object. Available fields: %v", nil, getObjectKeys(obj))
+		}
+		return nil, fmt.Errorf("object has no ID (type: %s)", endpoint)
 	}
 
 	// Calculate diff
@@ -446,4 +453,13 @@ func (c *NetBoxClient) ManagedTagID() int {
 // Logger returns the logger
 func (c *NetBoxClient) Logger() *utils.Logger {
 	return c.logger
+}
+
+// getObjectKeys returns a list of keys in an object for debugging
+func getObjectKeys(obj Object) []string {
+	keys := make([]string, 0, len(obj))
+	for k := range obj {
+		keys = append(keys, k)
+	}
+	return keys
 }
