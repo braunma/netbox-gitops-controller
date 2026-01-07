@@ -19,17 +19,68 @@ from src.utils import (
 console = Console()
 
 class NetBoxClient:
-    def __init__(self, url: str, token: str, dry_run: bool = False):
-        self.nb = pynetbox.api(url, token=token)
-        self.nb.http_session.verify = False 
-        self.dry_run = dry_run
-        
-        self.cache = {
-            'sites': {}, 'roles': {}, 'device_types': {}, 'racks': {},
-            'vlans': {}, 'vrfs': {}, 'tags': {}, 'module_types': {},
-            'manufacturers': {}
+    """
+    Modern NetBox client for device and cable reconciliation.
+
+    CACHING STRATEGY (New - Eager Loading):
+    ========================================
+    This client uses eager pre-loading of all required resources before reconciliation.
+    All caches are populated upfront via reload_global_cache() and reload_cache().
+
+    IMPORTANT FOR GO MIGRATION:
+    - Eager loading is IDEAL for concurrent goroutines (no race conditions)
+    - All data loaded once → read-only access → safe for parallel processing
+    - In Go, populate caches in main goroutine, then spawn workers
+    - Use sync.RWMutex if you need cache updates during reconciliation
+    - Example Go pattern:
+        cache := preloadAllResources()  // main goroutine
+        var wg sync.WaitGroup
+        for _, device := range devices {
+            wg.Add(1)
+            go reconcileDevice(device, cache)  // safe concurrent reads
         }
-        
+        wg.Wait()
+
+    TAG MANAGEMENT (Single Source of Truth):
+    ========================================
+    - _ensure_tag() creates/verifies the GitOps managed tag on initialization
+    - Stores tag ID in self.managed_tag_id
+    - All syncers receive this ID (no duplicate tag creation logic)
+    - Tag injection happens via apply() method for new controller engine
+    - Legacy syncers inject via BaseSyncer._prepare_payload()
+    """
+
+    def __init__(self, url: str, token: str, dry_run: bool = False):
+        """
+        Initialize NetBox client with eager caching strategy.
+
+        Args:
+            url: NetBox instance URL
+            token: API authentication token
+            dry_run: Dry-run mode flag
+
+        Note:
+            Call reload_global_cache() and reload_cache(site) before reconciliation
+            to populate resource caches.
+        """
+        self.nb = pynetbox.api(url, token=token)
+        self.nb.http_session.verify = False
+        self.dry_run = dry_run
+
+        # Eager cache structure (pre-loaded before reconciliation)
+        self.cache = {
+            'sites': {},          # Global: all sites
+            'roles': {},          # Global: all device roles
+            'device_types': {},   # Global: all device types
+            'racks': {},          # Site-specific: racks per site
+            'vlans': {},          # Site-specific: VLANs per site
+            'vrfs': {},           # Global: all VRFs
+            'tags': {},           # Global: all tags
+            'module_types': {},   # Global: all module types
+            'manufacturers': {}   # Global: all manufacturers
+        }
+
+        # Single source of truth for managed tag
         self.managed_tag_id = self._ensure_tag(MANAGED_TAG_SLUG)
 
     def _ensure_tag(self, slug: str) -> int:
@@ -102,8 +153,16 @@ class NetBoxClient:
 
     def reload_cache(self, site_slug: str):
         """
-        Load site-specific data into cache.
-        Global data (Device Types, Module Types, etc.) is loaded via reload_global_cache().
+        Load site-specific data into cache (EAGER LOADING).
+
+        This method is part of the eager caching strategy - call it BEFORE reconciliation
+        for each site you'll be working with. This ensures all site-specific resources
+        (VLANs, racks) are pre-loaded for fast lookup during device processing.
+
+        GO MIGRATION NOTE:
+        - In Go, call this once per site in the main goroutine before spawning workers
+        - Cache is then read-only during concurrent reconciliation
+        - No mutex needed for reads (safe concurrent access)
 
         Args:
             site_slug: Site slug or name to reload cache for
@@ -140,8 +199,24 @@ class NetBoxClient:
 
     def reload_global_cache(self):
         """
-        Load global resources (not site-specific).
-        Called once before device reconciliation.
+        Load global resources (EAGER LOADING) - not site-specific.
+
+        This method implements the eager caching pattern by pre-loading ALL global
+        resources before any device reconciliation begins. This is the preferred
+        approach for concurrent processing.
+
+        GO MIGRATION NOTE:
+        - Call this ONCE in the main goroutine before spawning device reconcilers
+        - After this call, cache is read-only → safe for concurrent goroutine access
+        - No synchronization needed for reads (huge performance benefit)
+        - Pattern:
+            client.ReloadGlobalCache()      // once in main
+            for site := range sites {
+                client.ReloadCache(site)     // once per site in main
+            }
+            // Now spawn concurrent reconcilers (safe reads)
+
+        Called once before device reconciliation loop.
         """
         log_info("Loading global caches...")
 

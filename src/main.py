@@ -110,12 +110,15 @@ def run_sync(dry_run: bool = False):
     # =========================================================================
     # 2. INIT SYNCERS (LEGACY)
     # =========================================================================
-    extras = ExtrasSyncer(nb, dry_run=dry_run)
-    role_syncer = RoleSyncer(nb, dry_run=dry_run)
-    dcim = DCIMSyncer(nb, dry_run=dry_run)
-    ipam = IPAMSyncer(nb, dry_run=dry_run)
-    type_syncer = DeviceTypeSyncer(nb, dry_run=dry_run)
-    mt_syncer = ModuleTypeSyncer(nb, dry_run=dry_run)
+    # Pass managed_tag_id from NetBoxClient (single source of truth)
+    managed_tag_id = new_client.managed_tag_id
+
+    extras = ExtrasSyncer(nb, managed_tag_id, dry_run=dry_run)
+    role_syncer = RoleSyncer(nb, managed_tag_id, dry_run=dry_run)
+    dcim = DCIMSyncer(nb, managed_tag_id, dry_run=dry_run)
+    ipam = IPAMSyncer(nb, managed_tag_id, dry_run=dry_run)
+    type_syncer = DeviceTypeSyncer(nb, managed_tag_id, dry_run=dry_run)
+    mt_syncer = ModuleTypeSyncer(nb, managed_tag_id, dry_run=dry_run)
 
     # =========================================================================
     # 3. EXECUTE HYBRID SYNC
