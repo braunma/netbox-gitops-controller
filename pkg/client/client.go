@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"time"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
@@ -116,16 +117,17 @@ func (c *NetBoxClient) Request(method, path string, body interface{}) (Object, e
 
 // List makes a GET request and returns a list of objects
 func (c *NetBoxClient) List(path string, filters map[string]interface{}) ([]Object, error) {
-	url := c.baseURL + path
+	requestURL := c.baseURL + path
 
 	if len(filters) > 0 {
-		url += "?"
+		queryParams := url.Values{}
 		for k, v := range filters {
-			url += fmt.Sprintf("%s=%v&", k, v)
+			queryParams.Add(k, fmt.Sprintf("%v", v))
 		}
+		requestURL += "?" + queryParams.Encode()
 	}
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, err := http.NewRequest("GET", requestURL, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create request: %w", err)
 	}
