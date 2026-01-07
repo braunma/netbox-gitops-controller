@@ -1,0 +1,9 @@
+# Example Blade Server Device Type
+# This is a child device that goes into a chassis device bay
+manufacturer: "Example Vendor"
+model: "Example Blade Server"
+slug: "example-blade-server"
+u_height: 0  # IMPORTANT: Child devices must have u_height=0
+is_full_depth: false
+subdevice_role: "child"
+comments: "Example blade server for installation into chassis"

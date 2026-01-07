@@ -1,0 +1,23 @@
+# Example GPU Server Device Type with Module Bays
+# This demonstrates module bay templates for GPUs
+manufacturer: "Example Vendor"
+model: "Example GPU Server"
+slug: "example-gpu-server"
+u_height: 4
+is_full_depth: true
+comments: "Example 4U GPU server with module bays"
+
+# Module bay templates for GPU cards
+module_bays:
+  - name: "GPU-1"
+    label: "GPU Slot 1"
+    position: "1"
+  - name: "GPU-2"
+    label: "GPU Slot 2"
+    position: "2"
+  - name: "GPU-3"
+    label: "GPU Slot 3"
+    position: "3"
+  - name: "GPU-4"
+    label: "GPU Slot 4"
+    position: "4"

@@ -1,0 +1,49 @@
+# Example GPU Server Inventory
+# This demonstrates module installation with managed tags
+
+- name: "example-gpu-server-01"
+  device_type_slug: "example-gpu-server"
+  role_slug: "server"
+  site_slug: "berlin-dc"
+  rack_slug: "rack-a01"
+  position: 30
+  face: "front"
+  status: "active"
+  serial: "GPU-SRV-001"
+  asset_tag: "GPU-001"
+  tags: ["gitops", "production", "gpu"]
+
+  # Modules demonstrate the managed tag feature
+  modules:
+    - name: "GPU-1"
+      module_type_slug: "ex-gpu-a100"
+      status: "active"
+      serial: "GPU-CARD-001"
+      description: "Primary GPU"
+
+    - name: "GPU-2"
+      module_type_slug: "ex-gpu-a100"
+      status: "active"
+      serial: "GPU-CARD-002"
+      description: "Secondary GPU"
+
+    - name: "GPU-3"
+      module_type_slug: "ex-gpu-a100"
+      status: "active"
+      serial: "GPU-CARD-003"
+
+    - name: "GPU-4"
+      module_type_slug: "ex-gpu-a100"
+      status: "active"
+      # No serial - will be set to empty string (matches Python behavior)
+
+  interfaces:
+    - name: "eth0"
+      type: "1000base-t"
+      enabled: true
+      description: "Management interface"
+
+    - name: "eth1"
+      type: "10gbase-x-sfpp"
+      enabled: true
+      description: "High-speed data interface"
