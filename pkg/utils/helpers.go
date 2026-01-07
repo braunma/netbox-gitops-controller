@@ -2,6 +2,7 @@ package utils
 
 import (
 	"fmt"
+	"reflect"
 	"strings"
 	"time"
 )
@@ -49,6 +50,21 @@ func GetIDFromObject(obj interface{}) int {
 			var parsedID int
 			if _, err := fmt.Sscanf(id, "%d", &parsedID); err == nil {
 				return parsedID
+			}
+		}
+	default:
+		// Handle named types with underlying map[string]interface{} type
+		// This handles types like "client.Object" which are defined as named types
+		val := reflect.ValueOf(obj)
+		if val.Kind() == reflect.Map {
+			// Try to convert to map[string]interface{}
+			if mapVal, ok := obj.(map[string]interface{}); ok {
+				return GetIDFromObject(mapVal)
+			}
+			// For named types, we need to extract the value differently
+			idVal := val.MapIndex(reflect.ValueOf("id"))
+			if idVal.IsValid() {
+				return GetIDFromObject(idVal.Interface())
 			}
 		}
 	}
