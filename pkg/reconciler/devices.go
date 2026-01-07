@@ -158,8 +158,12 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 		payload := map[string]interface{}{
 			"device":  deviceID,
 			"name":    iface.Name,
-			"type":    iface.Type,
 			"enabled": iface.Enabled,
+		}
+
+		// Only include type if not empty (NetBox rejects empty string)
+		if iface.Type != "" {
+			payload["type"] = iface.Type
 		}
 
 		if iface.Label != "" {
@@ -409,10 +413,14 @@ func (dr *DeviceReconciler) reconcileFrontPorts(deviceID int, device *models.Dev
 		rearPortID := utils.GetIDFromObject(rearPorts[0])
 
 		payload := map[string]interface{}{
-			"device":   deviceID,
-			"name":     port.Name,
-			"type":     port.Type,
+			"device":    deviceID,
+			"name":      port.Name,
 			"rear_port": rearPortID,
+		}
+
+		// Only include type if not empty (NetBox rejects empty string)
+		if port.Type != "" {
+			payload["type"] = port.Type
 		}
 
 		if port.RearPortPosition > 0 {
@@ -464,7 +472,11 @@ func (dr *DeviceReconciler) reconcileRearPorts(deviceID int, device *models.Devi
 		payload := map[string]interface{}{
 			"device": deviceID,
 			"name":   port.Name,
-			"type":   port.Type,
+		}
+
+		// Only include type if not empty (NetBox rejects empty string)
+		if port.Type != "" {
+			payload["type"] = port.Type
 		}
 
 		if port.Positions > 0 {
