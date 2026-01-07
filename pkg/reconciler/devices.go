@@ -464,7 +464,11 @@ func (dr *DeviceReconciler) reconcileRearPorts(deviceID int, device *models.Devi
 		payload := map[string]interface{}{
 			"device": deviceID,
 			"name":   port.Name,
-			"type":   port.Type,
+		}
+
+		// Only include type if not empty (NetBox rejects empty string)
+		if port.Type != "" {
+			payload["type"] = port.Type
 		}
 
 		if port.Positions > 0 {
