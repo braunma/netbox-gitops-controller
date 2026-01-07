@@ -829,13 +829,22 @@ type portInfo struct {
 	port       string
 }
 
-// getDeviceRole gets the role slug for a device
-func (dr *DeviceReconciler) getDeviceRole(deviceName string) string {
+// findPort searches for a port by device and port name
+func (dr *DeviceReconciler) findPort(deviceName, portName string) *portInfo {
+	// Get device ID using LIVE lookup (not cache) - matches Python device_controller.py line 492
+	// Devices are not loaded into cache, so we must query NetBox directly
 	devices, err := dr.client.Filter("dcim", "devices", map[string]interface{}{
 		"name": deviceName,
 	})
 	if err != nil || len(devices) == 0 {
-		return ""
+		dr.logger.Debug("    Device %s not found", deviceName)
+		return nil
+	}
+
+	deviceID := utils.GetIDFromObject(devices[0])
+	if deviceID == 0 {
+		dr.logger.Debug("    Device %s has invalid ID", deviceName)
+		return nil
 	}
 
 	device := devices[0]
