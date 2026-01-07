@@ -4,3 +4,9 @@
   model: "Example 10G SFP+ Module"
   part_number: "EX-SFP-10G"
   comments: "Example 10G SFP+ module for testing"
+
+- manufacturer: "Example Vendor"
+  model: "Example GPU A100"
+  part_number: "EX-GPU-A100"
+  comments: "Example GPU module for testing"
+  description: "High-performance GPU accelerator"

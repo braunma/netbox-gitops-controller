@@ -77,7 +77,59 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		return fmt.Errorf("device type %s not found", device.DeviceTypeSlug)
 	}
 
-	// Build device payload
+	// A. Rack & Parent Logic (matches Python lines 155-179)
+	var yamlRackID, parentRackID, deviceBayID int
+	var finalRackID int
+
+	// Get rack ID from YAML config if specified
+	if device.RackSlug != "" {
+		if rackID, ok := dr.client.Cache().GetID("racks", device.RackSlug); ok {
+			yamlRackID = rackID
+		}
+	}
+
+	// Handle parent device and device bay installation
+	if device.ParentDevice != "" {
+		// Find parent device
+		parentDevices, err := dr.client.Filter("dcim", "devices", map[string]interface{}{
+			"name": device.ParentDevice,
+		})
+		if err != nil || len(parentDevices) == 0 {
+			return fmt.Errorf("parent device %s not found", device.ParentDevice)
+		}
+		parentDevice := parentDevices[0]
+		parentDeviceID := utils.GetIDFromObject(parentDevice)
+
+		// Get parent's rack if it has one
+		if rack, ok := parentDevice["rack"].(map[string]interface{}); ok {
+			if rackID, ok := rack["id"].(float64); ok {
+				parentRackID = int(rackID)
+			}
+		}
+
+		// Find device bay on parent
+		if device.DeviceBay == "" {
+			return fmt.Errorf("device_bay must be specified when parent_device is set")
+		}
+
+		bays, err := dr.client.Filter("dcim", "device-bays", map[string]interface{}{
+			"device_id": parentDeviceID,
+			"name":      device.DeviceBay,
+		})
+		if err != nil || len(bays) == 0 {
+			return fmt.Errorf("device bay %s not found on parent %s", device.DeviceBay, device.ParentDevice)
+		}
+		deviceBayID = utils.GetIDFromObject(bays[0])
+	}
+
+	// Determine final rack ID: YAML rack takes precedence, then parent's rack
+	if yamlRackID > 0 {
+		finalRackID = yamlRackID
+	} else if parentRackID > 0 {
+		finalRackID = parentRackID
+	}
+
+	// B. Build device payload
 	payload := map[string]interface{}{
 		"name":        device.Name,
 		"site":        siteID,
@@ -86,20 +138,25 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		"status":      device.Status,
 	}
 
-	if device.RackSlug != "" {
-		rackID, ok := dr.client.Cache().GetID("racks", device.RackSlug)
-		if ok {
-			payload["rack"] = rackID
+	// Add rack if we have one
+	if finalRackID > 0 {
+		payload["rack"] = finalRackID
+	}
+
+	// Handle position and face based on device type (matches Python lines 190-198)
+	if deviceBayID > 0 {
+		// Child device going into a bay - remove position and face
+		// (will be installed into bay after creation)
+	} else if finalRackID > 0 {
+		// Rack-mounted device - can have position and face
+		if device.Position > 0 {
+			payload["position"] = device.Position
+		}
+		if device.Face != "" {
+			payload["face"] = device.Face
 		}
 	}
-
-	if device.Position > 0 {
-		payload["position"] = device.Position
-	}
-
-	if device.Face != "" {
-		payload["face"] = device.Face
-	}
+	// Else: No rack and no bay - position/face cannot be set
 
 	if device.Serial != "" {
 		payload["serial"] = device.Serial
@@ -109,7 +166,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		payload["asset_tag"] = device.AssetTag
 	}
 
-	// Create or update device
+	// C. Create or update device
 	lookup := map[string]interface{}{
 		"name":    device.Name,
 		"site_id": siteID,
@@ -126,6 +183,13 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		return nil
 	}
 
+	// D. Install device into bay if specified (matches Python lines 209-258)
+	if deviceBayID > 0 {
+		if err := dr.installDeviceIntoBay(deviceID, deviceBayID, device); err != nil {
+			return fmt.Errorf("failed to install device into bay: %w", err)
+		}
+	}
+
 	// Reconcile components
 	dr.logger.Debug("  Reconciling interfaces for %s...", device.Name)
 	if err := dr.reconcileInterfaces(deviceID, device); err != nil {
@@ -140,6 +204,12 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	dr.logger.Debug("  Reconciling rear ports for %s...", device.Name)
 	if err := dr.reconcileRearPorts(deviceID, device); err != nil {
 		return fmt.Errorf("failed to reconcile rear ports: %w", err)
+	}
+
+	// Self-healing: Create missing device bays from device type templates
+	dr.logger.Debug("  Reconciling device bays for %s...", device.Name)
+	if err := dr.reconcileDeviceBays(deviceID, deviceTypeID); err != nil {
+		return fmt.Errorf("failed to reconcile device bays: %w", err)
 	}
 
 	dr.logger.Debug("  Reconciling modules for %s...", device.Name)
@@ -363,9 +433,14 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 			"status":      module.Status,
 		}
 
+		// Add serial - always set to empty string if not provided (matches Python behavior)
+		// This avoids 400 errors from NetBox API
 		if module.Serial != "" {
 			payload["serial"] = module.Serial
+		} else {
+			payload["serial"] = ""
 		}
+
 		if module.AssetTag != "" {
 			payload["asset_tag"] = module.AssetTag
 		}
@@ -373,14 +448,141 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 			payload["description"] = module.Description
 		}
 
+		// Add managed tag if available (matches Python behavior)
+		if dr.client.ManagedTagID() > 0 {
+			payload["tags"] = []int{dr.client.ManagedTagID()}
+		}
+
 		lookup := map[string]interface{}{
-			"device_id":    deviceID,
+			"device_id":     deviceID,
 			"module_bay_id": bayID,
 		}
 
 		_, err = dr.client.Apply("dcim", "modules", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to apply module %s: %w", module.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// installDeviceIntoBay installs a device into a device bay using the bay-centric approach
+// This matches Python behavior (lines 209-258)
+func (dr *DeviceReconciler) installDeviceIntoBay(deviceID, deviceBayID int, device *models.DeviceConfig) error {
+	dr.logger.Debug("  Installing device into bay...")
+
+	// Get current device state to check if already installed
+	currentDevice, err := dr.client.Get("dcim", "devices", deviceID)
+	if err != nil {
+		return fmt.Errorf("failed to get current device state: %w", err)
+	}
+
+	// Check if already installed in the correct bay
+	if deviceBay, ok := currentDevice["device_bay"].(map[string]interface{}); ok {
+		if bayID, ok := deviceBay["id"].(float64); ok && int(bayID) == deviceBayID {
+			dr.logger.Debug("  ✓ Already installed in correct device bay")
+			return nil
+		}
+	}
+
+	if dr.client.IsDryRun() {
+		dr.logger.Info("  [DRY-RUN] Would install into device bay %s", device.DeviceBay)
+		return nil
+	}
+
+	// STEP 1: "Free" the device by removing rack/position/face
+	// A device cannot go into a bay if it has these fields set
+	dr.logger.Debug("    1. Detaching device from rack...")
+	err = dr.client.Update("dcim", "devices", deviceID, map[string]interface{}{
+		"rack":     nil,
+		"position": nil,
+		"face":     nil,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to detach device from rack: %w", err)
+	}
+
+	// STEP 2: Update the bay to install the device
+	// This is the NetBox API way to install a device into a bay
+	dr.logger.Debug("    2. Updating bay to install device...")
+	err = dr.client.Update("dcim", "device-bays", deviceBayID, map[string]interface{}{
+		"installed_device": deviceID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to update device bay: %w", err)
+	}
+
+	dr.logger.Success("  ✓ Installed %s into device bay %s", device.Name, device.DeviceBay)
+	return nil
+}
+
+// reconcileDeviceBays performs self-healing by creating missing device bays
+// based on the device type templates (matches Python behavior lines 88-139)
+func (dr *DeviceReconciler) reconcileDeviceBays(deviceID, deviceTypeID int) error {
+	// Get device bay templates for this device type
+	templates, err := dr.client.Filter("dcim", "device-bay-templates", map[string]interface{}{
+		"device_type_id": deviceTypeID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get device bay templates: %w", err)
+	}
+
+	// If no templates, this device type doesn't support bays - skip silently
+	if len(templates) == 0 {
+		return nil
+	}
+
+	dr.logger.Debug("    Checking %d device bay template(s)", len(templates))
+
+	// Get existing device bays on the device
+	existingBays, err := dr.client.Filter("dcim", "device-bays", map[string]interface{}{
+		"device_id": deviceID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to get existing device bays: %w", err)
+	}
+
+	// Build map of existing bay names
+	existingBayNames := make(map[string]bool)
+	for _, bay := range existingBays {
+		if name, ok := bay["name"].(string); ok {
+			existingBayNames[name] = true
+		}
+	}
+
+	// Check each template and create missing bays
+	for _, tmpl := range templates {
+		name, ok := tmpl["name"].(string)
+		if !ok {
+			continue
+		}
+
+		if existingBayNames[name] {
+			continue // Bay already exists
+		}
+
+		// Create missing bay
+		dr.logger.Debug("    Missing bay '%s' - creating...", name)
+
+		bayPayload := map[string]interface{}{
+			"device": deviceID,
+			"name":   name,
+		}
+
+		// Add label if present in template
+		if label, ok := tmpl["label"].(string); ok && label != "" {
+			bayPayload["label"] = label
+		}
+
+		if dr.client.IsDryRun() {
+			dr.logger.Info("    [DRY-RUN] Would create device bay '%s'", name)
+		} else {
+			_, err := dr.client.Create("dcim", "device-bays", bayPayload)
+			if err != nil {
+				return fmt.Errorf("failed to create device bay %s: %w", name, err)
+			}
+			dr.logger.Success("    + Created device bay '%s'", name)
 		}
 	}
 

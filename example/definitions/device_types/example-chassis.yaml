@@ -1,0 +1,19 @@
+# Example Chassis Device Type with Device Bays
+# This demonstrates the self-healing device bays feature
+manufacturer: "Example Vendor"
+model: "Example Blade Chassis"
+slug: "example-blade-chassis"
+u_height: 10
+is_full_depth: true
+comments: "Example blade server chassis with device bays"
+
+# Device bay templates - these will be auto-created on actual devices
+device_bays:
+  - name: "Blade-1"
+    label: "Blade Slot 1"
+  - name: "Blade-2"
+    label: "Blade Slot 2"
+  - name: "Blade-3"
+    label: "Blade Slot 3"
+  - name: "Blade-4"
+    label: "Blade Slot 4"
