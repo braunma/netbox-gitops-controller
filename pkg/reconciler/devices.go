@@ -23,6 +23,7 @@ type pendingCable struct {
 	sourcePort   string
 	sourceType   string
 	sourceID     int
+	sourceRole   string // Device role slug (e.g., "patch-panel", "server", "switch")
 	link         *models.LinkConfig
 }
 
@@ -323,6 +324,7 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 				sourcePort:   iface.Name,
 				sourceType:   "dcim.interface",
 				sourceID:     ifaceID,
+				sourceRole:   device.RoleSlug, // Track device role for port type determination
 				link:         iface.Link,
 			})
 		}
@@ -683,6 +685,7 @@ func (dr *DeviceReconciler) reconcileFrontPorts(deviceID int, device *models.Dev
 				sourcePort:   port.Name,
 				sourceType:   "dcim.frontport",
 				sourceID:     portID,
+				sourceRole:   device.RoleSlug, // Track device role for port type determination
 				link:         port.Link,
 			})
 		}
@@ -739,6 +742,7 @@ func (dr *DeviceReconciler) reconcileRearPorts(deviceID int, device *models.Devi
 				sourcePort:   port.Name,
 				sourceType:   "dcim.rearport",
 				sourceID:     portID,
+				sourceRole:   device.RoleSlug, // Track device role for port type determination
 				link:         port.Link,
 			})
 		}
@@ -762,11 +766,11 @@ func (dr *DeviceReconciler) reconcilePendingCables() error {
 			port:       pc.sourcePort,
 		}
 
-		// Also try to find the peer port
+		// Also try to find the peer port (using role-based logic to determine port type)
 		peerKey := fmt.Sprintf("%s::%s", pc.link.PeerDevice, pc.link.PeerPort)
 		if _, exists := portLookup[peerKey]; !exists {
-			// Query NetBox for peer port
-			if peerInfo := dr.findPort(pc.link.PeerDevice, pc.link.PeerPort); peerInfo != nil {
+			// Query NetBox for peer port, passing source role for correct port type determination
+			if peerInfo := dr.findPort(pc.link.PeerDevice, pc.link.PeerPort, pc.sourceRole); peerInfo != nil {
 				portLookup[peerKey] = *peerInfo
 			}
 		}
@@ -825,8 +829,28 @@ type portInfo struct {
 	port       string
 }
 
-// findPort searches for a port by device and port name
-func (dr *DeviceReconciler) findPort(deviceName, portName string) *portInfo {
+// getDeviceRole gets the role slug for a device
+func (dr *DeviceReconciler) getDeviceRole(deviceName string) string {
+	devices, err := dr.client.Filter("dcim", "devices", map[string]interface{}{
+		"name": deviceName,
+	})
+	if err != nil || len(devices) == 0 {
+		return ""
+	}
+
+	device := devices[0]
+	if roleMap, ok := device["role"].(map[string]interface{}); ok {
+		if slug, ok := roleMap["slug"].(string); ok {
+			return slug
+		}
+	}
+
+	return ""
+}
+
+// findPort searches for a port by device and port name, using role-based logic to determine port type
+// Matches Python device_controller.py lines 536-558
+func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *portInfo {
 	// Get device ID using LIVE lookup (not cache) - matches Python device_controller.py line 492
 	// Devices are not loaded into cache, so we must query NetBox directly
 	devices, err := dr.client.Filter("dcim", "devices", map[string]interface{}{
@@ -837,51 +861,71 @@ func (dr *DeviceReconciler) findPort(deviceName, portName string) *portInfo {
 		return nil
 	}
 
-	deviceID := utils.GetIDFromObject(devices[0])
+	device := devices[0]
+	deviceID := utils.GetIDFromObject(device)
 	if deviceID == 0 {
 		dr.logger.Debug("    Device %s has invalid ID", deviceName)
 		return nil
 	}
 
-	// Try to find as interface
-	interfaces, err := dr.client.Filter("dcim", "interfaces", map[string]interface{}{
-		"device_id": deviceID,
-		"name":      portName,
-	})
-	if err == nil && len(interfaces) > 0 {
-		return &portInfo{
-			objectType: "dcim.interface",
-			objectID:   utils.GetIDFromObject(interfaces[0]),
-			device:     deviceName,
-			port:       portName,
+	// Get peer device role
+	peerRole := ""
+	if roleMap, ok := device["role"].(map[string]interface{}); ok {
+		if slug, ok := roleMap["slug"].(string); ok {
+			peerRole = slug
 		}
 	}
 
-	// Try to find as front port
-	frontPorts, err := dr.client.Filter("dcim", "front-ports", map[string]interface{}{
-		"device_id": deviceID,
-		"name":      portName,
-	})
-	if err == nil && len(frontPorts) > 0 {
-		return &portInfo{
-			objectType: "dcim.frontport",
-			objectID:   utils.GetIDFromObject(frontPorts[0]),
-			device:     deviceName,
-			port:       portName,
-		}
-	}
+	// Determine port type based on device roles (matches Python logic)
+	isSourcePP := sourceRole == "patch-panel"
+	isPeerPP := peerRole == "patch-panel"
 
-	// Try to find as rear port
-	rearPorts, err := dr.client.Filter("dcim", "rear-ports", map[string]interface{}{
-		"device_id": deviceID,
-		"name":      portName,
-	})
-	if err == nil && len(rearPorts) > 0 {
-		return &portInfo{
-			objectType: "dcim.rearport",
-			objectID:   utils.GetIDFromObject(rearPorts[0]),
-			device:     deviceName,
-			port:       portName,
+	// Python device_controller.py lines 536-558:
+	// - Both patch panels: use rearport (backbone cable)
+	// - Only peer is patch panel: use frontport (access cable)
+	// - Otherwise: use interface (device-to-device)
+
+	if isSourcePP && isPeerPP {
+		// Patchpanel ↔ Patchpanel = Rear ↔ Rear (Backbone)
+		rearPorts, err := dr.client.Filter("dcim", "rear-ports", map[string]interface{}{
+			"device_id": deviceID,
+			"name":      portName,
+		})
+		if err == nil && len(rearPorts) > 0 {
+			return &portInfo{
+				objectType: "dcim.rearport",
+				objectID:   utils.GetIDFromObject(rearPorts[0]),
+				device:     deviceName,
+				port:       portName,
+			}
+		}
+	} else if isPeerPP {
+		// Device → Patchpanel = FrontPort (Server/Switch Access)
+		frontPorts, err := dr.client.Filter("dcim", "front-ports", map[string]interface{}{
+			"device_id": deviceID,
+			"name":      portName,
+		})
+		if err == nil && len(frontPorts) > 0 {
+			return &portInfo{
+				objectType: "dcim.frontport",
+				objectID:   utils.GetIDFromObject(frontPorts[0]),
+				device:     deviceName,
+				port:       portName,
+			}
+		}
+	} else {
+		// Device → Device (Interface)
+		interfaces, err := dr.client.Filter("dcim", "interfaces", map[string]interface{}{
+			"device_id": deviceID,
+			"name":      portName,
+		})
+		if err == nil && len(interfaces) > 0 {
+			return &portInfo{
+				objectType: "dcim.interface",
+				objectID:   utils.GetIDFromObject(interfaces[0]),
+				device:     deviceName,
+				port:       portName,
+			}
 		}
 	}
 
