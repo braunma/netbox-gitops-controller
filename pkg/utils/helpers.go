@@ -1,6 +1,7 @@
 package utils
 
 import (
+	"fmt"
 	"strings"
 	"time"
 )
@@ -28,12 +29,27 @@ func GetIDFromObject(obj interface{}) int {
 	switch v := obj.(type) {
 	case int:
 		return v
+	case float64:
+		return int(v)
+	case string:
+		// Handle string IDs by attempting to parse
+		var id int
+		if _, err := fmt.Sscanf(v, "%d", &id); err == nil {
+			return id
+		}
+		return 0
 	case map[string]interface{}:
 		if id, ok := v["id"].(int); ok {
 			return id
 		}
 		if id, ok := v["id"].(float64); ok {
 			return int(id)
+		}
+		if id, ok := v["id"].(string); ok {
+			var parsedID int
+			if _, err := fmt.Sscanf(id, "%d", &parsedID); err == nil {
+				return parsedID
+			}
 		}
 	}
 
