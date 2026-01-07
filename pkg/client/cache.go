@@ -37,7 +37,8 @@ func (cm *CacheManager) LoadGlobal() error {
 
 	for resource, path := range resources {
 		cm.client.logger.Debug("→ %s", resource)
-		if err := cm.loadResource(resource, path, nil); err != nil {
+		// Pass siteID=0 for global resources (no site prefix)
+		if err := cm.loadResource(resource, path, nil, 0); err != nil {
 			return fmt.Errorf("failed to load %s: %w", resource, err)
 		}
 	}
@@ -46,7 +47,7 @@ func (cm *CacheManager) LoadGlobal() error {
 	return nil
 }
 
-// LoadSite loads site-specific resources
+// LoadSite loads site-specific resources with composite keys
 func (cm *CacheManager) LoadSite(siteSlug string) error {
 	cm.client.logger.Info("Reloading cache for site: %s", siteSlug)
 
@@ -54,7 +55,7 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 	siteID, ok := cm.GetID("sites", siteSlug)
 	if !ok {
 		// Try loading sites first
-		if err := cm.loadResource("sites", "dcim/sites", nil); err != nil {
+		if err := cm.loadResource("sites", "dcim/sites", nil, 0); err != nil {
 			return fmt.Errorf("failed to load sites: %w", err)
 		}
 		siteID, ok = cm.GetID("sites", siteSlug)
@@ -65,7 +66,7 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 
 	cm.client.logger.Debug("Found Site: %s (ID: %d)", siteSlug, siteID)
 
-	// Load site-specific resources
+	// Load site-specific resources with composite keys
 	resources := map[string]string{
 		"vlans": "ipam/vlans",
 		"racks": "dcim/racks",
@@ -73,7 +74,8 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 
 	for resource, path := range resources {
 		filters := map[string]interface{}{"site_id": siteID}
-		if err := cm.loadResource(resource, path, filters); err != nil {
+		// Pass siteID to create composite keys
+		if err := cm.loadResource(resource, path, filters, siteID); err != nil {
 			return fmt.Errorf("failed to load %s: %w", resource, err)
 		}
 	}
@@ -82,7 +84,8 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 }
 
 // loadResource loads a specific resource into cache
-func (cm *CacheManager) loadResource(resource, path string, filters map[string]interface{}) error {
+// If siteID > 0, creates composite keys: "site-{siteID}:{identifier}"
+func (cm *CacheManager) loadResource(resource, path string, filters map[string]interface{}, siteID int) error {
 	cm.mu.Lock()
 	defer cm.mu.Unlock()
 
@@ -116,25 +119,37 @@ func (cm *CacheManager) loadResource(resource, path string, filters map[string]i
 			continue
 		}
 
+		// Helper to store with optional site prefix
+		storeKey := func(identifier string) {
+			if siteID > 0 {
+				// Site-specific resource: use composite key
+				compositeKey := fmt.Sprintf("site-%d:%s", siteID, identifier)
+				cm.cache[resource][compositeKey] = id
+			} else {
+				// Global resource: use simple key
+				cm.cache[resource][identifier] = id
+			}
+		}
+
 		// Index by slug
 		if slug, ok := obj["slug"].(string); ok {
-			cm.cache[resource][slug] = id
+			storeKey(slug)
 		}
 
 		// Index by name/model
 		if name, ok := obj["name"].(string); ok {
-			cm.cache[resource][name] = id
+			storeKey(name)
 		} else if model, ok := obj["model"].(string); ok {
-			cm.cache[resource][model] = id
+			storeKey(model)
 		} else if label, ok := obj["label"].(string); ok {
-			cm.cache[resource][label] = id
+			storeKey(label)
 		}
 	}
 
 	return nil
 }
 
-// GetID retrieves an ID from the cache
+// GetID retrieves an ID from the cache (legacy method, use GetGlobalID or GetSiteID instead)
 func (cm *CacheManager) GetID(resource, identifier string) (int, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
@@ -143,6 +158,34 @@ func (cm *CacheManager) GetID(resource, identifier string) (int, bool) {
 		return 0, false
 	}
 
+	id, ok := cm.cache[resource][identifier]
+	return id, ok
+}
+
+// GetGlobalID retrieves an ID for a global resource (not site-specific)
+// Use this for: device_types, module_types, roles, manufacturers, sites, vrfs
+func (cm *CacheManager) GetGlobalID(resource, identifier string) (int, bool) {
+	return cm.GetID(resource, identifier)
+}
+
+// GetSiteID retrieves an ID for a site-specific resource using composite key
+// Use this for: vlans, racks, and other site-scoped resources
+// Key format: "site-{siteID}:{identifier}"
+func (cm *CacheManager) GetSiteID(resource string, siteID int, identifier string) (int, bool) {
+	cm.mu.RLock()
+	defer cm.mu.RUnlock()
+
+	if cm.cache[resource] == nil {
+		return 0, false
+	}
+
+	// Try composite key first (new format)
+	compositeKey := fmt.Sprintf("site-%d:%s", siteID, identifier)
+	if id, ok := cm.cache[resource][compositeKey]; ok {
+		return id, true
+	}
+
+	// Fallback to simple key for backwards compatibility (will be removed later)
 	id, ok := cm.cache[resource][identifier]
 	return id, ok
 }
