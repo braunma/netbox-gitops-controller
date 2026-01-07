@@ -222,6 +222,13 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 
 // reconcileInterfaces reconciles device interfaces
 func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.DeviceConfig) error {
+	// Get device's site ID for site-aware VLAN lookups
+	// VLANs with the same name can exist at different sites, so we must filter by site
+	siteID, ok := dr.client.Cache().GetID("sites", device.SiteSlug)
+	if !ok {
+		return fmt.Errorf("site %s not found in cache", device.SiteSlug)
+	}
+
 	for i, iface := range device.Interfaces {
 		dr.logger.Debug("    Interface %d/%d: %s", i+1, len(device.Interfaces), iface.Name)
 
@@ -251,19 +258,37 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 			payload["mode"] = iface.Mode
 		}
 
+		// CRITICAL: Use LIVE lookup for VLANs filtered by site
+		// VLANs are site-specific, so we cannot rely on global cache
+		// (matches Python device_controller.py line 303: self.client.get_id('vlans', ...))
 		if iface.UntaggedVLAN != "" {
-			vlanID, ok := dr.client.Cache().GetID("vlans", iface.UntaggedVLAN)
-			if ok {
-				payload["untagged_vlan"] = vlanID
-				dr.logger.Debug("      Untagged VLAN: %s (ID: %d)", iface.UntaggedVLAN, vlanID)
+			vlans, err := dr.client.Filter("ipam", "vlans", map[string]interface{}{
+				"name":    iface.UntaggedVLAN,
+				"site_id": siteID,
+			})
+			if err == nil && len(vlans) > 0 {
+				vlanID := utils.GetIDFromObject(vlans[0])
+				if vlanID > 0 {
+					payload["untagged_vlan"] = vlanID
+					dr.logger.Debug("      Untagged VLAN: %s (ID: %d)", iface.UntaggedVLAN, vlanID)
+				}
+			} else {
+				dr.logger.Warning("      Untagged VLAN %s not found at site %s", iface.UntaggedVLAN, device.SiteSlug)
 			}
 		}
 
 		if len(iface.TaggedVLANs) > 0 {
 			var vlanIDs []int
 			for _, vlanName := range iface.TaggedVLANs {
-				if vlanID, ok := dr.client.Cache().GetID("vlans", vlanName); ok {
-					vlanIDs = append(vlanIDs, vlanID)
+				vlans, err := dr.client.Filter("ipam", "vlans", map[string]interface{}{
+					"name":    vlanName,
+					"site_id": siteID,
+				})
+				if err == nil && len(vlans) > 0 {
+					vlanID := utils.GetIDFromObject(vlans[0])
+					if vlanID > 0 {
+						vlanIDs = append(vlanIDs, vlanID)
+					}
 				}
 			}
 			if len(vlanIDs) > 0 {
