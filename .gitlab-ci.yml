@@ -220,8 +220,8 @@ python_validate:
   extends: .python_base
   stage: validate
   script:
-    - echo "Validating with Python implementation (legacy)..."
-    - echo "Note - Python implementation does not support --data-dir flag"
+    - echo "🔍 Validating with Python implementation (legacy)..."
+    - echo "⚠️  Note: Python implementation does not support --data-dir flag"
     - python src/main.py --dry-run
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
