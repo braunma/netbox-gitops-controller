@@ -39,18 +39,32 @@ func GetIDFromObject(obj interface{}) int {
 		}
 		return 0
 	case map[string]interface{}:
+		idVal, exists := v["id"]
+		if !exists {
+			fmt.Printf("[DEBUG] GetIDFromObject: id field does not exist in map\n")
+			return 0
+		}
+
+		fmt.Printf("[DEBUG] GetIDFromObject: id field exists, type=%T, value=%v\n", idVal, idVal)
+
 		if id, ok := v["id"].(int); ok {
+			fmt.Printf("[DEBUG] GetIDFromObject: matched int, returning %d\n", id)
 			return id
 		}
 		if id, ok := v["id"].(float64); ok {
+			fmt.Printf("[DEBUG] GetIDFromObject: matched float64, returning %d\n", int(id))
 			return int(id)
 		}
 		if id, ok := v["id"].(string); ok {
 			var parsedID int
 			if _, err := fmt.Sscanf(id, "%d", &parsedID); err == nil {
+				fmt.Printf("[DEBUG] GetIDFromObject: matched string, returning %d\n", parsedID)
 				return parsedID
 			}
 		}
+		fmt.Printf("[DEBUG] GetIDFromObject: no type match succeeded\n")
+	default:
+		fmt.Printf("[DEBUG] GetIDFromObject: unhandled type %T\n", obj)
 	}
 
 	return 0
