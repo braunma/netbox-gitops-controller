@@ -21,7 +21,7 @@
 # Optional variables to override:
 #
 #   GOLANG_IMAGE               Go compiler image
-#                              Default: "golang:1.23"
+#                              Default: "golang:1.24"
 #
 #   PYTHON_IMAGE               Python image for utilities
 #                              Default: "python:3.11-slim"
@@ -45,7 +45,7 @@ variables:
   GITLAB_RUNNER_TAG: "docker"
 
   # Container image registry paths (override in GitLab Variables for private registries)
-  GOLANG_IMAGE: "golang:1.23"
+  GOLANG_IMAGE: "golang:1.24"
   PYTHON_IMAGE: "python:3.11-slim"
   PYTHON_LEGACY_IMAGE: "python:3.11"  # Override with your custom image if needed
 
