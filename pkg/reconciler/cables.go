@@ -115,12 +115,28 @@ func (cr *CableReconciler) ReconcileCable(aEnd, bEnd *CableEndpoint, link *model
 		}
 		cr.logger.Success("│ Result: Cable updated successfully")
 	} else {
-		// CRITICAL: Check if peer port already has a cable (Python device_controller.py lines 607-639)
-		// This prevents "Duplicate termination" errors
+		// No existing cable found between A and B
 		cr.logger.Debug("│ No existing cable found")
+
+		// CRITICAL: Check local port (A-end) for existing cables FIRST
+		// Python device_controller.py lines 587-605 (Section D)
+		cr.logger.Debug("│ Checking local port for existing cables...")
+		skipCreation, err := cr.checkAndCleanLocalPort(aEnd, bEnd)
+		if err != nil {
+			return fmt.Errorf("failed to check local port: %w", err)
+		}
+
+		if skipCreation {
+			// Local port already has correct cable - idempotent
+			cr.logger.Debug("└────────────────────────────────────────────────")
+			return nil
+		}
+
+		// CRITICAL: Check peer port (B-end) for existing cables
+		// Python device_controller.py lines 607-639 (Section E)
 		cr.logger.Debug("│ Checking peer port for existing cables...")
 
-		skipCreation, err := cr.checkAndCleanPeerPort(aEnd, bEnd, link)
+		skipCreation, err = cr.checkAndCleanPeerPort(aEnd, bEnd, link)
 		if err != nil {
 			return fmt.Errorf("failed to check peer port: %w", err)
 		}
@@ -342,6 +358,93 @@ func (cr *CableReconciler) updateCable(cable client.Object, link *models.LinkCon
 	}
 
 	return cr.client.Update("dcim", "cables", cableID, updates)
+}
+
+// checkAndCleanLocalPort checks if the local port (A-end) already has a cable
+// Matches Python device_controller.py lines 587-605 (Section D)
+// Returns (skipCreation, error) - skipCreation=true means cable already exists correctly
+func (cr *CableReconciler) checkAndCleanLocalPort(aEnd, bEnd *CableEndpoint) (bool, error) {
+	// Determine the endpoint type for A-end
+	var endpoint string
+	switch aEnd.ObjectType {
+	case "dcim.interface":
+		endpoint = "interfaces"
+	case "dcim.frontport":
+		endpoint = "front-ports"
+	case "dcim.rearport":
+		endpoint = "rear-ports"
+	default:
+		return false, fmt.Errorf("unknown endpoint type: %s", aEnd.ObjectType)
+	}
+
+	// Fetch the local port (A-end) to check if it has a cable
+	localPorts, err := cr.client.Filter("dcim", endpoint, map[string]interface{}{
+		"id": aEnd.ObjectID,
+	})
+	if err != nil || len(localPorts) == 0 {
+		cr.logger.Debug("│ Could not fetch local port (may be OK): %v", err)
+		return false, nil
+	}
+
+	localPort := localPorts[0]
+
+	// Check if local port has an existing cable
+	cableRef, hasCable := localPort["cable"]
+	if !hasCable || cableRef == nil {
+		cr.logger.Debug("│ Local port has no existing cable")
+		return false, nil
+	}
+
+	// Extract cable ID from the reference
+	var cableID int
+	switch v := cableRef.(type) {
+	case float64:
+		cableID = int(v)
+	case map[string]interface{}:
+		if id, ok := v["id"].(float64); ok {
+			cableID = int(id)
+		}
+	}
+
+	if cableID == 0 {
+		cr.logger.Debug("│ Local port cable reference is invalid")
+		return false, nil
+	}
+
+	// Fetch the existing cable on the local port
+	existingCable, err := cr.client.Get("dcim", "cables", cableID)
+	if err != nil || existingCable == nil {
+		cr.logger.Info("│ Existing cable vanished during fetch (ID: %d) - skipping idempotency check", cableID)
+		return false, nil
+	}
+
+	cr.logger.Debug("│ Local port already has cable ID: %d", cableID)
+
+	// Check if this cable connects to our B-end (correct cable - idempotent case)
+	// Python: if self._cable_connects_to(existing, peer.id)
+	if cr.cableConnectsTo(existingCable, bEnd.ObjectID) {
+		cr.logger.Info("│ Local port already has correct cable (ID: %d)", cableID)
+		cr.logger.Info("│ Action: No changes needed (idempotent)")
+		return true, nil
+	}
+
+	// The local port has a cable to a DIFFERENT device - delete it
+	// Python: self._safe_delete(existing, "wrong peer connection", force=True)
+	cr.logger.Warning("│ Local port has cable to DIFFERENT device")
+	cr.logger.Warning("│ Existing cable ID %d blocks our connection", cableID)
+	cr.logger.Info("│ Deleting wrong cable on local port ID %d (forced)", cableID)
+
+	// Delete the cable (matches Python force=True behavior - no managed check)
+	if !cr.client.IsDryRun() {
+		if err := cr.client.Delete("dcim", "cables", cableID); err != nil {
+			return false, fmt.Errorf("failed to delete wrong cable on local port: %w", err)
+		}
+		cr.logger.Success("│ Deleted wrong cable on local port")
+	} else {
+		cr.logger.DryRun("DELETE", "Wrong cable ID %d on local port", cableID)
+	}
+
+	return false, nil
 }
 
 // checkAndCleanPeerPort checks if the peer port (B-end) already has a cable
