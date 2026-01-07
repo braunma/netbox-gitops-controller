@@ -863,18 +863,24 @@ func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *p
 	isSourcePP := sourceRole == "patch-panel"
 	isPeerPP := peerRole == "patch-panel"
 
+	// Debug logging to trace role-based port type selection
+	dr.logger.Debug("    findPort(%s, %s, sourceRole=%s): peerRole=%s, isSourcePP=%v, isPeerPP=%v",
+		deviceName, portName, sourceRole, peerRole, isSourcePP, isPeerPP)
+
 	// Python device_controller.py lines 536-558:
 	// - Both patch panels: use rearport (backbone cable)
 	// - Only peer is patch panel: use frontport (access cable)
 	// - Otherwise: use interface (device-to-device)
 
 	if isSourcePP && isPeerPP {
+		dr.logger.Debug("    → Searching for REARPORT (both devices are patch-panels)")
 		// Patchpanel ↔ Patchpanel = Rear ↔ Rear (Backbone)
 		rearPorts, err := dr.client.Filter("dcim", "rear-ports", map[string]interface{}{
 			"device_id": deviceID,
 			"name":      portName,
 		})
 		if err == nil && len(rearPorts) > 0 {
+			dr.logger.Debug("    ✓ Found rearport ID %d", utils.GetIDFromObject(rearPorts[0]))
 			return &portInfo{
 				objectType: "dcim.rearport",
 				objectID:   utils.GetIDFromObject(rearPorts[0]),
@@ -882,13 +888,16 @@ func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *p
 				port:       portName,
 			}
 		}
+		dr.logger.Debug("    ✗ Rearport not found (err=%v, count=%d)", err, len(rearPorts))
 	} else if isPeerPP {
+		dr.logger.Debug("    → Searching for FRONTPORT (only peer is patch-panel)")
 		// Device → Patchpanel = FrontPort (Server/Switch Access)
 		frontPorts, err := dr.client.Filter("dcim", "front-ports", map[string]interface{}{
 			"device_id": deviceID,
 			"name":      portName,
 		})
 		if err == nil && len(frontPorts) > 0 {
+			dr.logger.Debug("    ✓ Found frontport ID %d", utils.GetIDFromObject(frontPorts[0]))
 			return &portInfo{
 				objectType: "dcim.frontport",
 				objectID:   utils.GetIDFromObject(frontPorts[0]),
@@ -896,13 +905,16 @@ func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *p
 				port:       portName,
 			}
 		}
+		dr.logger.Debug("    ✗ Frontport not found (err=%v, count=%d)", err, len(frontPorts))
 	} else {
+		dr.logger.Debug("    → Searching for INTERFACE (neither device is patch-panel)")
 		// Device → Device (Interface)
 		interfaces, err := dr.client.Filter("dcim", "interfaces", map[string]interface{}{
 			"device_id": deviceID,
 			"name":      portName,
 		})
 		if err == nil && len(interfaces) > 0 {
+			dr.logger.Debug("    ✓ Found interface ID %d", utils.GetIDFromObject(interfaces[0]))
 			return &portInfo{
 				objectType: "dcim.interface",
 				objectID:   utils.GetIDFromObject(interfaces[0]),
@@ -910,7 +922,9 @@ func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *p
 				port:       portName,
 			}
 		}
+		dr.logger.Debug("    ✗ Interface not found (err=%v, count=%d)", err, len(interfaces))
 	}
 
+	dr.logger.Warning("    ✗ Port not found with any type (interface/frontport/rearport)")
 	return nil
 }
