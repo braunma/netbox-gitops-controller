@@ -12,11 +12,9 @@
 #
 #   GITLAB_RUNNER_TAG          GitLab runner tag
 #                              Default: "docker"
-#                              Example: "gitlab-runner-03"
 #
 #   PYTHON_LEGACY_IMAGE        Python image for legacy support
 #                              Default: "python:3.11"
-#                              Example: "nexus.denbi.bihealth.org:8089/admin/pynetbox:v1.0"
 #
 # Optional variables to override:
 #
