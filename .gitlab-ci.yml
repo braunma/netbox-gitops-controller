@@ -1,3 +1,33 @@
+# =============================================================================
+# NetBox GitOps Controller - CI/CD Pipeline
+# =============================================================================
+#
+# CONFIGURATION INSTRUCTIONS:
+# ---------------------------
+# This pipeline uses variables for all environment-specific settings.
+# To configure for your environment, set these variables in:
+#   GitLab Project → Settings → CI/CD → Variables
+#
+# Required variables to override (if using private infrastructure):
+#
+#   GITLAB_RUNNER_TAG          GitLab runner tag
+#                              Default: "docker"
+#                              Example: "gitlab-runner-03"
+#
+#   PYTHON_LEGACY_IMAGE        Python image for legacy support
+#                              Default: "python:3.11"
+#                              Example: "nexus.denbi.bihealth.org:8089/admin/pynetbox:v1.0"
+#
+# Optional variables to override:
+#
+#   GOLANG_IMAGE               Go compiler image
+#                              Default: "golang:1.23"
+#
+#   PYTHON_IMAGE               Python image for utilities
+#                              Default: "python:3.11-slim"
+#
+# =============================================================================
+
 stages:
   - test      # Run tests
   - build     # Build Go binary
@@ -6,6 +36,23 @@ stages:
   - apply     # Apply changes (Main branch)
 
 variables:
+  # ===========================================================================
+  # ENVIRONMENT-SPECIFIC VARIABLES
+  # Override these in GitLab CI/CD Settings > Variables for your environment
+  # ===========================================================================
+
+  # GitLab Runner tag (override in GitLab Variables if needed)
+  GITLAB_RUNNER_TAG: "docker"
+
+  # Container image registry paths (override in GitLab Variables for private registries)
+  GOLANG_IMAGE: "golang:1.23"
+  PYTHON_IMAGE: "python:3.11-slim"
+  PYTHON_LEGACY_IMAGE: "python:3.11"  # Override with your custom image if needed
+
+  # ===========================================================================
+  # BUILD CONFIGURATION
+  # ===========================================================================
+
   # Python variables
   PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
   PYTHONPATH: "$CI_PROJECT_DIR"
@@ -13,7 +60,11 @@ variables:
   # Go variables
   GOPATH: "$CI_PROJECT_DIR/.go"
   GOCACHE: "$CI_PROJECT_DIR/.cache/go-build"
-  CGO_ENABLED: "0"
+  CGO_ENABLED: "1"
+
+default:
+  tags:
+    - ${GITLAB_RUNNER_TAG}
 
 cache:
   paths:
@@ -26,7 +77,7 @@ cache:
 # =============================================================================
 
 .go_base:
-  image: golang:1.21
+  image: ${GOLANG_IMAGE}
   before_script:
     - go version
     - go mod download
@@ -112,12 +163,11 @@ go_apply:
 # =============================================================================
 
 .python_base:
-  image: nexus.denbi.bihealth.org:8089/admin/pynetbox:v1.0
+  image: ${PYTHON_LEGACY_IMAGE}
   before_script:
     - echo "🔧 Setting up Python environment..."
     - pip install -r requirements.txt
 
-# Python tests (if any exist)
 python_test:
   extends: .python_base
   stage: test
@@ -130,7 +180,6 @@ python_test:
     - if: $CI_COMMIT_BRANCH
   when: manual
 
-# Python validate (legacy)
 python_validate:
   extends: .python_base
   stage: validate
@@ -142,7 +191,6 @@ python_validate:
     - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
   when: manual
 
-# Python apply (legacy fallback)
 python_apply:
   extends: .python_base
   stage: apply
@@ -160,7 +208,6 @@ python_apply:
 # UTILITY JOBS
 # =============================================================================
 
-# Lint Go code
 go_lint:
   extends: .go_base
   stage: test
@@ -174,24 +221,34 @@ go_lint:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
-# Check YAML syntax
 yaml_check:
-  image: python:3.11-slim
+  image: ${PYTHON_IMAGE}
   stage: test
   before_script:
     - pip install pyyaml
   script:
     - echo "📝 Checking YAML syntax..."
-    - python -c "import yaml; import sys; [yaml.safe_load(open(f)) for f in sys.argv[1:]]" definitions/**/*.yaml inventory/**/*.yaml
-    - echo "✅ YAML syntax is valid!"
+    # This version uses a Python script to safely handle cases where directories are empty or missing
+    - |
+      python -c "
+      import yaml, glob, sys
+      files = glob.glob('definitions/**/*.yaml', recursive=True) + glob.glob('inventory/**/*.yaml', recursive=True)
+      if not files:
+          print('No YAML files found to check.')
+          sys.exit(0)
+      for f in files:
+          print(f'Checking {f}...')
+          with open(f, 'r') as stream:
+              yaml.safe_load(stream)
+      print('✅ All found YAML files are valid!')
+      "
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
-# Debug environment (manual)
 debug_environment:
   extends: .go_base
-  stage: test
+  stage: build
   script:
     - echo "📂 Repository structure:"
     - ls -la
