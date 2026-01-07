@@ -132,12 +132,18 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	}
 
 	// B. Build device payload
+	// Default status to "active" if not provided (matches Python exclude_none behavior)
+	status := device.Status
+	if status == "" {
+		status = "active"
+	}
+
 	payload := map[string]interface{}{
 		"name":        device.Name,
 		"site":        siteID,
 		"role":        roleID,
 		"device_type": deviceTypeID,
-		"status":      device.Status,
+		"status":      status,
 	}
 
 	// Add rack if we have one
