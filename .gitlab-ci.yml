@@ -117,7 +117,7 @@ go_validate:
     - go_build
   script:
     - echo "🔍 Validating with Go implementation..."
-    - ./netbox-gitops --dry-run
+    - ./netbox-gitops --data-dir=example --dry-run
     - echo "✅ Validation passed!"
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
@@ -131,7 +131,7 @@ go_plan:
     - go_build
   script:
     - echo "📜 Generating sync plan with Go..."
-    - ./netbox-gitops --dry-run | tee plan-output.txt
+    - ./netbox-gitops --data-dir=example --dry-run | tee plan-output.txt
     - echo "✅ Plan generated successfully!"
   artifacts:
     paths:
@@ -183,6 +183,7 @@ python_validate:
   stage: validate
   script:
     - echo "🔍 Validating with Python implementation (legacy)..."
+    - echo "⚠️  Note: Python implementation does not support --data-dir flag"
     - python src/main.py --dry-run
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
@@ -226,14 +227,16 @@ yaml_check:
     - pip install pyyaml
   script:
     - echo "📝 Checking YAML syntax..."
-    # This version uses a Python script to safely handle cases where directories are empty or missing
+    # Check YAML files in example directory (used by CI) and any custom definitions
     - |
       python -c "
       import yaml, glob, sys
-      files = glob.glob('definitions/**/*.yaml', recursive=True) + glob.glob('inventory/**/*.yaml', recursive=True)
+      files = glob.glob('example/definitions/**/*.yaml', recursive=True) + glob.glob('example/inventory/**/*.yaml', recursive=True)
+      files += glob.glob('definitions/**/*.yaml', recursive=True) + glob.glob('inventory/**/*.yaml', recursive=True)
       if not files:
-          print('No YAML files found to check.')
+          print('⚠️  No YAML files found to check.')
           sys.exit(0)
+      print(f'Found {len(files)} YAML files to validate')
       for f in files:
           print(f'Checking {f}...')
           with open(f, 'r') as stream:
@@ -250,6 +253,8 @@ debug_environment:
   script:
     - echo "📂 Repository structure:"
     - ls -la
+    - echo "📂 Example directory structure:"
+    - ls -la example/ || echo "No example directory"
     - echo "📦 Go modules:"
     - go list -m all
     - echo "🔧 Go environment:"
@@ -258,6 +263,8 @@ debug_environment:
     - python --version || echo "Python not available"
     - echo "📄 Binary info:"
     - ./netbox-gitops --help || echo "Binary not built yet"
+    - echo "🧪 Testing --data-dir flag:"
+    - ./netbox-gitops --data-dir=example --help || echo "Data dir flag test failed"
   dependencies:
     - go_build
   when: manual

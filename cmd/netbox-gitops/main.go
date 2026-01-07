@@ -15,6 +15,7 @@ import (
 var (
 	dryRun     bool
 	configFile string
+	dataDir    string
 )
 
 func main() {
@@ -27,6 +28,7 @@ func main() {
 
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate changes without applying them")
 	rootCmd.Flags().StringVar(&configFile, "config", ".env", "Configuration file path")
+	rootCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Base directory for definitions and inventory (e.g., 'example' for test data)")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -35,6 +37,13 @@ func main() {
 
 func runSync(cmd *cobra.Command, args []string) error {
 	logger := utils.NewLogger(dryRun)
+
+	// Auto-detect and validate data directory
+	dataDir, err := resolveDataDir(dataDir, logger)
+	if err != nil {
+		logger.Error("Failed to resolve data directory", err)
+		return err
+	}
 
 	// Load environment variables
 	netboxURL := os.Getenv("NETBOX_URL")
@@ -54,7 +63,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize data loader
-	dataLoader := loader.NewDataLoader(".", logger)
+	dataLoader := loader.NewDataLoader(dataDir, logger)
 
 	// =========================================================================
 	// PHASE 1: FOUNDATION
@@ -66,7 +75,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	foundationReconciler := reconciler.NewFoundationReconciler(c)
 
 	// Load and reconcile tags
-	tags, err := dataLoader.LoadTags("definitions/extras")
+	tags, err := dataLoader.LoadTags(buildPath(dataDir, "definitions/extras"))
 	if err != nil {
 		logger.Error("Failed to load tags", err)
 		return err
@@ -77,7 +86,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load and reconcile roles
-	roles, err := dataLoader.LoadRoles("definitions/roles")
+	roles, err := dataLoader.LoadRoles(buildPath(dataDir, "definitions/roles"))
 	if err != nil {
 		logger.Error("Failed to load roles", err)
 		return err
@@ -88,7 +97,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load and reconcile sites
-	sites, err := dataLoader.LoadSites("definitions/sites")
+	sites, err := dataLoader.LoadSites(buildPath(dataDir, "definitions/sites"))
 	if err != nil {
 		logger.Error("Failed to load sites", err)
 		return err
@@ -99,7 +108,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load and reconcile racks
-	racks, err := dataLoader.LoadRacks("definitions/racks")
+	racks, err := dataLoader.LoadRacks(buildPath(dataDir, "definitions/racks"))
 	if err != nil {
 		logger.Error("Failed to load racks", err)
 		return err
@@ -119,7 +128,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	networkReconciler := reconciler.NewNetworkReconciler(c)
 
 	// Load and reconcile VRFs
-	vrfs, err := dataLoader.LoadVRFs("definitions/vrfs")
+	vrfs, err := dataLoader.LoadVRFs(buildPath(dataDir, "definitions/vrfs"))
 	if err != nil {
 		logger.Error("Failed to load VRFs", err)
 		return err
@@ -130,7 +139,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load and reconcile VLAN groups
-	vlanGroups, err := dataLoader.LoadVLANGroups("definitions/vlan_groups")
+	vlanGroups, err := dataLoader.LoadVLANGroups(buildPath(dataDir, "definitions/vlan_groups"))
 	if err != nil {
 		logger.Error("Failed to load VLAN groups", err)
 		return err
@@ -141,7 +150,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load and reconcile VLANs
-	vlans, err := dataLoader.LoadVLANs("definitions/vlans")
+	vlans, err := dataLoader.LoadVLANs(buildPath(dataDir, "definitions/vlans"))
 	if err != nil {
 		logger.Error("Failed to load VLANs", err)
 		return err
@@ -152,7 +161,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load and reconcile prefixes
-	prefixes, err := dataLoader.LoadPrefixes("definitions/prefixes")
+	prefixes, err := dataLoader.LoadPrefixes(buildPath(dataDir, "definitions/prefixes"))
 	if err != nil {
 		logger.Error("Failed to load prefixes", err)
 		return err
@@ -166,7 +175,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	deviceTypeReconciler := reconciler.NewDeviceTypeReconciler(c)
 
 	// Load and reconcile module types
-	moduleTypes, err := dataLoader.LoadModuleTypes("definitions/module_types")
+	moduleTypes, err := dataLoader.LoadModuleTypes(buildPath(dataDir, "definitions/module_types"))
 	if err != nil {
 		logger.Error("Failed to load module types", err)
 		return err
@@ -177,7 +186,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load and reconcile device types
-	deviceTypes, err := dataLoader.LoadDeviceTypes("definitions/device_types")
+	deviceTypes, err := dataLoader.LoadDeviceTypes(buildPath(dataDir, "definitions/device_types"))
 	if err != nil {
 		logger.Error("Failed to load device types", err)
 		return err
@@ -202,13 +211,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Load devices from inventory
-	activeDevices, err := dataLoader.LoadDevices("inventory/hardware/active")
+	activeDevices, err := dataLoader.LoadDevices(buildPath(dataDir, "inventory/hardware/active"))
 	if err != nil {
 		logger.Error("Failed to load active devices", err)
 		return err
 	}
 
-	passiveDevices, err := dataLoader.LoadDevices("inventory/hardware/passive")
+	passiveDevices, err := dataLoader.LoadDevices(buildPath(dataDir, "inventory/hardware/passive"))
 	if err != nil {
 		logger.Error("Failed to load passive devices", err)
 		return err
@@ -259,4 +268,34 @@ func getKeys(m map[string]bool) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// resolveDataDir determines the correct data directory to use
+// It implements auto-detection: if definitions/ doesn't exist in the specified directory,
+// it falls back to the example/ directory
+func resolveDataDir(dir string, logger *utils.Logger) (string, error) {
+	// Check if definitions directory exists in the specified directory
+	definitionsPath := fmt.Sprintf("%s/definitions", dir)
+	if _, err := os.Stat(definitionsPath); err == nil {
+		logger.Info("Using data directory: %s", dir)
+		return dir, nil
+	}
+
+	// If not in current directory, check if example/ directory exists
+	examplePath := "example"
+	exampleDefinitionsPath := fmt.Sprintf("%s/definitions", examplePath)
+	if _, err := os.Stat(exampleDefinitionsPath); err == nil {
+		logger.Warning("definitions/ not found in '%s', falling back to '%s'", dir, examplePath)
+		return examplePath, nil
+	}
+
+	return "", fmt.Errorf("no valid data directory found: checked '%s' and '%s'", dir, examplePath)
+}
+
+// buildPath constructs a path relative to the data directory
+func buildPath(dataDir, subPath string) string {
+	if dataDir == "." {
+		return subPath
+	}
+	return fmt.Sprintf("%s/%s", dataDir, subPath)
 }
