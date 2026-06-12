@@ -63,17 +63,17 @@ func (dr *DeviceReconciler) ReconcileDevices(devices []*models.DeviceConfig) err
 // reconcileDevice reconciles a single device
 func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	// Get required IDs
-	siteID, ok := dr.client.Cache().GetID("sites", device.SiteSlug)
+	siteID, ok := dr.client.Cache().GetGlobalID("sites", device.SiteSlug)
 	if !ok {
 		return fmt.Errorf("site %s not found", device.SiteSlug)
 	}
 
-	roleID, ok := dr.client.Cache().GetID("roles", device.RoleSlug)
+	roleID, ok := dr.client.Cache().GetGlobalID("roles", device.RoleSlug)
 	if !ok {
 		return fmt.Errorf("role %s not found", device.RoleSlug)
 	}
 
-	deviceTypeID, ok := dr.client.Cache().GetID("device_types", device.DeviceTypeSlug)
+	deviceTypeID, ok := dr.client.Cache().GetGlobalID("device_types", device.DeviceTypeSlug)
 	if !ok {
 		return fmt.Errorf("device type %s not found", device.DeviceTypeSlug)
 	}
@@ -355,7 +355,7 @@ func (dr *DeviceReconciler) reconcileIPAddress(deviceID, ifaceID int, iface *mod
 	}
 
 	if ipConfig.VRF != "" {
-		vrfID, ok := dr.client.Cache().GetID("vrfs", ipConfig.VRF)
+		vrfID, ok := dr.client.Cache().GetGlobalID("vrfs", ipConfig.VRF)
 		if ok {
 			payload["vrf"] = vrfID
 		}
@@ -366,7 +366,7 @@ func (dr *DeviceReconciler) reconcileIPAddress(deviceID, ifaceID int, iface *mod
 	}
 
 	if ipConfig.VRF != "" {
-		if vrfID, ok := dr.client.Cache().GetID("vrfs", ipConfig.VRF); ok {
+		if vrfID, ok := dr.client.Cache().GetGlobalID("vrfs", ipConfig.VRF); ok {
 			lookup["vrf_id"] = vrfID
 		}
 	}
@@ -428,7 +428,7 @@ func (dr *DeviceReconciler) setPrimaryIP(deviceID, ipID int) error {
 func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.DeviceConfig) error {
 	for _, module := range device.Modules {
 		// Get module type ID
-		moduleTypeID, ok := dr.client.Cache().GetID("module_types", module.ModuleTypeSlug)
+		moduleTypeID, ok := dr.client.Cache().GetGlobalID("module_types", module.ModuleTypeSlug)
 		if !ok {
 			dr.logger.Warning("Module type %s not found, skipping", module.ModuleTypeSlug)
 			continue

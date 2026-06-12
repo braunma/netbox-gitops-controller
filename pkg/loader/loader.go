@@ -1,6 +1,7 @@
 package loader
 
 import (
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -178,6 +179,19 @@ func (dl *DataLoader) loadFromFolder(folder string, target interface{}) error {
 	return nil
 }
 
+// validateItems runs model validation on every item loaded from a file.
+// All failures in a file are aggregated so the user sees them at once
+// instead of fixing them one sync run at a time.
+func validateItems[T models.Validator](path string, items []T) error {
+	var errs []error
+	for i, item := range items {
+		if err := item.Validate(); err != nil {
+			errs = append(errs, fmt.Errorf("%s: entry %d: %w", path, i+1, err))
+		}
+	}
+	return errors.Join(errs...)
+}
+
 // loadFile loads a single YAML file and appends items to target
 func (dl *DataLoader) loadFile(path string, target interface{}) error {
 	file, err := os.Open(path)
@@ -191,10 +205,15 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Unmarshal YAML - it should be a list
+	// Unmarshal YAML - usually a list, but accept a single top-level mapping
+	// as a one-element list (e.g. one device type per file)
 	var items []map[string]interface{}
 	if err := yaml.Unmarshal(content, &items); err != nil {
-		return fmt.Errorf("failed to unmarshal YAML: %w", err)
+		var single map[string]interface{}
+		if err2 := yaml.Unmarshal(content, &single); err2 != nil {
+			return fmt.Errorf("failed to unmarshal YAML: %w", err)
+		}
+		items = []map[string]interface{}{single}
 	}
 
 	// Get current target slice and append items from this file
@@ -206,12 +225,18 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal sites: %w", err)
 		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
 		*t = append(*t, newItems...)
 	case *[]*models.Rack:
 		var newItems []*models.Rack
 		data, _ := yaml.Marshal(items)
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal racks: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
 		}
 		*t = append(*t, newItems...)
 	case *[]*models.Role:
@@ -220,12 +245,18 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal roles: %w", err)
 		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
 		*t = append(*t, newItems...)
 	case *[]*models.Tag:
 		var newItems []*models.Tag
 		data, _ := yaml.Marshal(items)
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal tags: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
 		}
 		*t = append(*t, newItems...)
 	case *[]*models.VLAN:
@@ -234,12 +265,18 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal vlans: %w", err)
 		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
 		*t = append(*t, newItems...)
 	case *[]*models.VLANGroup:
 		var newItems []*models.VLANGroup
 		data, _ := yaml.Marshal(items)
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal vlan groups: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
 		}
 		*t = append(*t, newItems...)
 	case *[]*models.VRF:
@@ -248,12 +285,18 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal vrfs: %w", err)
 		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
 		*t = append(*t, newItems...)
 	case *[]*models.Prefix:
 		var newItems []*models.Prefix
 		data, _ := yaml.Marshal(items)
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal prefixes: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
 		}
 		*t = append(*t, newItems...)
 	case *[]*models.DeviceType:
@@ -262,6 +305,9 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal device types: %w", err)
 		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
 		*t = append(*t, newItems...)
 	case *[]*models.ModuleType:
 		var newItems []*models.ModuleType
@@ -269,12 +315,18 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal module types: %w", err)
 		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
 		*t = append(*t, newItems...)
 	case *[]*models.DeviceConfig:
 		var newItems []*models.DeviceConfig
 		data, _ := yaml.Marshal(items)
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal devices: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
 		}
 		*t = append(*t, newItems...)
 	default:

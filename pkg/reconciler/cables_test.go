@@ -216,10 +216,12 @@ func TestVerifyCable(t *testing.T) {
 			expected: false,
 		},
 		{
+			// NetBox stores colors as hex without # prefix; the YAML color
+			// name is normalized before comparison ("blue" -> "0000ff")
 			name: "matching color",
 			cable: map[string]interface{}{
 				"type":  "dac-active",
-				"color": "blue",
+				"color": "0000ff",
 			},
 			link: &models.LinkConfig{
 				CableType: "dac-active",
@@ -231,7 +233,7 @@ func TestVerifyCable(t *testing.T) {
 			name: "mismatched color",
 			cable: map[string]interface{}{
 				"type":  "dac-active",
-				"color": "red",
+				"color": "ff0000",
 			},
 			link: &models.LinkConfig{
 				CableType: "dac-active",

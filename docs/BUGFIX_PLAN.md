@@ -1,5 +1,11 @@
 # Bug-Fix Plan
 
+> **Status: all five fixes implemented** (June 2026). Additionally fixed
+> along the way: the loader now accepts single-mapping YAML files (the
+> `example/definitions/device_types/*.yaml` files were previously unloadable),
+> and two test fixtures were corrected (`u_height: 0` is valid for child
+> device types; NetBox stores cable colors as hex, not names).
+
 Prioritized plan for correctness fixes. **Guiding principle: the current
 reconciliation logic — especially cable reconciliation (`pkg/reconciler/cables.go`)
 — is functional and field-tested. None of the fixes below change reconciliation
