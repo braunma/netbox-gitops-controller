@@ -1,5 +1,13 @@
 # Repository Audit & Roadmap (June 2026)
 
+> **Actionable follow-ups are tracked in dedicated documents:**
+> - `docs/BUGFIX_PLAN.md` — prioritized bug fixes (conservative; no changes to
+>   working cable reconciliation logic)
+> - `docs/MISSING_FEATURES.md` — missing features with implementation order
+>
+> This file is the full audit snapshot; the two documents above take precedence
+> where they differ.
+
 Audit of the Go implementation: what works, what is missing, what should be
 implemented next, and what should be refactored. Supersedes the stale findings
 in `docs/BUGS_FOUND.md` (the rack / prefix-VLAN / VLAN-group cache collisions
