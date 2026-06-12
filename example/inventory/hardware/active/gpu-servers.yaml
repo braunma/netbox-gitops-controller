@@ -35,7 +35,7 @@
     - name: "GPU-4"
       module_type_slug: "ex-gpu-a100"
       status: "active"
-      # No serial - will be set to empty string (matches Python behavior)
+      # No serial - will be set to empty string
 
   interfaces:
     - name: "eth0"

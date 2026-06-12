@@ -105,7 +105,7 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 			continue
 		}
 
-		// CRITICAL: Order matters! (matches Python device_types.py lines 52-112)
+		// CRITICAL: Order matters!
 		// 1. REAR PORTS FIRST - they must exist before front ports
 		if err := dtr.reconcileRearPortTemplates(dtID, dt.RearPorts); err != nil {
 			return fmt.Errorf("failed to reconcile rear port templates for %s: %w", dt.Model, err)

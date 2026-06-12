@@ -4,7 +4,7 @@ This document describes the GitLab CI/CD pipeline for the NetBox GitOps Controll
 
 ## 🎯 Overview
 
-The pipeline supports **both Go (primary)** and **Python (legacy)** implementations with automatic testing, building, and deployment.
+The pipeline tests, builds, and deploys the Go implementation automatically.
 
 ## 📊 Pipeline Stages
 
@@ -13,7 +13,6 @@ Runs all tests and validations:
 - `go_test` - Go unit tests with race detection ✅ **Auto**
 - `go_lint` - Go code linting (fmt, vet) ✅ **Auto**
 - `yaml_check` - YAML syntax validation ✅ **Auto**
-- `python_test` - Python tests (manual, legacy support)
 - `debug_environment` - Environment debugging (manual)
 
 ### 2. **Build Stage**
@@ -23,7 +22,6 @@ Builds the Go binary:
 ### 3. **Validate Stage**
 Validates configuration in dry-run mode:
 - `go_validate` - Go implementation validation ✅ **Auto** (non-main branches)
-- `python_validate` - Python validation (manual, legacy)
 
 ### 4. **Plan Stage**
 Generates deployment preview for merge requests:
@@ -32,7 +30,6 @@ Generates deployment preview for merge requests:
 ### 5. **Apply Stage**
 Applies changes to production:
 - `go_apply` - Production deployment with Go 🔒 **Manual** (main branch only)
-- `python_apply` - Legacy Python deployment 🔒 **Manual** (fallback)
 
 ## 🚀 Pipeline Behavior
 
@@ -60,7 +57,6 @@ Applies changes to production:
 ✅ go_test (automatic)
 ✅ go_build (automatic)
 🔒 go_apply (manual) → Click to deploy to production
-🔒 python_apply (manual) → Legacy fallback
 ```
 
 ## 📦 Artifacts
@@ -138,10 +134,6 @@ Environment: production
 Runs: Main branch (manual trigger required)
 ```
 
-### Legacy Python Jobs
-
-All Python jobs are marked as `when: manual` or `allow_failure: true` to support legacy deployments without interfering with the primary Go pipeline.
-
 ## 🎨 Best Practices
 
 ### For Developers
@@ -207,7 +199,7 @@ export NETBOX_TOKEN="your_token"
 ### YAML Syntax Errors
 ```bash
 # Validate YAML locally
-python -c "import yaml; yaml.safe_load(open('definitions/sites/sites.yaml'))"
+go run ./cmd/yamlcheck
 ```
 
 ### Need to Debug
@@ -221,7 +213,6 @@ python -c "import yaml; yaml.safe_load(open('definitions/sites/sites.yaml'))"
 1. **Never commit tokens** - Use GitLab CI/CD variables
 2. **Review plan output** - Always check before applying
 3. **Manual approval** - Production deploys require manual trigger
-4. **Separate environments** - Go and Python use different environment names
 
 ## 📊 Pipeline Performance
 
@@ -235,18 +226,6 @@ python -c "import yaml; yaml.safe_load(open('definitions/sites/sites.yaml'))"
 ### Cache Benefits
 - Go module cache: Speeds up builds by ~50%
 - Go build cache: Speeds up compilation by ~70%
-
-## 🔄 Migration Path
-
-### Current State
-- ✅ Go is the **primary** implementation
-- ✅ Python jobs are **manual/fallback**
-- ✅ All new pipelines use Go by default
-
-### To Remove Python Support
-1. Remove Python jobs from `.gitlab-ci.yml`
-2. Remove Python variables and cache
-3. Remove `requirements.txt` and `src/` directory
 
 ## 📚 References
 
