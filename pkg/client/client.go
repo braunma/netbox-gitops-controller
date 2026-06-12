@@ -61,46 +61,108 @@ func NewClient(baseURL, token string, dryRun bool) (*NetBoxClient, error) {
 // Object represents a generic NetBox object
 type Object map[string]interface{}
 
+const (
+	// maxRetries is the number of additional attempts after a transient failure.
+	maxRetries = 3
+	// defaultPageSize overrides NetBox's default page size (50) for list requests.
+	defaultPageSize = 250
+)
+
+// retryBaseDelay is doubled after each failed attempt (1s, 2s, 4s).
+// Variable so tests can shorten it.
+var retryBaseDelay = 1 * time.Second
+
+// isRetryableStatus reports whether a response status may be retried.
+// HTTP 429 is retryable for all methods. 5xx responses are retryable except
+// for POST: the server may already have processed the creation, and a retry
+// could create a duplicate object. Network errors (no response at all) are
+// always retried by doWithRetry.
+func isRetryableStatus(method string, statusCode int) bool {
+	if statusCode == http.StatusTooManyRequests {
+		return true
+	}
+	if statusCode >= 500 {
+		return method != "POST"
+	}
+	return false
+}
+
+// doWithRetry executes an HTTP request, retrying transient failures with
+// exponential backoff. The request is rebuilt on every attempt because the
+// body reader is consumed. It returns the response status code and body.
+func (c *NetBoxClient) doWithRetry(method, requestURL string, jsonBody []byte) (int, []byte, error) {
+	var lastErr error
+
+	for attempt := 0; ; attempt++ {
+		var bodyReader io.Reader
+		if jsonBody != nil {
+			bodyReader = bytes.NewReader(jsonBody)
+		}
+
+		req, err := http.NewRequest(method, requestURL, bodyReader)
+		if err != nil {
+			return 0, nil, fmt.Errorf("failed to create request: %w", err)
+		}
+		req.Header.Set("Authorization", "Token "+c.token)
+		req.Header.Set("Accept", "application/json")
+		if jsonBody != nil {
+			req.Header.Set("Content-Type", "application/json")
+		}
+
+		resp, err := c.httpClient.Do(req)
+		if err == nil {
+			respBody, readErr := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if readErr != nil {
+				err = fmt.Errorf("failed to read response: %w", readErr)
+			} else if !isRetryableStatus(method, resp.StatusCode) {
+				return resp.StatusCode, respBody, nil
+			} else {
+				err = fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+			}
+		} else {
+			err = fmt.Errorf("request failed: %w", err)
+		}
+
+		lastErr = err
+		if attempt >= maxRetries {
+			break
+		}
+
+		delay := retryBaseDelay << attempt
+		c.logger.Warning("Transient error on %s %s (attempt %d/%d), retrying in %s: %v",
+			method, requestURL, attempt+1, maxRetries+1, delay, err)
+		time.Sleep(delay)
+	}
+
+	return 0, nil, fmt.Errorf("giving up after %d attempts: %w", maxRetries+1, lastErr)
+}
+
 // Request makes an HTTP request to the NetBox API
 func (c *NetBoxClient) Request(method, path string, body interface{}) (Object, error) {
-	url := c.baseURL + path
+	requestURL := c.baseURL + path
 
-	var bodyReader io.Reader
+	var jsonBody []byte
 	if body != nil {
-		jsonBody, err := json.Marshal(body)
+		var err error
+		jsonBody, err = json.Marshal(body)
 		if err != nil {
 			return nil, fmt.Errorf("failed to marshal request body: %w", err)
 		}
-		bodyReader = bytes.NewReader(jsonBody)
 	}
-
-	req, err := http.NewRequest(method, url, bodyReader)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Token "+c.token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", "application/json")
 
 	if c.dryRun && (method == "POST" || method == "PATCH" || method == "PUT" || method == "DELETE") {
 		c.logger.DryRun(method, path)
 		return Object{"id": 0}, nil
 	}
 
-	resp, err := c.httpClient.Do(req)
+	statusCode, respBody, err := c.doWithRetry(method, requestURL, jsonBody)
 	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
+	if statusCode >= 400 {
+		return nil, fmt.Errorf("API error %d: %s", statusCode, string(respBody))
 	}
 
 	if len(respBody) == 0 {
@@ -115,55 +177,56 @@ func (c *NetBoxClient) Request(method, path string, body interface{}) (Object, e
 	return result, nil
 }
 
-// List makes a GET request and returns a list of objects
+// List makes a GET request and returns a list of objects, following the
+// pagination links until all pages are fetched. NetBox paginates list
+// responses (default page size: 50), so reading only the first page would
+// silently truncate results in larger environments.
 func (c *NetBoxClient) List(path string, filters map[string]interface{}) ([]Object, error) {
-	requestURL := c.baseURL + path
+	queryParams := url.Values{}
+	for k, v := range filters {
+		queryParams.Add(k, fmt.Sprintf("%v", v))
+	}
+	if queryParams.Get("limit") == "" {
+		queryParams.Set("limit", fmt.Sprintf("%d", defaultPageSize))
+	}
+	requestURL := c.baseURL + path + "?" + queryParams.Encode()
 
-	if len(filters) > 0 {
-		queryParams := url.Values{}
-		for k, v := range filters {
-			queryParams.Add(k, fmt.Sprintf("%v", v))
+	var allResults []Object
+
+	for requestURL != "" {
+		statusCode, respBody, err := c.doWithRetry("GET", requestURL, nil)
+		if err != nil {
+			return nil, err
 		}
-		requestURL += "?" + queryParams.Encode()
-	}
 
-	req, err := http.NewRequest("GET", requestURL, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create request: %w", err)
-	}
-
-	req.Header.Set("Authorization", "Token "+c.token)
-	req.Header.Set("Accept", "application/json")
-
-	resp, err := c.httpClient.Do(req)
-	if err != nil {
-		return nil, fmt.Errorf("request failed: %w", err)
-	}
-	defer resp.Body.Close()
-
-	respBody, err := io.ReadAll(resp.Body)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read response: %w", err)
-	}
-
-	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("API error %d: %s", resp.StatusCode, string(respBody))
-	}
-
-	var result struct {
-		Results []Object `json:"results"`
-	}
-
-	if err := json.Unmarshal(respBody, &result); err != nil {
-		// Try unmarshaling as direct array
-		var directResults []Object
-		if err2 := json.Unmarshal(respBody, &directResults); err2 == nil {
-			return directResults, nil
+		if statusCode >= 400 {
+			return nil, fmt.Errorf("API error %d: %s", statusCode, string(respBody))
 		}
-		return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+
+		var result struct {
+			Results []Object `json:"results"`
+			Next    *string  `json:"next"`
+		}
+
+		if err := json.Unmarshal(respBody, &result); err != nil {
+			// Try unmarshaling as direct array (non-paginated endpoint)
+			var directResults []Object
+			if err2 := json.Unmarshal(respBody, &directResults); err2 == nil {
+				return append(allResults, directResults...), nil
+			}
+			return nil, fmt.Errorf("failed to unmarshal response: %w", err)
+		}
+
+		allResults = append(allResults, result.Results...)
+
+		if result.Next != nil && *result.Next != "" {
+			requestURL = *result.Next
+		} else {
+			requestURL = ""
+		}
 	}
 
-	return result.Results, nil
+	return allResults, nil
 }
 
 // Get retrieves a single object by ID

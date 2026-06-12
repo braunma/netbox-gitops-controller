@@ -60,7 +60,7 @@ func (nr *NetworkReconciler) ReconcileVLANGroups(groups []*models.VLANGroup) err
 		}
 
 		if group.SiteSlug != "" {
-			siteID, ok := nr.client.Cache().GetID("sites", group.SiteSlug)
+			siteID, ok := nr.client.Cache().GetGlobalID("sites", group.SiteSlug)
 			if ok {
 				payload["site"] = siteID
 			}
@@ -168,14 +168,14 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 		}
 
 		if prefix.SiteSlug != "" {
-			siteID, ok := nr.client.Cache().GetID("sites", prefix.SiteSlug)
+			siteID, ok := nr.client.Cache().GetGlobalID("sites", prefix.SiteSlug)
 			if ok {
 				payload["site"] = siteID
 			}
 		}
 
 		if prefix.VRFName != "" {
-			vrfID, ok := nr.client.Cache().GetID("vrfs", prefix.VRFName)
+			vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName)
 			if ok {
 				payload["vrf"] = vrfID
 			}
@@ -197,7 +197,7 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 			} else {
 				// Fallback: prefix has no site, try legacy lookup (rare case)
 				nr.logger.Warning("Prefix %s has VLAN but no site - using legacy lookup", prefix.Prefix)
-				vlanID, ok := nr.client.Cache().GetID("vlans", prefix.VLANName)
+				vlanID, ok := nr.client.Cache().GetGlobalID("vlans", prefix.VLANName)
 				if ok {
 					payload["vlan"] = vlanID
 				}
@@ -213,7 +213,7 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 
 		lookup := map[string]interface{}{"prefix": prefix.Prefix}
 		if prefix.VRFName != "" {
-			vrfID, ok := nr.client.Cache().GetID("vrfs", prefix.VRFName)
+			vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName)
 			if ok {
 				lookup["vrf_id"] = vrfID
 			}

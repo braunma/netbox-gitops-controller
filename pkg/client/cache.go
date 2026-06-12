@@ -52,13 +52,13 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 	cm.client.logger.Info("Reloading cache for site: %s", siteSlug)
 
 	// Find site ID
-	siteID, ok := cm.GetID("sites", siteSlug)
+	siteID, ok := cm.GetGlobalID("sites", siteSlug)
 	if !ok {
 		// Try loading sites first
 		if err := cm.loadResource("sites", "dcim/sites", nil, 0); err != nil {
 			return fmt.Errorf("failed to load sites: %w", err)
 		}
-		siteID, ok = cm.GetID("sites", siteSlug)
+		siteID, ok = cm.GetGlobalID("sites", siteSlug)
 		if !ok {
 			return fmt.Errorf("site %s not found", siteSlug)
 		}
@@ -158,8 +158,9 @@ func (cm *CacheManager) loadResource(resource, path string, filters map[string]i
 	return nil
 }
 
-// GetID retrieves an ID from the cache (legacy method, use GetGlobalID or GetSiteID instead)
-func (cm *CacheManager) GetID(resource, identifier string) (int, bool) {
+// GetGlobalID retrieves an ID for a global resource (not site-specific)
+// Use this for: device_types, module_types, roles, manufacturers, sites, vrfs
+func (cm *CacheManager) GetGlobalID(resource, identifier string) (int, bool) {
 	cm.mu.RLock()
 	defer cm.mu.RUnlock()
 
@@ -171,10 +172,14 @@ func (cm *CacheManager) GetID(resource, identifier string) (int, bool) {
 	return id, ok
 }
 
-// GetGlobalID retrieves an ID for a global resource (not site-specific)
-// Use this for: device_types, module_types, roles, manufacturers, sites, vrfs
-func (cm *CacheManager) GetGlobalID(resource, identifier string) (int, bool) {
-	return cm.GetID(resource, identifier)
+// GetID retrieves an ID from the cache.
+//
+// Deprecated: use GetGlobalID for global resources or GetSiteID for
+// site-scoped resources. This method performs an unscoped lookup and masks
+// site-collision bugs; it will be removed in a future release. No internal
+// callers remain.
+func (cm *CacheManager) GetID(resource, identifier string) (int, bool) {
+	return cm.GetGlobalID(resource, identifier)
 }
 
 // GetSiteID retrieves an ID for a site-specific resource using composite key
