@@ -8,7 +8,7 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
   * **Idempotency:** The script calculates differences and only applies necessary changes. Repeated executions result in "No-Ops" (no API calls) if the state is already correct.
   * **Safety (Shared Management):**
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
-      * ⚠️ **Safe Pruning:** The tool only deletes or overwrites objects that possess this tag. Manually created objects in NetBox (without the tag) are ignored and preserved.
+      * ⚠️ **No Pruning (yet):** The tool creates and updates objects, but it does **not** delete objects that were removed from the YAML files — they remain in NetBox and must be cleaned up manually. (The only exception: conflicting cables are removed during re-wiring.) Automatic orphan pruning for `gitops`-tagged objects is planned; see `docs/MISSING_FEATURES.md`.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
@@ -129,9 +129,8 @@ File: `inventory/hardware/active/switches.yaml`
 ### The `gitops` Tag
 
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`).
-  * **Safety Logic:** If you remove a device from the YAML file, the script checks NetBox.
-      * If the object has the `gitops` tag -\> **DELETE** (Cleanup).
-      * If the object has NO tag (created manually) -\> **IGNORE** (Protect manual data).
+  * **Current behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects. Remove orphaned objects manually in NetBox.
+  * The `gitops` tag marks which objects are managed by this tool. A future `--prune` mode will use it to safely delete orphans while protecting manually created objects (see `docs/MISSING_FEATURES.md`).
 
 ### Common Errors
 

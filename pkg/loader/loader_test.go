@@ -224,14 +224,12 @@ func TestLoadDefinitionFiles(t *testing.T) {
 
 	t.Run("Load Device Types", func(t *testing.T) {
 		deviceTypes, err := loader.LoadDeviceTypes("definitions/device_types")
-		// Note: Device type files may be single objects or arrays
-		// The loader may have issues with single-object files
+		// Device type files may be single objects or arrays; both are supported
 		if err != nil {
-			t.Logf("LoadDeviceTypes() warning: %v (may be expected for mixed format files)", err)
-			// Don't fail - check if we got some device types anyway
+			t.Errorf("LoadDeviceTypes() error = %v", err)
 		}
-		if len(deviceTypes) == 0 && err != nil {
-			t.Skip("Skipping device type validation due to loader limitations with mixed formats")
+		if len(deviceTypes) == 0 {
+			t.Error("LoadDeviceTypes() returned no device types")
 		}
 
 		// Verify device type structure for what we got
@@ -245,7 +243,8 @@ func TestLoadDefinitionFiles(t *testing.T) {
 			if dt.Manufacturer == "" {
 				t.Error("DeviceType has empty manufacturer")
 			}
-			if dt.UHeight <= 0 {
+			// Child device types (blades) must have u_height 0
+			if dt.UHeight < 0 {
 				t.Errorf("DeviceType %s has invalid UHeight: %d", dt.Model, dt.UHeight)
 			}
 		}

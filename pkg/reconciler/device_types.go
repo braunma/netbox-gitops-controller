@@ -28,7 +28,7 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 
 	for _, mt := range moduleTypes {
 		// Get manufacturer ID
-		mfgID, ok := dtr.client.Cache().GetID("manufacturers", mt.Manufacturer)
+		mfgID, ok := dtr.client.Cache().GetGlobalID("manufacturers", mt.Manufacturer)
 		if !ok {
 			// Create manufacturer if it doesn't exist
 			mfgPayload := map[string]interface{}{
@@ -68,7 +68,7 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 
 	for _, dt := range deviceTypes {
 		// Get manufacturer ID
-		mfgID, ok := dtr.client.Cache().GetID("manufacturers", dt.Manufacturer)
+		mfgID, ok := dtr.client.Cache().GetGlobalID("manufacturers", dt.Manufacturer)
 		if !ok {
 			// Create manufacturer if it doesn't exist
 			mfgPayload := map[string]interface{}{
