@@ -61,7 +61,7 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 	fr.logger.Info("Reconciling %d racks...", len(racks))
 
 	for _, rack := range racks {
-		// Get site ID using LIVE lookup (not cache) - matches Python dcim.py lines 26-30
+		// Get site ID using LIVE lookup (not cache)
 		// This is critical because the site might have been just created and not in cache yet
 		sites, err := fr.client.Filter("dcim", "sites", map[string]interface{}{
 			"slug": rack.SiteSlug,

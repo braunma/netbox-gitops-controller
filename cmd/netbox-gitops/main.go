@@ -68,8 +68,8 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// =========================================================================
 	// LOAD GLOBAL CACHES (MUST BE BEFORE PHASE 1)
 	// =========================================================================
-	// Python does this in main.py lines 154-156 BEFORE device reconciliation
-	// We need to load it even earlier because foundation reconciler needs it
+	// Must happen before device reconciliation - and even earlier here,
+	// because the foundation reconciler needs it too
 	logger.Info("Loading global caches...")
 	if err := c.Cache().LoadGlobal(); err != nil {
 		logger.Error("Failed to load global caches", err)

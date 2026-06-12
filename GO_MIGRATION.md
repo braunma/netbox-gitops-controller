@@ -4,7 +4,7 @@ This document describes the Python to Go migration of the NetBox GitOps Controll
 
 ## ✅ Migration Status
 
-The Python codebase has been successfully migrated to Go with **full feature parity** and **comprehensive test coverage**.
+The Python codebase has been successfully migrated to Go with **full feature parity** and **comprehensive test coverage**. The legacy Python implementation has since been removed from the repository.
 
 ### Completed Components
 
@@ -257,7 +257,6 @@ To verify the migration is working correctly:
 - [NetBox API Documentation](https://demo.netbox.dev/api/docs/)
 - [Go YAML v3](https://github.com/go-yaml/yaml)
 - [Cobra CLI](https://github.com/spf13/cobra)
-- [Original Python Implementation](../src/)
 
 ## 🎉 Summary
 

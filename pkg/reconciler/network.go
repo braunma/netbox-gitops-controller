@@ -91,7 +91,7 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 	nr.logger.Info("Reconciling %d VLANs...", len(vlans))
 
 	for _, vlan := range vlans {
-		// Get site ID using LIVE lookup (not cache) - matches Python ipam.py pattern
+		// Get site ID using LIVE lookup (not cache)
 		sites, err := nr.client.Filter("dcim", "sites", map[string]interface{}{
 			"slug": vlan.SiteSlug,
 		})

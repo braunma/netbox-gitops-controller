@@ -1,5 +1,9 @@
 # Refactoring Analysis & Go Migration Guide
 
+> **Historical document**: This analysis refers to the legacy Python implementation
+> (`src/`), which has since been fully removed from the repository. File and line
+> references to Python code no longer resolve.
+
 ## Overview
 
 This document analyzes code inconsistencies, duplicate logic, and provides guidance for migrating from Python to Go.

@@ -13,16 +13,10 @@
 #   GITLAB_RUNNER_TAG          GitLab runner tag
 #                              Default: "docker"
 #
-#   PYTHON_LEGACY_IMAGE        Python image for legacy support
-#                              Default: "python:3.11"
-#
 # Optional variables to override:
 #
 #   GOLANG_IMAGE               Go compiler image
 #                              Default: "golang:1.24"
-#
-#   PYTHON_IMAGE               Python image for utilities
-#                              Default: "python:3.11-slim"
 #
 # PIPELINE SPEED CONTROLS:
 # ------------------------
@@ -35,7 +29,7 @@
 #
 #   RUN_TESTS                  Skip test execution
 #                              Set to "false" to skip (default: "true")
-#                              Skips: go_test, python_test
+#                              Skips: go_test
 #
 # HOW TO USE:
 # 1. Per-pipeline: GitLab → CI/CD → Run Pipeline → Add variable
@@ -62,8 +56,6 @@ variables:
 
   # Container image registry paths (override in GitLab Variables for private registries)
   GOLANG_IMAGE: "golang:1.24"
-  PYTHON_IMAGE: "python:3.11-slim"
-  PYTHON_LEGACY_IMAGE: "python:3.11"  # Override with your custom image if needed
 
   # ===========================================================================
   # PIPELINE CONTROL VARIABLES
@@ -75,7 +67,7 @@ variables:
   # Default: "true" - runs all quality checks
   RUN_QUALITY_CHECKS: "true"
 
-  # RUN_TESTS: Controls test execution (go_test, python_test)
+  # RUN_TESTS: Controls test execution (go_test)
   # Set to "false" to skip tests (faster pipeline)
   # Default: "true" - runs all tests
   RUN_TESTS: "true"
@@ -83,10 +75,6 @@ variables:
   # ===========================================================================
   # BUILD CONFIGURATION
   # ===========================================================================
-
-  # Python variables
-  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
-  PYTHONPATH: "$CI_PROJECT_DIR"
 
   # Go variables
   GOPATH: "$CI_PROJECT_DIR/.go"
@@ -99,12 +87,11 @@ default:
 
 cache:
   paths:
-    - .cache/pip
     - .cache/go-build
     - .go/pkg/mod
 
 # =============================================================================
-# GO JOBS (Primary Implementation)
+# GO JOBS
 # =============================================================================
 
 .go_base:
@@ -192,57 +179,6 @@ go_apply:
     name: production
 
 # =============================================================================
-# PYTHON JOBS (Legacy Support)
-# =============================================================================
-
-.python_base:
-  image: ${PYTHON_LEGACY_IMAGE}
-  before_script:
-    - echo "🔧 Setting up Python environment..."
-    - pip install -r requirements.txt
-
-python_test:
-  extends: .python_base
-  stage: test
-  script:
-    - echo "🧪 Running Python tests..."
-    - python -m pytest tests/ || echo "No Python tests found"
-  allow_failure: true
-  rules:
-    - if: $RUN_TESTS == "false"
-      when: never
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
-      when: manual
-    - if: $CI_COMMIT_BRANCH
-      when: manual
-
-python_validate:
-  extends: .python_base
-  stage: validate
-  script:
-    - echo "🔍 Validating with Python implementation (legacy)..."
-    - echo "⚠️  Note: Python implementation does not support --data-dir flag"
-    - python src/main.py --dry-run
-  rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
-      when: manual
-    - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
-      when: manual
-
-python_apply:
-  extends: .python_base
-  stage: apply
-  script:
-    - echo "🚀 Applying changes with Python (legacy)..."
-    - python src/main.py
-  rules:
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: manual
-  environment:
-    name: production-python
-  allow_failure: true
-
-# =============================================================================
 # UTILITY JOBS
 # =============================================================================
 
@@ -262,28 +198,12 @@ go_lint:
     - if: $CI_COMMIT_BRANCH
 
 yaml_check:
-  image: ${PYTHON_IMAGE}
+  extends: .go_base
   stage: test
-  before_script:
-    - pip install pyyaml
   script:
     - echo "📝 Checking YAML syntax..."
     # Check YAML files in example directory (used by CI) and any custom definitions
-    - |
-      python -c "
-      import yaml, glob, sys
-      files = glob.glob('example/definitions/**/*.yaml', recursive=True) + glob.glob('example/inventory/**/*.yaml', recursive=True)
-      files += glob.glob('definitions/**/*.yaml', recursive=True) + glob.glob('inventory/**/*.yaml', recursive=True)
-      if not files:
-          print('⚠️  No YAML files found to check.')
-          sys.exit(0)
-      print(f'Found {len(files)} YAML files to validate')
-      for f in files:
-          print(f'Checking {f}...')
-          with open(f, 'r') as stream:
-              yaml.safe_load(stream)
-      print('✅ All found YAML files are valid!')
-      "
+    - go run ./cmd/yamlcheck
   rules:
     - if: $RUN_QUALITY_CHECKS == "false"
       when: never
@@ -302,8 +222,6 @@ debug_environment:
     - go list -m all
     - echo "🔧 Go environment:"
     - go env
-    - echo "🐍 Python version (if available):"
-    - python --version || echo "Python not available"
     - echo "📄 Binary info:"
     - ./netbox-gitops --help || echo "Binary not built yet"
     - echo "🧪 Testing data directory access:"

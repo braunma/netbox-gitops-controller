@@ -26,7 +26,7 @@ func NewCableReconciler(c *client.NetBoxClient) *CableReconciler {
 	}
 }
 
-// cableColorMap maps color names to hex codes (matches Python constants.py:CABLE_COLOR_MAP)
+// cableColorMap maps color names to hex codes
 var cableColorMap = map[string]string{
 	"purple": "800080",
 	"blue":   "0000ff",
@@ -41,7 +41,6 @@ var cableColorMap = map[string]string{
 }
 
 // normalizeColor converts color names to hex codes and strips # prefix
-// Matches Python utils.py:normalize_color (lines 44-50)
 func normalizeColor(colorInput string) string {
 	if colorInput == "" {
 		return ""
@@ -119,7 +118,6 @@ func (cr *CableReconciler) ReconcileCable(aEnd, bEnd *CableEndpoint, link *model
 		cr.logger.Debug("│ No existing cable found")
 
 		// CRITICAL: Check local port (A-end) for existing cables FIRST
-		// Python device_controller.py lines 587-605 (Section D)
 		cr.logger.Debug("│ Checking local port for existing cables...")
 		skipCreation, err := cr.checkAndCleanLocalPort(aEnd, bEnd)
 		if err != nil {
@@ -133,7 +131,6 @@ func (cr *CableReconciler) ReconcileCable(aEnd, bEnd *CableEndpoint, link *model
 		}
 
 		// CRITICAL: Check peer port (B-end) for existing cables
-		// Python device_controller.py lines 607-639 (Section E)
 		cr.logger.Debug("│ Checking peer port for existing cables...")
 
 		skipCreation, err = cr.checkAndCleanPeerPort(aEnd, bEnd, link)
@@ -361,7 +358,6 @@ func (cr *CableReconciler) updateCable(cable client.Object, link *models.LinkCon
 }
 
 // checkAndCleanLocalPort checks if the local port (A-end) already has a cable
-// Matches Python device_controller.py lines 587-605 (Section D)
 // Returns (skipCreation, error) - skipCreation=true means cable already exists correctly
 func (cr *CableReconciler) checkAndCleanLocalPort(aEnd, bEnd *CableEndpoint) (bool, error) {
 	// Determine the endpoint type for A-end
@@ -421,7 +417,6 @@ func (cr *CableReconciler) checkAndCleanLocalPort(aEnd, bEnd *CableEndpoint) (bo
 	cr.logger.Debug("│ Local port already has cable ID: %d", cableID)
 
 	// Check if this cable connects to our B-end (correct cable - idempotent case)
-	// Python: if self._cable_connects_to(existing, peer.id)
 	if cr.cableConnectsTo(existingCable, bEnd.ObjectID) {
 		cr.logger.Info("│ Local port already has correct cable (ID: %d)", cableID)
 		cr.logger.Info("│ Action: No changes needed (idempotent)")
@@ -429,12 +424,11 @@ func (cr *CableReconciler) checkAndCleanLocalPort(aEnd, bEnd *CableEndpoint) (bo
 	}
 
 	// The local port has a cable to a DIFFERENT device - delete it
-	// Python: self._safe_delete(existing, "wrong peer connection", force=True)
 	cr.logger.Warning("│ Local port has cable to DIFFERENT device")
 	cr.logger.Warning("│ Existing cable ID %d blocks our connection", cableID)
 	cr.logger.Info("│ Deleting wrong cable on local port ID %d (forced)", cableID)
 
-	// Delete the cable (matches Python force=True behavior - no managed check)
+	// Delete the cable unconditionally (forced - no managed-tag check)
 	if !cr.client.IsDryRun() {
 		if err := cr.client.Delete("dcim", "cables", cableID); err != nil {
 			return false, fmt.Errorf("failed to delete wrong cable on local port: %w", err)
@@ -447,9 +441,8 @@ func (cr *CableReconciler) checkAndCleanLocalPort(aEnd, bEnd *CableEndpoint) (bo
 	return false, nil
 }
 
-// checkAndCleanPeerPort checks if the peer port (B-end) already has a cable
+// checkAndCleanPeerPort checks if the peer port (B-end) already has a stray cable
 // Returns (skipCreation, error) - skipCreation=true means cable already exists correctly
-// Matches Python device_controller.py lines 607-639: "Peer-Port prüfen (Stray cables)"
 func (cr *CableReconciler) checkAndCleanPeerPort(aEnd, bEnd *CableEndpoint, link *models.LinkConfig) (bool, error) {
 	// Determine the endpoint type to query
 	var endpoint string
@@ -520,14 +513,12 @@ func (cr *CableReconciler) checkAndCleanPeerPort(aEnd, bEnd *CableEndpoint, link
 	cr.logger.Warning("│ Peer port has cable to DIFFERENT device")
 	cr.logger.Warning("│ Existing cable ID %d blocks our connection", cableID)
 
-	// Python device_controller.py lines 628-637:
 	// Special handling for backbone cables (rearport to rearport between patch panels)
-	// vs. regular blocking cables - but BOTH use force=True to skip managed check
+	// vs. regular blocking cables - but BOTH are force-deleted, skipping the managed check
 
 	// Check if this is a backbone cable scenario (B-end is rearport to patch panel)
 	if bEnd.ObjectType == "dcim.rearport" {
 		// This would be a patch panel backbone cable
-		// Python checks: if term_b_type == "dcim.rearport" and is_dst_pp
 		// If the existing cable doesn't connect to our A-end, it's the wrong backbone
 		cr.logger.Info("│ Deleting wrong backbone cable ID %d (forced)", cableID)
 	} else {
@@ -535,9 +526,7 @@ func (cr *CableReconciler) checkAndCleanPeerPort(aEnd, bEnd *CableEndpoint, link
 		cr.logger.Info("│ Deleting blocking cable ID %d (forced)", cableID)
 	}
 
-	// Delete the cable (matches Python force=True behavior - no managed check)
-	// Python: self._safe_delete(peer_cable, reason, force=True)
-	// With force=True, Python skips the is_managed_by_gitops check (line 67)
+	// Delete the cable unconditionally (forced - skips the managed-tag check)
 	if !cr.client.IsDryRun() {
 		if err := cr.client.Delete("dcim", "cables", cableID); err != nil {
 			return false, fmt.Errorf("failed to delete blocking cable: %w", err)
@@ -551,7 +540,6 @@ func (cr *CableReconciler) checkAndCleanPeerPort(aEnd, bEnd *CableEndpoint, link
 }
 
 // cableConnectsTo checks if a cable has a termination connecting to the specified object ID
-// Matches Python _cable_connects_to helper
 func (cr *CableReconciler) cableConnectsTo(cable client.Object, targetObjectID int) bool {
 	// Check A terminations
 	if aTerms, ok := cable["a_terminations"].([]interface{}); ok {

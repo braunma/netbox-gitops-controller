@@ -174,16 +174,18 @@ export NETBOX_TOKEN="your_api_token"
 ### Modified
 ```
 ✅ .gitignore        # Added bin/ and Go artifacts
-✅ .gitlab-ci.yml    # Updated for Go + Python
+✅ .gitlab-ci.yml    # Updated for Go
 ```
 
 ### Preserved
 ```
-✅ src/              # Python code (legacy, still works)
 ✅ definitions/      # YAML definitions (unchanged)
 ✅ inventory/        # YAML inventory (unchanged)
-✅ requirements.txt  # Python deps (for legacy)
 ```
+
+> **Note**: The legacy Python implementation (`src/`, `requirements.txt`) was
+> initially preserved as a fallback and has since been removed from the
+> repository, along with the Python CI/CD jobs.
 
 ---
 
@@ -220,10 +222,9 @@ export NETBOX_TOKEN="your_api_token"
 5. 🔜 Enhanced diff visualization
 6. 🔜 Configuration file support (.netbox-gitops.yaml)
 
-### Cleanup (Future)
-1. 🔜 Remove Python code after Go is proven stable
-2. 🔜 Remove Python CI/CD jobs
-3. 🔜 Archive Python implementation
+### Cleanup
+1. ✅ Remove Python code after Go is proven stable
+2. ✅ Remove Python CI/CD jobs
 
 ---
 

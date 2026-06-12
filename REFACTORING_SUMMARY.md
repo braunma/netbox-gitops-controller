@@ -1,5 +1,9 @@
 # Code Refactoring Summary
 
+> **Historical document**: This summary describes refactoring work on the legacy
+> Python implementation (`src/`), which has since been fully removed from the
+> repository. File and line references to Python code no longer resolve.
+
 ## Overview
 
 This refactoring prepares the NetBox GitOps Controller for migration from Python to Go while fixing inconsistencies, removing code duplication, and improving maintainability.

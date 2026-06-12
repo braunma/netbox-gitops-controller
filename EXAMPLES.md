@@ -185,12 +185,12 @@ EOF
 
 2. Run dry-run to preview:
 ```bash
-python src/main.py --dry-run
+./netbox-gitops --dry-run
 ```
 
 3. Apply to NetBox:
 ```bash
-python src/main.py
+./netbox-gitops
 ```
 
 ### Option 2: Customize for Your Environment
@@ -284,10 +284,10 @@ Add a new web server to Berlin DC:
 
 ### Check for Errors
 
-All data is validated by Pydantic models before API calls:
+All data is validated against typed models before API calls:
 
 ```bash
-python src/main.py --dry-run 2>&1 | grep -i error
+./netbox-gitops --dry-run 2>&1 | grep -i error
 ```
 
 ### Common Issues
@@ -321,7 +321,6 @@ python src/main.py --dry-run 2>&1 | grep -i error
 ## 📖 Additional Resources
 
 - [NetBox Documentation](https://docs.netbox.dev/)
-- [Pydantic Validation](https://docs.pydantic.dev/)
 - Device Type Library: [devicetype-library](https://github.com/netbox-community/devicetype-library)
 
 ## ⚠️ Important Notes
@@ -348,11 +347,9 @@ Objects **without** the `gitops` tag are:
 
 This allows **hybrid management** - some objects via GitOps, others manually.
 
-## 🔄 Migration to Go
+## 🔄 Portability
 
-These YAML files are designed to be forward-compatible with the planned Go refactor:
-- Pure declarative YAML (no Python-specific features)
-- Standard Pydantic/JSON Schema validation patterns
+These YAML files are pure declarative data:
+- No implementation-specific features
+- Standard JSON Schema-style validation patterns
 - RESTful API interactions (easily portable)
-
-The folder structure and file formats will remain the same during the Go migration.

@@ -1,6 +1,6 @@
 # NetBox GitOps Controller
 
-This Python tool enables **declarative management** (Infrastructure as Code) for a NetBox instance. It synchronizes definitions from YAML files idempotently against the NetBox API.
+This Go tool enables **declarative management** (Infrastructure as Code) for a NetBox instance. It synchronizes definitions from YAML files idempotently against the NetBox API.
 
 ## 🚀 Key Features
 
@@ -10,7 +10,7 @@ This Python tool enables **declarative management** (Infrastructure as Code) for
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
       * ⚠️ **Safe Pruning:** The tool only deletes or overwrites objects that possess this tag. Manually created objects in NetBox (without the tag) are ignored and preserved.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
-  * **Type Safety:** All input data is validated using **Pydantic** models before interacting with the API to prevent bad requests.
+  * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
 -----
@@ -161,19 +161,13 @@ git clone <repo-url>
 cd netbox-gitops
 ```
 
-### 2\. Install Dependencies
+### 2\. Build the Binary
 
-It is recommended to use a virtual environment.
+Requires Go 1.24 or later. Dependencies are managed via Go modules and downloaded automatically.
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # Linux/macOS
-# venv\Scripts\activate   # Windows
-
-pip install -r requirements.txt
+go build -o netbox-gitops ./cmd/netbox-gitops/
 ```
-
-*(Required packages: `pynetbox`, `pydantic`, `rich`, `python-dotenv`)*
 
 ### 3\. Environment Configuration
 
@@ -193,7 +187,7 @@ NETBOX_TOKEN=your_api_token_here
 Shows exactly what changes *would* be applied without actually touching NetBox. **Always run this first\!**
 
 ```bash
-python src/main.py --dry-run
+./netbox-gitops --dry-run
 ```
 
 ### 2\. Apply Changes
@@ -201,7 +195,7 @@ python src/main.py --dry-run
 Executes the synchronization against the NetBox API.
 
 ```bash
-python src/main.py
+./netbox-gitops
 ```
 
 ## 📚 Example Files
@@ -233,11 +227,11 @@ See **[EXAMPLES.md](./EXAMPLES.md)** for:
 To see the examples in action:
 
 ```bash
-# Preview what would be created
-python src/main.py --dry-run
+# Preview what would be created (uses the example data)
+./netbox-gitops --dry-run --data-dir example
 
 # Apply to your NetBox instance (requires .env configuration)
-python src/main.py
+./netbox-gitops --data-dir example
 ```
 
 **Note**: The examples create a complete test infrastructure suitable for learning and development. For production use, customize the files to match your actual environment.
