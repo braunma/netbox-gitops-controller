@@ -78,13 +78,13 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		return fmt.Errorf("device type %s not found", device.DeviceTypeSlug)
 	}
 
-	// A. Rack & Parent Logic (matches Python lines 155-179)
+	// A. Rack & Parent Logic
 	var yamlRackID, parentRackID, deviceBayID int
 	var finalRackID int
 
 	// Get rack ID from YAML config if specified
 	// CRITICAL: Use site-scoped lookup - racks are site-specific
-	// (matches Python line 157 pattern but fixes cache collision bug)
+	// (avoids cache collisions between same-named racks in different sites)
 	if device.RackSlug != "" {
 		if rackID, ok := dr.client.Cache().GetSiteID("racks", siteID, device.RackSlug); ok {
 			yamlRackID = rackID
@@ -133,7 +133,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	}
 
 	// B. Build device payload
-	// Default status to "active" if not provided (matches Python exclude_none behavior)
+	// Default status to "active" if not provided
 	status := device.Status
 	if status == "" {
 		status = "active"
@@ -152,7 +152,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		payload["rack"] = finalRackID
 	}
 
-	// Handle position and face based on device type (matches Python lines 190-198)
+	// Handle position and face based on device type
 	if deviceBayID > 0 {
 		// Child device going into a bay - remove position and face
 		// (will be installed into bay after creation)
@@ -192,7 +192,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		return nil
 	}
 
-	// D. Install device into bay if specified (matches Python lines 209-258)
+	// D. Install device into bay if specified
 	if deviceBayID > 0 {
 		if err := dr.installDeviceIntoBay(deviceID, deviceBayID, device); err != nil {
 			return fmt.Errorf("failed to install device into bay: %w", err)
@@ -270,7 +270,6 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 		// CRITICAL: Use site-scoped cache lookup for VLANs
 		// VLANs are cached with composite keys: "site-{siteID}:{vlanName}"
 		// This prevents collisions when multiple sites have VLANs with same name
-		// (Enterprise fix: matches Python pattern but with proper site scoping)
 		if iface.UntaggedVLAN != "" {
 			vlanID, ok := dr.client.Cache().GetSiteID("vlans", siteID, iface.UntaggedVLAN)
 			if ok {
@@ -451,7 +450,7 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 
 		bayID := utils.GetIDFromObject(bays[0])
 
-		// Default status to "active" if not provided (matches Python line 378)
+		// Default status to "active" if not provided
 		status := module.Status
 		if status == "" {
 			status = "active"
@@ -464,7 +463,7 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 			"status":      status,
 		}
 
-		// Add serial - always set to empty string if not provided (matches Python behavior)
+		// Add serial - always set to empty string if not provided
 		// This avoids 400 errors from NetBox API
 		if module.Serial != "" {
 			payload["serial"] = module.Serial
@@ -479,7 +478,7 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 			payload["description"] = module.Description
 		}
 
-		// Add managed tag if available (matches Python behavior)
+		// Add managed tag if available
 		if dr.client.ManagedTagID() > 0 {
 			payload["tags"] = []int{dr.client.ManagedTagID()}
 		}
@@ -499,7 +498,6 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 }
 
 // installDeviceIntoBay installs a device into a device bay using the bay-centric approach
-// This matches Python behavior (lines 209-258)
 func (dr *DeviceReconciler) installDeviceIntoBay(deviceID, deviceBayID int, device *models.DeviceConfig) error {
 	dr.logger.Debug("  Installing device into bay...")
 
@@ -549,7 +547,7 @@ func (dr *DeviceReconciler) installDeviceIntoBay(deviceID, deviceBayID int, devi
 }
 
 // reconcileDeviceBays performs self-healing by creating missing device bays
-// based on the device type templates (matches Python behavior lines 88-139)
+// based on the device type templates
 func (dr *DeviceReconciler) reconcileDeviceBays(deviceID, deviceTypeID int) error {
 	// Get device bay templates for this device type
 	templates, err := dr.client.Filter("dcim", "device-bay-templates", map[string]interface{}{
@@ -758,7 +756,7 @@ func (dr *DeviceReconciler) reconcilePendingCables() error {
 	// This is because the same port name (e.g., pp-rack-a-01[2]) can be BOTH:
 	//   - A frontport (when accessed from server/switch)
 	//   - A rearport (when used for patch panel backbone cables)
-	// Python does fresh role-based lookups for each cable (device_controller.py:536-558)
+	// So we do fresh role-based lookups for each cable
 	portLookup := make(map[string]portInfo)
 
 	dr.logger.Debug("Building port lookup table from %d pending cables...", len(dr.pendingCables))
@@ -832,9 +830,8 @@ type portInfo struct {
 }
 
 // findPort searches for a port by device and port name, using role-based logic to determine port type
-// Matches Python device_controller.py lines 536-558
 func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *portInfo {
-	// Get device ID using LIVE lookup (not cache) - matches Python device_controller.py line 492
+	// Get device ID using LIVE lookup (not cache)
 	// Devices are not loaded into cache, so we must query NetBox directly
 	devices, err := dr.client.Filter("dcim", "devices", map[string]interface{}{
 		"name": deviceName,
@@ -859,7 +856,7 @@ func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *p
 		}
 	}
 
-	// Determine port type based on device roles (matches Python logic)
+	// Determine port type based on device roles
 	isSourcePP := sourceRole == "patch-panel"
 	isPeerPP := peerRole == "patch-panel"
 
@@ -867,7 +864,7 @@ func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *p
 	dr.logger.Debug("    findPort(%s, %s, sourceRole=%s): peerRole=%s, isSourcePP=%v, isPeerPP=%v",
 		deviceName, portName, sourceRole, peerRole, isSourcePP, isPeerPP)
 
-	// Python device_controller.py lines 536-558:
+	// Port selection rules:
 	// - Both patch panels: use rearport (backbone cable)
 	// - Only peer is patch panel: use frontport (access cable)
 	// - Otherwise: use interface (device-to-device)

@@ -179,7 +179,6 @@ func (dl *DataLoader) loadFromFolder(folder string, target interface{}) error {
 }
 
 // loadFile loads a single YAML file and appends items to target
-// Matches Python loader.py line 56: results.extend([model(**item) for item in data])
 func (dl *DataLoader) loadFile(path string, target interface{}) error {
 	file, err := os.Open(path)
 	if err != nil {

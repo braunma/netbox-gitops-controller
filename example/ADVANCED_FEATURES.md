@@ -114,11 +114,12 @@ To test these features:
    - Check blade servers are installed in chassis
    - Check modules have the `gitops:managed` tag
 
-## Python Compatibility
+## Behavioral Compatibility
 
-All features in this Go implementation match the Python version's behavior:
-- Module serial handling (lines 382-386)
-- Managed tag on modules (lines 388-390)
-- Device bay self-healing (lines 88-139)
-- Parent device/bay installation (lines 155-258)
-- Rack/face/position logic (lines 190-198)
+All features in this Go implementation match the behavior of the original
+(now removed) Python implementation:
+- Module serial handling
+- Managed tag on modules
+- Device bay self-healing
+- Parent device/bay installation
+- Rack/face/position logic
