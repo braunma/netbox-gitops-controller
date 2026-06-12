@@ -205,14 +205,16 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		return fmt.Errorf("failed to reconcile interfaces: %w", err)
 	}
 
-	dr.logger.Debug("  Reconciling front ports for %s...", device.Name)
-	if err := dr.reconcileFrontPorts(deviceID, device); err != nil {
-		return fmt.Errorf("failed to reconcile front ports: %w", err)
-	}
-
+	// Rear ports must exist before front ports: front ports reference
+	// them by ID (same ordering constraint as device type templates).
 	dr.logger.Debug("  Reconciling rear ports for %s...", device.Name)
 	if err := dr.reconcileRearPorts(deviceID, device); err != nil {
 		return fmt.Errorf("failed to reconcile rear ports: %w", err)
+	}
+
+	dr.logger.Debug("  Reconciling front ports for %s...", device.Name)
+	if err := dr.reconcileFrontPorts(deviceID, device); err != nil {
+		return fmt.Errorf("failed to reconcile front ports: %w", err)
 	}
 
 	// Self-healing: Create missing device bays from device type templates

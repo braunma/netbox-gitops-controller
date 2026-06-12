@@ -19,6 +19,10 @@ import (
 // filtered list, get-by-ID, create, partial update, and delete on any
 // /api/{app}/{endpoint}/ path, and records every mutating request so tests
 // can assert exactly what a reconciler did.
+//
+// Like real NetBox, creating or deleting a cable sets or clears the
+// "cable" reference on the terminated ports — the cable reconciler's
+// idempotency depends on that side effect.
 type fakeNetBox struct {
 	mu        sync.Mutex
 	nextID    int
@@ -107,6 +111,9 @@ func (f *fakeNetBox) handle(w http.ResponseWriter, r *http.Request) {
 			obj[k] = v
 		}
 		f.store[key] = append(f.store[key], obj)
+		if key == "dcim/cables" {
+			f.setCableRefLocked(obj, map[string]interface{}{"id": f.nextID})
+		}
 		w.WriteHeader(http.StatusCreated)
 		json.NewEncoder(w).Encode(obj)
 
@@ -123,6 +130,11 @@ func (f *fakeNetBox) handle(w http.ResponseWriter, r *http.Request) {
 		json.NewEncoder(w).Encode(obj)
 
 	case r.Method == "DELETE":
+		if key == "dcim/cables" {
+			if cable := f.findLocked(key, id); cable != nil {
+				f.setCableRefLocked(cable, nil)
+			}
+		}
 		objs := f.store[key]
 		for i, obj := range objs {
 			if utils.GetIDFromObject(obj) == id {
@@ -180,6 +192,39 @@ func matchesFilters(obj client.Object, query url.Values) bool {
 		return false
 	}
 	return true
+}
+
+// terminationStoreKeys maps cable termination object types to the store
+// key of the corresponding port endpoint.
+var terminationStoreKeys = map[string]string{
+	"dcim.interface": "dcim/interfaces",
+	"dcim.frontport": "dcim/front-ports",
+	"dcim.rearport":  "dcim/rear-ports",
+}
+
+// setCableRefLocked sets (or clears, when ref is nil) the "cable" field
+// on every port terminated by the given cable.
+func (f *fakeNetBox) setCableRefLocked(cable client.Object, ref interface{}) {
+	for _, side := range []string{"a_terminations", "b_terminations"} {
+		terms, ok := cable[side].([]interface{})
+		if !ok {
+			continue
+		}
+		for _, term := range terms {
+			tm, ok := term.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			objType, _ := tm["object_type"].(string)
+			storeKey, ok := terminationStoreKeys[objType]
+			if !ok {
+				continue
+			}
+			if port := f.findLocked(storeKey, utils.GetIDFromObject(tm["object_id"])); port != nil {
+				port["cable"] = ref
+			}
+		}
+	}
 }
 
 func (f *fakeNetBox) findLocked(key string, id int) client.Object {
