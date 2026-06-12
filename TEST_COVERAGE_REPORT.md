@@ -1,392 +1,92 @@
 # Test Coverage & Validation Report
 
-**Generated:** 2025-12-24
-**Branch:** `claude/enhance-cable-reconciliation-i4Jsj`
-**Status:** ✅ All Tests Passing
+**Generated:** 2026-06-12
+**Branch:** `claude/test-coverage-analysis-we2ije`
+**Status:** ✅ All Tests Passing (race detector enabled)
 
 ---
 
 ## Executive Summary
 
-This report documents comprehensive testing and validation of the NetBox GitOps Controller, including the newly implemented cable reconciliation features. All YAML definition and inventory files are validated, and extensive unit tests cover critical functionality.
+Total statement coverage across `./pkg/...` is **73.4%** (up from 19.8%).
+All 96 test functions pass with `-race`. CI enforces a minimum coverage of
+**65%** via the `COVERAGE_THRESHOLD` variable in `.gitlab-ci.yml` — raise it
+as coverage improves.
 
-**Overall Status:**
-- ✅ **19/19** YAML files validated successfully
-- ✅ **All test suites** passing
-- ✅ **Cable reconciliation** fully tested with idempotency guarantees
-- ✅ **Diff visualization** tested and working
-- ✅ **100% coverage** on models package
-
----
-
-## Test Coverage by Package
-
-### Summary
-
-| Package | Coverage | Status | Test Count |
-|---------|----------|--------|------------|
-| `pkg/models` | **100.0%** | ✅ Perfect | 6 tests |
-| `pkg/loader` | **79.4%** | ✅ Excellent | 13 tests |
-| `pkg/utils` | **71.8%** | ✅ Good | 8 tests |
-| `pkg/client` | **16.9%** | ✅ Targeted | 6 tests |
-| `pkg/reconciler` | **5.9%** | ✅ Core Logic | 7 tests |
-
-### Details
-
-#### pkg/models (100.0% Coverage)
-**Tests:**
-- ✅ TestVRFSlug - VRF name slugification
-- ✅ TestDeviceConfigSlug - Device name slugification
-- ✅ TestSiteModel - Site model structure
-- ✅ TestVLANModel - VLAN model structure
-- ✅ TestDeviceTypeModel - Device type model structure
-- ✅ TestLinkConfig - Cable link configuration
-
-**Coverage:** Complete coverage of all model structures and helper methods.
-
-#### pkg/loader (79.4% Coverage)
-**Tests:**
-- ✅ TestDataLoaderInitialization - Loader instantiation
-- ✅ TestLoadDefinitionFiles - All definition YAML files
-  - Tags (7 files loaded successfully)
-  - Roles (8 files loaded successfully)
-  - Sites (4 files loaded successfully)
-  - Racks (6 files loaded successfully)
-  - VRFs (4 files loaded successfully)
-  - VLAN Groups (3 files loaded successfully)
-  - VLANs (8 files loaded successfully)
-  - Prefixes (11 files loaded successfully)
-  - Device Types (mixed format handling)
-  - Module Types (6 files loaded successfully)
-- ✅ TestLoadInventoryFiles - All inventory YAML files
-  - Active devices (3 devices loaded)
-  - Passive devices (4 devices loaded)
-  - Cable link validation
-- ✅ TestYAMLFileValidation - Validates all 19 YAML files
-
-**Coverage:** Comprehensive testing of YAML parsing and validation logic.
-
-#### pkg/utils (71.8% Coverage)
-**Tests:**
-- ✅ TestNormalizeColor - Color code normalization
-- ✅ TestGetCableColor - Cable type to color mapping
-- ✅ TestSlugify - String slugification
-- ✅ TestGetIDFromObject - ID extraction from objects
-- ✅ TestExtractTagIDsAndSlugs - Tag processing
-- ✅ TestIsManaged - GitOps tag detection
-- ✅ TestContains - String slice operations
-- ✅ TestContainsInt - Integer slice operations
-
-**Coverage:** Strong coverage of utility functions used throughout the codebase.
-
-#### pkg/client (16.9% Coverage)
-**Tests:**
-- ✅ TestFormatLookup - Lookup criteria formatting
-- ✅ TestFormatValue - Value formatting for diffs
-- ✅ TestCalculateDiff - Diff calculation logic
-- ✅ TestValuesEqual - Type-aware value comparison
-- ✅ TestExtractTagIDs - Tag ID extraction
-- ✅ TestTagsEqual - Tag array comparison
-
-**Coverage:** Targeted coverage of new diff visualization features. Lower percentage is expected as many methods require live NetBox API.
-
-#### pkg/reconciler (5.9% Coverage)
-**Tests:**
-- ✅ TestCreatePairID - Canonical cable pair ID generation
-- ✅ TestCreatePairID_Bidirectional - Bidirectional equality (A→B == B→A)
-- ✅ TestMatchesEndpoint - Cable endpoint matching
-- ✅ TestVerifyCable - Cable attribute verification
-- ✅ TestReset - Reconciler state reset
-- ✅ TestCableEndpoint - Endpoint structure validation
-- ✅ TestLinkConfigFields - Link configuration validation
-
-**Coverage:** Focused coverage on cable reconciliation idempotency logic. Lower percentage expected as device reconciliation requires NetBox API.
+> This report is a manual snapshot. For live numbers run:
+> `go test ./pkg/... -coverprofile=coverage.out && go tool cover -func=coverage.out`
 
 ---
 
-## YAML File Validation
-
-### Definition Files (11 validated)
-
-| Category | Files | Status | Records |
-|----------|-------|--------|---------|
-| Tags | 1 | ✅ | 7 tags |
-| Roles | 1 | ✅ | 8 roles |
-| Sites | 1 | ✅ | 4 sites |
-| Racks | 1 | ✅ | 6 racks |
-| VRFs | 1 | ✅ | 4 VRFs |
-| VLAN Groups | 1 | ✅ | 3 groups |
-| VLANs | 1 | ✅ | 8 VLANs |
-| Prefixes | 1 | ✅ | 11 prefixes |
-| Device Types | 7 | ✅ | Multiple |
-| Module Types | 1 | ✅ | 6 modules |
-
-**Total:** 16 definition files
-
-### Inventory Files (3 validated)
-
-| Category | Files | Status | Devices |
-|----------|-------|--------|---------|
-| Active Hardware | 2 | ✅ | 3 devices |
-| Passive Hardware | 1 | ✅ | 4 devices |
-
-**Total:** 3 inventory files, 7 devices
-
-### Validation Checks Performed
-
-✅ **Syntax:** All files parse as valid YAML
-✅ **Structure:** All required fields present
-✅ **References:** All cross-references valid (site_slug, device_type_slug, etc.)
-✅ **Cable Links:** All peer device/port references validated
-✅ **VLANs:** All VID values in valid range (1-4094)
-✅ **Racks:** All U-height and position values valid
-✅ **Tags:** GitOps tag present and properly configured
-
----
-
-## Cable Reconciliation Testing
-
-### Idempotency Guarantees
-
-✅ **Bidirectional Matching:** A→B equals B→A
-✅ **Canonical Pair IDs:** Order-independent cable identification
-✅ **Duplicate Prevention:** Processed pairs tracked
-✅ **Attribute Verification:** Only updates when config changes
-
-### Test Coverage
-
-**Pair ID Generation:**
-```
-✅ Forward direction: device-a[100] → device-b[200]
-✅ Reverse direction: device-b[200] → device-a[100]
-✅ Result: Same canonical ID (bidirectional equality proven)
-```
-
-**Endpoint Matching:**
-```
-✅ Type matching: dcim.interface vs dcim.frontport vs dcim.rearport
-✅ ID matching: Integer and float64 handling
-✅ Nested ID extraction: {id: 42} format support
-```
-
-**Cable Verification:**
-```
-✅ Cable type matching: dac-active, smf, cat6a, etc.
-✅ Color matching: blue, red, green, etc.
-✅ Length matching: Numeric values with units
-✅ Nil config handling: No verification needed
-```
-
-### Supported Port Types
-
-✅ **Interfaces** (`dcim.interface`) - Network interfaces, NICs, switch ports
-✅ **Front Ports** (`dcim.frontport`) - Patch panel user-facing ports
-✅ **Rear Ports** (`dcim.rearport`) - Patch panel backbone ports
-
----
-
-## Diff Visualization Testing
-
-### Output Format Tests
-
-✅ **CREATE Operations:**
-```
-  ✓ Creating interfaces: name=eth0
-    ┌─ Changes ────────────────────
-    │ + type: "1000base-t"
-    │ + enabled: true
-    └──────────────────────────────
-```
-
-✅ **UPDATE Operations:**
-```
-  ⟳ Updating interfaces (ID: 456): name=eth0
-    ┌─ Changes ────────────────────
-    │ ~ enabled:
-    │   - false
-    │   + true
-    └──────────────────────────────
-```
-
-### Value Formatting Tests
-
-✅ **String values:** Quoted (`"test"`)
-✅ **Numeric values:** Unquoted (`42`, `3.14`)
-✅ **Boolean values:** Lowercase (`true`, `false`)
-✅ **Nil values:** Special marker (`<nil>`)
-✅ **Arrays:** Summarized (`[...3 items]`)
-✅ **Objects:** ID extracted or summarized (`{id: 123}`, `{...}`)
-
----
-
-## Integration Test Results
-
-### YAML File Loading
-
-```bash
-✅ definitions/extras/tags.yaml          → 7 tags loaded
-✅ definitions/roles/roles.yaml          → 8 roles loaded
-✅ definitions/sites/sites.yaml          → 4 sites loaded
-✅ definitions/racks/racks.yaml          → 6 racks loaded
-✅ definitions/vrfs/vrfs.yaml            → 4 VRFs loaded
-✅ definitions/vlan_groups/*.yaml        → 3 groups loaded
-✅ definitions/vlans/vlans.yaml          → 8 VLANs loaded
-✅ definitions/prefixes/prefixes.yaml    → 11 prefixes loaded
-✅ definitions/module_types/*.yaml       → 6 modules loaded
-✅ inventory/hardware/active/*.yaml      → 3 devices loaded
-✅ inventory/hardware/passive/*.yaml     → 4 devices loaded
-```
-
-### Device Validation
-
-**Active Devices (Servers/Switches):**
-```
-✅ berlin-srv-web-01    → 3 interfaces, 1 cable link
-✅ berlin-srv-web-02    → 3 interfaces, 1 cable link
-✅ berlin-srv-ai-01     → 4 interfaces, 1 cable link
-```
-
-**Passive Devices (Patch Panels):**
-```
-✅ berlin-pp-01         → 3 front ports, 3 rear ports
-✅ berlin-pp-02         → 1 front port, 1 rear port
-✅ berlin-pp-mm-01      → 1 front port, 1 rear port
-✅ frankfurt-pp-01      → 1 front port, 1 rear port
-```
-
-### Cable Link Validation
-
-All cable links validated for:
-- ✅ Non-empty peer_device
-- ✅ Non-empty peer_port
-- ✅ Valid cable_type (optional)
-- ✅ Valid color (optional)
-- ✅ Valid length/length_unit (optional)
-
----
-
-## Test Execution
-
-### Running All Tests
-
-```bash
-$ go test ./... -v
-```
-
-**Results:**
-```
-?   	cmd/netbox-gitops                     [no test files]
-?   	internal/constants                    [no test files]
-ok  	pkg/client     0.014s  coverage: 16.9%
-ok  	pkg/loader     0.041s  coverage: 79.4%
-ok  	pkg/models     (cached) coverage: 100.0%
-ok  	pkg/reconciler (cached) coverage: 5.9%
-ok  	pkg/utils      (cached) coverage: 71.8%
-```
-
-### Coverage Report
-
-```bash
-$ go test ./... -cover
-```
-
-**Results:**
-```
-pkg/client     coverage: 16.9% of statements
-pkg/loader     coverage: 79.4% of statements
-pkg/models     coverage: 100.0% of statements
-pkg/reconciler coverage: 5.9% of statements
-pkg/utils      coverage: 71.8% of statements
-```
-
----
-
-## Quality Metrics
-
-### Test Organization
-
-✅ **Table-Driven Tests:** Used throughout for comprehensive coverage
-✅ **Subtests:** Organized for better failure isolation
-✅ **Descriptive Names:** Clear test case naming
-✅ **Edge Cases:** Nil values, empty arrays, type conversions tested
-✅ **Integration Tests:** Real YAML file validation
-
-### Test Quality
-
-✅ **Positive Cases:** Normal operation tested
-✅ **Negative Cases:** Error conditions tested
-✅ **Boundary Cases:** Min/max values tested (e.g., VLAN VID 1-4094)
-✅ **Type Safety:** Type conversion edge cases covered
-✅ **Null Safety:** Nil handling validated
-
-### CI/CD Readiness
-
-✅ **Fast Execution:** All tests complete in < 1 second
-✅ **No External Dependencies:** Tests use fixtures and mocks
-✅ **Deterministic:** No flaky tests, consistent results
-✅ **Clear Output:** Well-formatted test results
-✅ **Coverage Tracking:** Built-in coverage reporting
-
----
-
-## Known Limitations
-
-### Device Types
-- Some device type files use single-object format instead of arrays
-- Loader expects arrays, causing parse errors for some files
-- **Impact:** Minimal - actual reconciliation handles both formats
-- **Status:** Test accommodates this with graceful degradation
-
-### Reconciler Coverage
-- Lower coverage (5.9%) expected due to NetBox API requirements
-- Core idempotency logic is fully tested
-- Full device reconciliation requires integration tests with live NetBox
-- **Status:** Acceptable for unit testing scope
-
-### Client Coverage
-- Lower coverage (16.9%) expected due to HTTP client operations
-- Diff calculation and formatting logic is fully tested
-- HTTP operations require integration tests or mocks
-- **Status:** Acceptable - critical diff logic validated
-
----
-
-## Recommendations
-
-### Immediate
-✅ All critical functionality tested
-✅ Production-ready for deployment
-✅ Idempotency guarantees verified
-
-### Future Enhancements
-1. **Integration Tests:** Add tests with mock NetBox API
-2. **Device Type Normalization:** Standardize device type file formats
-3. **End-to-End Tests:** Full reconciliation workflow tests
-4. **Performance Tests:** Benchmark cable reconciliation at scale
-5. **Chaos Tests:** Network failure simulation
-
----
-
-## Conclusion
-
-The NetBox GitOps Controller demonstrates **excellent test coverage** and **production-ready quality**:
-
-✅ **100% of YAML files validated successfully**
-✅ **100% coverage on models package**
-✅ **Comprehensive cable reconciliation testing**
-✅ **Idempotency guarantees proven**
-✅ **Diff visualization tested and working**
-✅ **All 40+ test cases passing**
-
-The project is ready for production deployment with confidence in:
-- YAML definition correctness
-- Cable reconciliation idempotency
-- Diff output quality
-- Core business logic integrity
-
----
-
-**Report Generated By:** Claude (Anthropic)
-**Test Framework:** Go testing package
-**Coverage Tool:** go test -cover
-**YAML Validator:** Go yamlcheck (`cmd/yamlcheck`)
+## Coverage by Package
+
+| Package | Coverage | Test Functions |
+|---------|----------|----------------|
+| `pkg/models` | **100.0%** | 20 |
+| `pkg/reconciler` | **80.1%** | 42 |
+| `pkg/loader` | **76.2%** | 4 |
+| `pkg/utils` | **68.1%** | 8 |
+| `pkg/client` | **51.7%** | 22 |
+| `cmd/*` | 0% | 0 |
+
+`pkg/client`'s number understates real coverage: the reconciler suite drives
+the client (including the cache and tag managers) end-to-end, but cross-package
+execution does not count toward `pkg/client`'s own percentage.
+
+## What Is Covered
+
+### pkg/models
+- Every `Validate()` implementation (required fields, VID bounds,
+  `min_vid`/`max_vid`, `parent_device`⇄`device_bay` pairing, nested
+  interface/port/module checks, link validation, error aggregation).
+- Slug generation and model structure tests.
+
+### pkg/client
+- `Apply()` create/update/no-op paths, managed-tag injection, partial PATCH
+  of only changed fields, nested-reference ID comparison, missing-ID and
+  filter-failure error paths.
+- **Dry-run safety:** `--dry-run` sends zero mutating requests (asserted at
+  the HTTP layer) while reads still work; `SetDryRun` toggling.
+- Pagination following, page-size override, retry/backoff rules
+  (no retry on 4xx or POST 5xx), diff calculation, tag comparison.
+
+### pkg/reconciler
+All flow tests run against an in-memory fake NetBox API
+(`fakenetbox_test.go`) with the real client, cache, and tag bootstrap:
+- **Foundation:** site create → no-op → partial update; rack site resolution
+  (slug, name fallback, skip-on-missing); role/tag color normalization.
+- **Network:** VRF/VLAN-group/VLAN/prefix reconciliation with global and
+  site-scoped cache lookups; second-run idempotency.
+- **Device types:** manufacturer auto-creation; rear-before-front template
+  ordering; front ports resolving rear-port template IDs; full-tree
+  idempotency.
+- **Devices:** end-to-end create with rack placement, interfaces,
+  site-scoped VLANs, IP assignment and primary-IP; child-into-device-bay
+  installation (detach → install); device-bay self-healing from templates;
+  module installation incl. skip rules; role-based cable endpoint selection
+  (interface vs front port vs rear port backbone); missing-peer skip.
+- **Cables:** creation with normalized colors; idempotency in both
+  directions; config updates; forced deletion of wrong/blocking cables on
+  local and peer ports; dry-run issues zero mutations even in conflict
+  scenarios.
+
+### pkg/loader / pkg/utils
+- YAML loading of all definition and inventory types, validation hook,
+  slugify, ID extraction, tag helpers, color helpers.
+
+## Known Gaps
+
+- `cmd/netbox-gitops` and `cmd/yamlcheck` (CLI wiring) are untested.
+- `pkg/client` cache/tag managers are only exercised indirectly via the
+  reconciler suite.
+- Loader error paths (malformed YAML, unreadable directories) are partially
+  covered.
+- `setPrimaryIP` PATCHes the device on every run even when the primary IP
+  is already correct (documented by `TestReconcileDevicesFullFlow`).
+
+## Notable Fix Found by Tests
+
+`reconcileDevice` previously reconciled front ports **before** rear ports,
+so a front port referencing a YAML-defined rear port on the same device was
+skipped on the first run. The order now matches the device-type template
+ordering (rear ports first).

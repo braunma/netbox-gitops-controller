@@ -72,6 +72,11 @@ variables:
   # Default: "true" - runs all tests
   RUN_TESTS: "true"
 
+  # COVERAGE_THRESHOLD: Minimum total statement coverage (%) for go_test.
+  # Current coverage is ~73%; the gate sits below that to catch regressions
+  # without blocking routine changes. Raise it as coverage improves.
+  COVERAGE_THRESHOLD: "65"
+
   # ===========================================================================
   # BUILD CONFIGURATION
   # ===========================================================================
@@ -106,8 +111,21 @@ go_test:
   stage: test
   script:
     - echo "🧪 Running Go tests..."
-    - go test ./pkg/... -v -cover -race
+    - go test ./pkg/... -v -race -coverprofile=coverage.out -covermode=atomic
+    - go tool cover -func=coverage.out | tail -1
+    - |
+      TOTAL=$(go tool cover -func=coverage.out | tail -1 | awk '{gsub(/%/, "", $3); print $3}')
+      echo "Total statement coverage: ${TOTAL}% (minimum: ${COVERAGE_THRESHOLD}%)"
+      if awk -v t="$TOTAL" -v m="$COVERAGE_THRESHOLD" 'BEGIN { exit !(t < m) }'; then
+        echo "❌ Coverage ${TOTAL}% is below the required ${COVERAGE_THRESHOLD}%"
+        exit 1
+      fi
     - echo "✅ All Go tests passed!"
+  coverage: '/^total:.*\s(\d+\.\d+)%/'
+  artifacts:
+    paths:
+      - coverage.out
+    expire_in: 1 week
   rules:
     - if: $RUN_TESTS == "false"
       when: never
