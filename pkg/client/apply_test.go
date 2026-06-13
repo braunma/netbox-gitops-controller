@@ -212,6 +212,46 @@ func TestApplyNestedObjectComparison(t *testing.T) {
 	}
 }
 
+// TestApplyChoiceFieldNoOp verifies that NetBox choice/enum fields, which the
+// API returns as {"value": ..., "label": ...} objects (with no "id"), are
+// compared against the flat string we send. Before the fix these resolved to
+// id 0, never matched the desired string, and were re-PATCHed on every run —
+// the root cause of "everything updates on a second run with no changes".
+func TestApplyChoiceFieldNoOp(t *testing.T) {
+	existing := Object{
+		"id":     float64(42),
+		"name":   "Berlin DC",
+		"slug":   "berlin-dc",
+		"status": map[string]interface{}{"value": "active", "label": "Active"},
+		"tags":   []interface{}{map[string]interface{}{"id": float64(7)}},
+	}
+	ats := newApplyTestServer(t, []Object{existing})
+	c := newApplyTestClient(ats.srv, 7)
+
+	if _, err := c.Apply("dcim", "sites",
+		map[string]interface{}{"slug": "berlin-dc"},
+		map[string]interface{}{"name": "Berlin DC", "slug": "berlin-dc", "status": "active"}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if len(ats.mutations) != 0 {
+		t.Errorf("unchanged choice field triggered %d mutating request(s): %+v",
+			len(ats.mutations), ats.mutations)
+	}
+
+	// A genuinely changed choice value must still PATCH.
+	if _, err := c.Apply("dcim", "sites",
+		map[string]interface{}{"slug": "berlin-dc"},
+		map[string]interface{}{"name": "Berlin DC", "slug": "berlin-dc", "status": "planned"}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if len(ats.mutations) != 1 || ats.mutations[0].method != "PATCH" {
+		t.Fatalf("expected 1 PATCH for changed choice value, got %+v", ats.mutations)
+	}
+	if !reflect.DeepEqual(ats.mutations[0].body, map[string]interface{}{"status": "planned"}) {
+		t.Errorf("PATCH body = %v, expected {status: planned}", ats.mutations[0].body)
+	}
+}
+
 // TestApplyErrorWhenObjectHasNoID verifies Apply fails loudly instead of
 // PATCHing object ID 0 when the matched object has no usable ID.
 func TestApplyErrorWhenObjectHasNoID(t *testing.T) {

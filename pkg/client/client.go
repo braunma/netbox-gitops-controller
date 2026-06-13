@@ -481,9 +481,18 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 			continue
 		}
 
-		// Handle nested objects (extract ID)
+		// Handle nested objects. NetBox renders two different things as nested
+		// objects in API responses:
+		//   - related objects (site, role, device_type, ...): {"id": N, ...}
+		//   - choice/enum fields (status, type, mode, face, ...):
+		//     {"value": "active", "label": "Active"}
+		// We send the former as a plain ID and the latter as a plain string, so
+		// to stay idempotent we must reduce the existing value to the matching
+		// scalar: the "id" for relations, the "value" for choice fields. The
+		// previous code always extracted "id", so choice fields resolved to 0,
+		// never matched the desired string, and were re-PATCHed on every run.
 		if existingMap, ok := existingValue.(map[string]interface{}); ok {
-			existingValue = utils.GetIDFromObject(existingMap)
+			existingValue = scalarFromNetBoxObject(existingMap)
 		}
 
 		// Compare values
@@ -548,6 +557,20 @@ func isListField(v interface{}) bool {
 		return true
 	}
 	return false
+}
+
+// scalarFromNetBoxObject reduces a nested NetBox object to the scalar that a
+// flat desired payload is compared against. Related objects carry an "id";
+// choice/enum fields instead carry a "value" (e.g. {"value": "active"}). For
+// choices we compare on "value" so a string payload like "active" matches.
+func scalarFromNetBoxObject(m map[string]interface{}) interface{} {
+	if _, ok := m["id"]; ok {
+		return utils.GetIDFromObject(m)
+	}
+	if v, ok := m["value"]; ok {
+		return v
+	}
+	return utils.GetIDFromObject(m)
 }
 
 // valuesEqual compares two values for equality
