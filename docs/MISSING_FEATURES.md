@@ -8,20 +8,33 @@ separately in `docs/BUGFIX_PLAN.md`.
 
 ## 1. Orphan pruning (`--prune`)
 
-**Status:** Advertised in README, not implemented. The only deletions in the
-codebase are forced cable-conflict cleanups (`pkg/reconciler/cables.go`).
+**Status:** ✅ Implemented for top-level managed objects. Opt-in via the
+`--prune` flag (`pkg/client/prune.go`, wired in `cmd/netbox-gitops/main.go`).
 
-**Desired behavior:** When an object is removed from YAML, the next sync
+**Behavior:** When an object is removed from YAML, a sync run with `--prune`
 deletes it from NetBox — but only if it carries the `gitops` managed tag.
 Manually created objects are never touched.
 
-**Sketch:**
-- Per object type: list all NetBox objects with `tag=gitops`, diff against the
-  set defined in YAML, delete the remainder.
-- Deletion order must be reverse of creation order (cables → IPs → interfaces →
-  devices → racks/VLANs/prefixes → sites) to satisfy NetBox FK constraints.
-- Opt-in via `--prune` flag; in `--dry-run --prune` show planned deletions.
-- Start with low-risk types (tags, roles, VLANs, prefixes) before devices.
+**How it works:**
+- Every object reconciled through `client.Apply` is recorded as "seen" (by ID,
+  keyed by `app/endpoint`).
+- After all phases run, `Prune` lists each managed endpoint filtered by
+  `tag=gitops`, and deletes every returned object whose ID was not seen — i.e.
+  it is still managed but no longer declared in YAML.
+- Endpoints are pruned in reverse dependency order (devices → device/module
+  types → prefixes → VLANs → VLAN groups → VRFs → racks → roles → sites →
+  tags) to satisfy NetBox FK constraints. The managed `gitops` tag itself is
+  protected via `KeepSlugs`.
+- Only endpoints whose phase actually ran are pruned, so `--only` keeps prune
+  in scope. `--prune` is rejected together with `--site`/`--device`, since a
+  filtered run would delete the out-of-scope objects the filter excluded.
+- `--dry-run --prune` records the planned deletions (visible in the plan
+  summary and `--output json`) without issuing any destructive request.
+
+**Not yet covered:** nested device children (interfaces, IP addresses, cables,
+ports) are not pruned individually — deleting a device cascades them in NetBox,
+but stale children on a still-declared device are left in place. Auto-created
+manufacturers are also left untouched.
 
 ## 2. Plan summary & machine-readable output
 

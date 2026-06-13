@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sync"
 	"time"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
@@ -25,6 +26,12 @@ type NetBoxClient struct {
 	recorder     *ChangeRecorder
 	dryRun       bool
 	managedTagID int
+
+	// seen records the IDs of objects reconciled this run, keyed by
+	// "app/endpoint". Prune uses it to tell declared objects apart from
+	// orphans. Guarded by seenMu.
+	seenMu sync.Mutex
+	seen   map[string]map[int]bool
 }
 
 // NewClient creates a new NetBox API client
@@ -317,6 +324,7 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 			Action: ActionCreate, App: app, Endpoint: endpoint,
 			Object: c.formatLookup(lookup), Fields: payload,
 		})
+		c.markSeen(app, endpoint, utils.GetIDFromObject(obj))
 		return obj, nil
 	}
 
@@ -333,6 +341,10 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 		}
 		return nil, fmt.Errorf("object has no ID (type: %s)", endpoint)
 	}
+
+	// Mark the object as reconciled so Prune does not treat it as an orphan,
+	// whether or not it ends up changing below.
+	c.markSeen(app, endpoint, objID)
 
 	// Calculate diff
 	changes := c.calculateDiff(obj, payload)
@@ -554,6 +566,35 @@ func (c *NetBoxClient) Recorder() *ChangeRecorder {
 		c.recorder = NewChangeRecorder()
 	}
 	return c.recorder
+}
+
+// markSeen records that the object with the given ID at app/endpoint was
+// reconciled during this run, so Prune will not delete it as an orphan.
+// Zero IDs (e.g. dry-run creates) are ignored.
+func (c *NetBoxClient) markSeen(app, endpoint string, id int) {
+	if id == 0 {
+		return
+	}
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	if c.seen == nil {
+		c.seen = make(map[string]map[int]bool)
+	}
+	key := app + "/" + endpoint
+	if c.seen[key] == nil {
+		c.seen[key] = make(map[int]bool)
+	}
+	c.seen[key][id] = true
+}
+
+// seenIDs returns the set of object IDs reconciled at app/endpoint this run.
+// The returned map must not be mutated; it is safe to read after the
+// reconciliation phases complete, since Prune runs once no further objects
+// are applied.
+func (c *NetBoxClient) seenIDs(app, endpoint string) map[int]bool {
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	return c.seen[app+"/"+endpoint]
 }
 
 // SetDryRun sets the dry-run mode
