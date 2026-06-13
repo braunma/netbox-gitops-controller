@@ -129,8 +129,8 @@ File: `inventory/hardware/active/switches.yaml`
 ### The `gitops` Tag
 
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`).
-  * **Current behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects. Remove orphaned objects manually in NetBox.
-  * The `gitops` tag marks which objects are managed by this tool. A future `--prune` mode will use it to safely delete orphans while protecting manually created objects (see `docs/MISSING_FEATURES.md`).
+  * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
+  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`. See `docs/MISSING_FEATURES.md` for details and current limitations.
 
 ### Common Errors
 
@@ -263,6 +263,33 @@ Valid `--only` values: `foundation`, `network`, `device-types`, `devices`.
 
 > **Note:** Skipped phases are not validated — if you sync `--only devices`,
 > the referenced sites, roles and device types must already exist in NetBox.
+
+### 6\. Pruning Orphans
+
+By default the controller only creates and updates objects. With `--prune` it
+also deletes orphans: objects that still carry the `gitops` managed tag but are
+no longer declared in YAML. Manually created objects (those without the tag)
+are never touched.
+
+```bash
+# Preview what pruning would delete (no changes applied)
+./netbox-gitops --dry-run --prune
+
+# Apply, deleting orphaned managed objects
+./netbox-gitops --prune
+
+# Prune only the network phase's orphans (VRFs, VLAN groups, VLANs, prefixes)
+./netbox-gitops --only network --prune
+```
+
+Pruning runs after all selected phases and deletes endpoints in reverse
+dependency order (device children and devices first, sites/tags last) to
+respect NetBox foreign-key constraints. It is scoped to the phases that run via
+`--only`, and cannot be combined with `--site`/`--device` (a filtered run would
+delete the out-of-scope objects the filter excluded). Device children
+(interfaces, IP addresses, front/rear ports, modules) are pruned too; cables
+are not (they are untagged and NetBox removes them when their port or device is
+deleted). See `docs/MISSING_FEATURES.md` for details.
 
 ## 📚 Example Files
 

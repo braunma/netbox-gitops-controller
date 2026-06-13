@@ -30,7 +30,9 @@ Thumbs.db
 /vendor/
 /Godeps/
 bin/
-netbox-gitops
+# Compiled binary at the repo root (anchored so it does not also ignore the
+# cmd/netbox-gitops/ source directory)
+/netbox-gitops
 
 # Private data - exclude actual definitions and inventory from repository root
 # (Tests use example/ directory instead)

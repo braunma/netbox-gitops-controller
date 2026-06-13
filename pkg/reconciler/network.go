@@ -104,12 +104,14 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 
 		if err != nil || len(sites) == 0 {
 			nr.logger.Warning("Site %s not found for VLAN %s, skipping", vlan.SiteSlug, vlan.Name)
+			nr.client.MarkReconcileIncomplete("ipam", "vlans")
 			continue
 		}
 
 		siteID := utils.GetIDFromObject(sites[0])
 		if siteID == 0 {
 			nr.logger.Warning("Site %s has invalid ID for VLAN %s, skipping", vlan.SiteSlug, vlan.Name)
+			nr.client.MarkReconcileIncomplete("ipam", "vlans")
 			continue
 		}
 
