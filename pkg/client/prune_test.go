@@ -220,6 +220,27 @@ func TestPruneProcessesTargetsInOrder(t *testing.T) {
 	}
 }
 
+// TestPruneSkipsIncompleteEndpoints verifies the safety guard: if
+// reconciliation skipped a declared object at an endpoint (e.g. a missing
+// dependency), Prune must not delete anything there — a declared object that
+// failed to reconcile would otherwise look like an orphan.
+func TestPruneSkipsIncompleteEndpoints(t *testing.T) {
+	p, c := newPruneTestServer(t, false)
+	p.store["ipam/vlans"] = []Object{
+		// Not seen this run, but the VLAN phase was incomplete, so it may be a
+		// declared object that merely failed to reconcile.
+		managedObj(1, map[string]interface{}{"name": "vlan-100", "vid": float64(100)}),
+	}
+	c.MarkReconcileIncomplete("ipam", "vlans")
+
+	if err := c.Prune([]PruneTarget{{App: "ipam", Endpoint: "vlans"}}); err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+	if len(p.deletes) != 0 {
+		t.Errorf("prune deleted from an incomplete endpoint: %v", p.deletes)
+	}
+}
+
 // TestPruneDryRunRecordsWithoutDeleting verifies that in dry-run mode the
 // orphan is recorded as a planned delete but no DELETE reaches the server.
 func TestPruneDryRunRecordsWithoutDeleting(t *testing.T) {

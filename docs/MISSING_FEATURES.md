@@ -28,6 +28,11 @@ Manually created objects are never touched.
 - Only endpoints whose phase actually ran are pruned, so `--only` keeps prune
   in scope. `--prune` is rejected together with `--site`/`--device`, since a
   filtered run would delete the out-of-scope objects the filter excluded.
+- **Safety guard:** if reconciliation skipped a declared object at an endpoint
+  (e.g. a VLAN or rack whose site could not be resolved), that endpoint is
+  marked incomplete and pruning skips it entirely — a declared object that
+  merely failed to reconcile would otherwise be indistinguishable from an
+  orphan and wrongly deleted.
 - `--dry-run --prune` records the planned deletions (visible in the plan
   summary and `--output json`) without issuing any destructive request.
 

@@ -29,9 +29,13 @@ type NetBoxClient struct {
 
 	// seen records the IDs of objects reconciled this run, keyed by
 	// "app/endpoint". Prune uses it to tell declared objects apart from
-	// orphans. Guarded by seenMu.
-	seenMu sync.Mutex
-	seen   map[string]map[int]bool
+	// orphans. incomplete marks endpoints where a declared object was
+	// skipped (e.g. a missing dependency); Prune leaves those endpoints
+	// alone so a transient skip never deletes a managed object. Both are
+	// guarded by seenMu.
+	seenMu     sync.Mutex
+	seen       map[string]map[int]bool
+	incomplete map[string]bool
 }
 
 // NewClient creates a new NetBox API client
@@ -595,6 +599,28 @@ func (c *NetBoxClient) seenIDs(app, endpoint string) map[int]bool {
 	c.seenMu.Lock()
 	defer c.seenMu.Unlock()
 	return c.seen[app+"/"+endpoint]
+}
+
+// MarkReconcileIncomplete records that reconciliation could not fully process
+// the given endpoint this run — for example an object declared in YAML was
+// skipped because a dependency was missing. Prune leaves such endpoints
+// untouched: a skipped object is not marked seen and would otherwise look
+// like an orphan, so pruning it would delete a declared object.
+func (c *NetBoxClient) MarkReconcileIncomplete(app, endpoint string) {
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	if c.incomplete == nil {
+		c.incomplete = make(map[string]bool)
+	}
+	c.incomplete[app+"/"+endpoint] = true
+}
+
+// reconcileIncomplete reports whether MarkReconcileIncomplete was called for
+// the given endpoint this run.
+func (c *NetBoxClient) reconcileIncomplete(app, endpoint string) bool {
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	return c.incomplete[app+"/"+endpoint]
 }
 
 // SetDryRun sets the dry-run mode

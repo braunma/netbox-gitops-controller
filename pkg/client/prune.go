@@ -27,21 +27,42 @@ type PruneTarget struct {
 // In dry-run mode the deletions are recorded as a plan without issuing any
 // destructive request.
 func (c *NetBoxClient) Prune(targets []PruneTarget) error {
+	total := 0
 	for _, t := range targets {
-		if err := c.pruneTarget(t); err != nil {
+		n, err := c.pruneTarget(t)
+		if err != nil {
 			return fmt.Errorf("failed to prune %s/%s: %w", t.App, t.Endpoint, err)
 		}
+		total += n
+	}
+
+	switch {
+	case total == 0:
+		c.logger.Info("No orphaned objects to prune")
+	case c.dryRun:
+		c.logger.Info("Prune plan: %d orphaned object(s) would be deleted", total)
+	default:
+		c.logger.Success("Pruned %d orphaned object(s)", total)
 	}
 	return nil
 }
 
-// pruneTarget deletes the orphaned objects for a single endpoint.
-func (c *NetBoxClient) pruneTarget(t PruneTarget) error {
+// pruneTarget deletes the orphaned objects for a single endpoint and returns
+// the number deleted (or, in dry-run, the number that would be deleted).
+func (c *NetBoxClient) pruneTarget(t PruneTarget) (int, error) {
+	// If reconciliation skipped a declared object at this endpoint, we cannot
+	// safely tell orphans from declared-but-unreconciled objects, so skip it.
+	if c.reconcileIncomplete(t.App, t.Endpoint) {
+		c.logger.Warning("  ⚠ Skipping prune for %s/%s: reconciliation was incomplete; not deleting to avoid removing a declared object",
+			t.App, t.Endpoint)
+		return 0, nil
+	}
+
 	objects, err := c.Filter(t.App, t.Endpoint, map[string]interface{}{
 		"tag": constants.ManagedTagSlug,
 	})
 	if err != nil {
-		return err
+		return 0, err
 	}
 
 	keep := make(map[string]bool, len(t.KeepSlugs))
@@ -51,6 +72,7 @@ func (c *NetBoxClient) pruneTarget(t PruneTarget) error {
 
 	seen := c.seenIDs(t.App, t.Endpoint)
 
+	deleted := 0
 	for _, obj := range objects {
 		id := utils.GetIDFromObject(obj)
 		if id == 0 || seen[id] {
@@ -61,19 +83,24 @@ func (c *NetBoxClient) pruneTarget(t PruneTarget) error {
 		}
 
 		label := pruneLabel(obj)
-		c.logger.Warning("  ✗ Pruning orphaned %s: %s (ID: %d)", t.Endpoint, label, id)
+		verb := "Pruning"
+		if c.dryRun {
+			verb = "Would prune"
+		}
+		c.logger.Warning("  ✗ %s orphaned %s: %s (ID: %d)", verb, t.Endpoint, label, id)
 
 		path := fmt.Sprintf("/api/%s/%s/%d/", t.App, t.Endpoint, id)
 		if _, err := c.Request("DELETE", path, nil); err != nil {
-			return fmt.Errorf("failed to delete %s (ID: %d): %w", label, id, err)
+			return deleted, fmt.Errorf("failed to delete %s (ID: %d): %w", label, id, err)
 		}
 		c.Recorder().Record(ChangeRecord{
 			Action: ActionDelete, App: t.App, Endpoint: t.Endpoint,
 			Object: label,
 		})
+		deleted++
 	}
 
-	return nil
+	return deleted, nil
 }
 
 // pruneLabel derives a human-readable identifier from a fetched object for
