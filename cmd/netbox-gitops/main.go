@@ -30,7 +30,7 @@ var (
 )
 
 // validPhases are the values accepted by --only, in execution order.
-var validPhases = []string{"foundation", "network", "device-types", "devices"}
+var validPhases = []string{"foundation", "network", "device-types", "devices", "virtualization"}
 
 // exitCode is set by runSync (e.g. 2 for --detailed-exitcode with pending
 // changes) and applied after cobra finishes.
@@ -172,6 +172,21 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		logger.Info("Skipping phase 3 (devices): not selected via --only")
+	}
+
+	// =========================================================================
+	// PHASE 4: VIRTUALIZATION
+	// =========================================================================
+	if phases["virtualization"] {
+		logger.Info("═══════════════════════════════════════════════════════")
+		logger.Info("Phase 4: Virtualization")
+		logger.Info("═══════════════════════════════════════════════════════")
+
+		if err := runVirtualization(c, dataLoader, logger); err != nil {
+			return err
+		}
+	} else {
+		logger.Info("Skipping phase 4 (virtualization): not selected via --only")
 	}
 
 	// =========================================================================
@@ -417,6 +432,44 @@ func runDevices(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *u
 	deviceReconciler := reconciler.NewDeviceReconciler(c)
 	if err := deviceReconciler.ReconcileDevices(allDevices); err != nil {
 		logger.Error("Failed to reconcile devices", err)
+		return err
+	}
+
+	return nil
+}
+
+// runVirtualization reconciles cluster types, cluster groups and clusters.
+// (Virtual machines are reconciled in a later step.)
+func runVirtualization(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
+	virtReconciler := reconciler.NewVirtualizationReconciler(c)
+
+	clusterTypes, err := dataLoader.LoadClusterTypes("definitions/virtualization/cluster_types")
+	if err != nil {
+		logger.Error("Failed to load cluster types", err)
+		return err
+	}
+	if err := virtReconciler.ReconcileClusterTypes(clusterTypes); err != nil {
+		logger.Error("Failed to reconcile cluster types", err)
+		return err
+	}
+
+	clusterGroups, err := dataLoader.LoadClusterGroups("definitions/virtualization/cluster_groups")
+	if err != nil {
+		logger.Error("Failed to load cluster groups", err)
+		return err
+	}
+	if err := virtReconciler.ReconcileClusterGroups(clusterGroups); err != nil {
+		logger.Error("Failed to reconcile cluster groups", err)
+		return err
+	}
+
+	clusters, err := dataLoader.LoadClusters("definitions/virtualization/clusters")
+	if err != nil {
+		logger.Error("Failed to load clusters", err)
+		return err
+	}
+	if err := virtReconciler.ReconcileClusters(clusters); err != nil {
+		logger.Error("Failed to reconcile clusters", err)
 		return err
 	}
 
