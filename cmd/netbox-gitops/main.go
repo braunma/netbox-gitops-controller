@@ -1,22 +1,38 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"strings"
 
 	"github.com/spf13/cobra"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/loader"
+	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/reconciler"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
 var (
-	dryRun     bool
-	configFile string
-	dataDir    string
+	dryRun           bool
+	configFile       string
+	dataDir          string
+	outputFormat     string
+	detailedExitcode bool
+	onlyPhases       []string
+	siteFilter       string
+	deviceFilter     string
 )
+
+// validPhases are the values accepted by --only, in execution order.
+var validPhases = []string{"foundation", "network", "device-types", "devices"}
+
+// exitCode is set by runSync (e.g. 2 for --detailed-exitcode with pending
+// changes) and applied after cobra finishes.
+var exitCode int
 
 func main() {
 	rootCmd := &cobra.Command{
@@ -29,21 +45,43 @@ func main() {
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate changes without applying them")
 	rootCmd.Flags().StringVar(&configFile, "config", ".env", "Configuration file path")
 	rootCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Base directory for definitions and inventory (e.g., 'example' for test data)")
+	rootCmd.Flags().StringVar(&outputFormat, "output", "text", "Output format: 'text' or 'json' (json prints the plan to stdout and moves logs to stderr)")
+	rootCmd.Flags().BoolVar(&detailedExitcode, "detailed-exitcode", false, "Exit with code 2 when changes are pending (dry-run) or were applied; 0 means in sync")
+	rootCmd.Flags().StringSliceVar(&onlyPhases, "only", nil, fmt.Sprintf("Restrict the sync to specific phases (comma-separated or repeated): %s", strings.Join(validPhases, ", ")))
+	rootCmd.Flags().StringVar(&siteFilter, "site", "", "Restrict device reconciliation to devices of a single site slug")
+	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
 	}
+	os.Exit(exitCode)
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
+	if outputFormat != "text" && outputFormat != "json" {
+		return fmt.Errorf("invalid --output format %q (supported: text, json)", outputFormat)
+	}
+	if outputFormat == "json" {
+		// Reserve stdout for the JSON plan; every logger created from here
+		// on (including the client's internal one) writes to stderr.
+		utils.SetDefaultOutput(os.Stderr)
+	}
+
+	phases, err := parseOnly(onlyPhases)
+	if err != nil {
+		return err
+	}
+
 	logger := utils.NewLogger(dryRun)
 
-	// Auto-detect and validate data directory
-	dataDir, err := resolveDataDir(dataDir, logger)
+	// Auto-detect and validate data directory; the phase helpers below read
+	// the package-level dataDir, so update it in place.
+	resolvedDir, err := resolveDataDir(dataDir, logger)
 	if err != nil {
 		logger.Error("Failed to resolve data directory", err)
 		return err
 	}
+	dataDir = resolvedDir
 
 	// Load environment variables
 	netboxURL := os.Getenv("NETBOX_URL")
@@ -79,14 +117,91 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// =========================================================================
 	// PHASE 1: FOUNDATION
 	// =========================================================================
+	if phases["foundation"] {
+		logger.Info("═══════════════════════════════════════════════════════")
+		logger.Info("Phase 1: Foundation")
+		logger.Info("═══════════════════════════════════════════════════════")
+
+		if err := runFoundation(c, dataLoader, logger); err != nil {
+			return err
+		}
+	} else {
+		logger.Info("Skipping phase 1 (foundation): not selected via --only")
+	}
+
+	// =========================================================================
+	// PHASE 2: NETWORK & TYPES
+	// =========================================================================
+	if phases["network"] || phases["device-types"] {
+		logger.Info("═══════════════════════════════════════════════════════")
+		logger.Info("Phase 2: Network & Types")
+		logger.Info("═══════════════════════════════════════════════════════")
+
+		if phases["network"] {
+			if err := runNetwork(c, dataLoader, logger); err != nil {
+				return err
+			}
+		}
+		if phases["device-types"] {
+			if err := runDeviceTypes(c, dataLoader, logger); err != nil {
+				return err
+			}
+		}
+	} else {
+		logger.Info("Skipping phase 2 (network & types): not selected via --only")
+	}
+
+	// =========================================================================
+	// PHASE 3: DEVICES
+	// =========================================================================
+	if phases["devices"] {
+		logger.Info("═══════════════════════════════════════════════════════")
+		logger.Info("Phase 3: Devices")
+		logger.Info("═══════════════════════════════════════════════════════")
+
+		if err := runDevices(c, dataLoader, logger); err != nil {
+			return err
+		}
+	} else {
+		logger.Info("Skipping phase 3 (devices): not selected via --only")
+	}
+
+	// =========================================================================
+	// SUMMARY
+	// =========================================================================
+	summary := c.Recorder().Summary()
+
 	logger.Info("═══════════════════════════════════════════════════════")
-	logger.Info("Phase 1: Foundation")
+	if dryRun {
+		logger.Warning("DRY RUN COMPLETE: No changes applied")
+		logger.Info("Plan: %d to create, %d to update, %d to delete, %d unchanged",
+			summary.Create, summary.Update, summary.Delete, summary.Unchanged)
+	} else {
+		logger.Success("SYNC COMPLETE: Changes applied successfully")
+		logger.Info("Summary: %d created, %d updated, %d deleted, %d unchanged",
+			summary.Create, summary.Update, summary.Delete, summary.Unchanged)
+	}
 	logger.Info("═══════════════════════════════════════════════════════")
 
+	if outputFormat == "json" {
+		if err := writePlanJSON(os.Stdout, dryRun, summary, c.Recorder().Changes()); err != nil {
+			logger.Error("Failed to write JSON plan", err)
+			return err
+		}
+	}
+
+	if detailedExitcode && summary.HasChanges() {
+		exitCode = 2
+	}
+
+	return nil
+}
+
+// runFoundation reconciles tags, roles, sites and racks.
+func runFoundation(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
 	foundationReconciler := reconciler.NewFoundationReconciler(c)
 
-	// Load and reconcile tags
-	tags, err := dataLoader.LoadTags(buildPath(dataDir, "definitions/extras"))
+	tags, err := dataLoader.LoadTags("definitions/extras")
 	if err != nil {
 		logger.Error("Failed to load tags", err)
 		return err
@@ -96,8 +211,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load and reconcile roles
-	roles, err := dataLoader.LoadRoles(buildPath(dataDir, "definitions/roles"))
+	roles, err := dataLoader.LoadRoles("definitions/roles")
 	if err != nil {
 		logger.Error("Failed to load roles", err)
 		return err
@@ -107,8 +221,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load and reconcile sites
-	sites, err := dataLoader.LoadSites(buildPath(dataDir, "definitions/sites"))
+	sites, err := dataLoader.LoadSites("definitions/sites")
 	if err != nil {
 		logger.Error("Failed to load sites", err)
 		return err
@@ -118,8 +231,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load and reconcile racks
-	racks, err := dataLoader.LoadRacks(buildPath(dataDir, "definitions/racks"))
+	racks, err := dataLoader.LoadRacks("definitions/racks")
 	if err != nil {
 		logger.Error("Failed to load racks", err)
 		return err
@@ -129,17 +241,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// =========================================================================
-	// PHASE 2: NETWORK & TYPES
-	// =========================================================================
-	logger.Info("═══════════════════════════════════════════════════════")
-	logger.Info("Phase 2: Network & Types")
-	logger.Info("═══════════════════════════════════════════════════════")
+	return nil
+}
 
+// runNetwork reconciles VRFs, VLAN groups, VLANs and prefixes.
+func runNetwork(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
 	networkReconciler := reconciler.NewNetworkReconciler(c)
 
-	// Load and reconcile VRFs
-	vrfs, err := dataLoader.LoadVRFs(buildPath(dataDir, "definitions/vrfs"))
+	vrfs, err := dataLoader.LoadVRFs("definitions/vrfs")
 	if err != nil {
 		logger.Error("Failed to load VRFs", err)
 		return err
@@ -149,8 +258,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load and reconcile VLAN groups
-	vlanGroups, err := dataLoader.LoadVLANGroups(buildPath(dataDir, "definitions/vlan_groups"))
+	vlanGroups, err := dataLoader.LoadVLANGroups("definitions/vlan_groups")
 	if err != nil {
 		logger.Error("Failed to load VLAN groups", err)
 		return err
@@ -160,8 +268,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load and reconcile VLANs
-	vlans, err := dataLoader.LoadVLANs(buildPath(dataDir, "definitions/vlans"))
+	vlans, err := dataLoader.LoadVLANs("definitions/vlans")
 	if err != nil {
 		logger.Error("Failed to load VLANs", err)
 		return err
@@ -171,8 +278,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load and reconcile prefixes
-	prefixes, err := dataLoader.LoadPrefixes(buildPath(dataDir, "definitions/prefixes"))
+	prefixes, err := dataLoader.LoadPrefixes("definitions/prefixes")
 	if err != nil {
 		logger.Error("Failed to load prefixes", err)
 		return err
@@ -182,11 +288,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Device types
+	return nil
+}
+
+// runDeviceTypes reconciles module types and device types.
+func runDeviceTypes(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
 	deviceTypeReconciler := reconciler.NewDeviceTypeReconciler(c)
 
-	// Load and reconcile module types
-	moduleTypes, err := dataLoader.LoadModuleTypes(buildPath(dataDir, "definitions/module_types"))
+	moduleTypes, err := dataLoader.LoadModuleTypes("definitions/module_types")
 	if err != nil {
 		logger.Error("Failed to load module types", err)
 		return err
@@ -196,8 +305,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Load and reconcile device types
-	deviceTypes, err := dataLoader.LoadDeviceTypes(buildPath(dataDir, "definitions/device_types"))
+	deviceTypes, err := dataLoader.LoadDeviceTypes("definitions/device_types")
 	if err != nil {
 		logger.Error("Failed to load device types", err)
 		return err
@@ -207,21 +315,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// =========================================================================
-	// PHASE 3: DEVICES
-	// =========================================================================
-	logger.Info("═══════════════════════════════════════════════════════")
-	logger.Info("Phase 3: Devices")
-	logger.Info("═══════════════════════════════════════════════════════")
+	return nil
+}
 
-	// Load devices from inventory
-	activeDevices, err := dataLoader.LoadDevices(buildPath(dataDir, "inventory/hardware/active"))
+// runDevices loads the device inventory, applies the --site/--device
+// filters, loads the required site caches and reconciles the devices.
+func runDevices(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
+	activeDevices, err := dataLoader.LoadDevices("inventory/hardware/active")
 	if err != nil {
 		logger.Error("Failed to load active devices", err)
 		return err
 	}
 
-	passiveDevices, err := dataLoader.LoadDevices(buildPath(dataDir, "inventory/hardware/passive"))
+	passiveDevices, err := dataLoader.LoadDevices("inventory/hardware/passive")
 	if err != nil {
 		logger.Error("Failed to load passive devices", err)
 		return err
@@ -229,6 +335,17 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	allDevices := append(activeDevices, passiveDevices...)
 	logger.Info("Loaded %d devices from inventory", len(allDevices))
+
+	if siteFilter != "" || deviceFilter != "" {
+		filtered := filterDevices(allDevices, siteFilter, deviceFilter)
+		logger.Info("Device filter (site=%q, device=%q) matched %d of %d devices",
+			siteFilter, deviceFilter, len(filtered), len(allDevices))
+		if len(filtered) == 0 {
+			logger.Warning("No devices match the given --site/--device filter")
+			return nil
+		}
+		allDevices = filtered
+	}
 
 	// Load site-specific caches
 	uniqueSites := make(map[string]bool)
@@ -244,25 +361,70 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
-	// Reconcile devices
 	deviceReconciler := reconciler.NewDeviceReconciler(c)
 	if err := deviceReconciler.ReconcileDevices(allDevices); err != nil {
 		logger.Error("Failed to reconcile devices", err)
 		return err
 	}
 
-	// =========================================================================
-	// SUMMARY
-	// =========================================================================
-	logger.Info("═══════════════════════════════════════════════════════")
-	if dryRun {
-		logger.Warning("DRY RUN COMPLETE: No changes applied")
-	} else {
-		logger.Success("SYNC COMPLETE: Changes applied successfully")
-	}
-	logger.Info("═══════════════════════════════════════════════════════")
-
 	return nil
+}
+
+// filterDevices returns the devices matching the given site slug and/or
+// device name. Empty filter values match everything.
+func filterDevices(devices []*models.DeviceConfig, siteSlug, deviceName string) []*models.DeviceConfig {
+	var filtered []*models.DeviceConfig
+	for _, d := range devices {
+		if siteSlug != "" && d.SiteSlug != siteSlug {
+			continue
+		}
+		if deviceName != "" && d.Name != deviceName {
+			continue
+		}
+		filtered = append(filtered, d)
+	}
+	return filtered
+}
+
+// parseOnly turns the --only values into a phase set. An empty flag selects
+// all phases.
+func parseOnly(values []string) (map[string]bool, error) {
+	phases := make(map[string]bool)
+	if len(values) == 0 {
+		for _, p := range validPhases {
+			phases[p] = true
+		}
+		return phases, nil
+	}
+	for _, v := range values {
+		v = strings.ToLower(strings.TrimSpace(v))
+		valid := false
+		for _, p := range validPhases {
+			if v == p {
+				valid = true
+				break
+			}
+		}
+		if !valid {
+			return nil, fmt.Errorf("invalid --only value %q (supported: %s)", v, strings.Join(validPhases, ", "))
+		}
+		phases[v] = true
+	}
+	return phases, nil
+}
+
+// writePlanJSON emits the collected changes as a machine-readable plan,
+// e.g. for posting a terraform-plan-style comment on a merge request.
+func writePlanJSON(w io.Writer, dryRun bool, summary client.ChangeSummary, changes []client.ChangeRecord) error {
+	plan := struct {
+		DryRun  bool                  `json:"dry_run"`
+		Summary client.ChangeSummary  `json:"summary"`
+		Changes []client.ChangeRecord `json:"changes"`
+	}{dryRun, summary, changes}
+
+	enc := json.NewEncoder(w)
+	enc.SetIndent("", "  ")
+	return enc.Encode(plan)
 }
 
 // getKeys returns the keys of a map as a slice
@@ -294,12 +456,4 @@ func resolveDataDir(dir string, logger *utils.Logger) (string, error) {
 	}
 
 	return "", fmt.Errorf("no valid data directory found: checked '%s' and '%s'", dir, examplePath)
-}
-
-// buildPath constructs a path relative to the data directory
-func buildPath(dataDir, subPath string) string {
-	if dataDir == "." {
-		return subPath
-	}
-	return fmt.Sprintf("%s/%s", dataDir, subPath)
 }

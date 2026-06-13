@@ -189,6 +189,12 @@ Shows exactly what changes *would* be applied without actually touching NetBox. 
 ./netbox-gitops --dry-run
 ```
 
+Every run ends with a terraform-style plan summary:
+
+```text
+Plan: 3 to create, 1 to update, 0 to delete, 41 unchanged
+```
+
 ### 2\. Apply Changes
 
 Executes the synchronization against the NetBox API.
@@ -196,6 +202,67 @@ Executes the synchronization against the NetBox API.
 ```bash
 ./netbox-gitops
 ```
+
+### 3\. Drift Detection (CI-friendly)
+
+With `--detailed-exitcode` the process exits with code `2` when changes are
+pending (exit `0` means NetBox is in sync with the YAML). A scheduled CI job
+becomes a drift monitor with zero extra infrastructure:
+
+```bash
+./netbox-gitops --dry-run --detailed-exitcode
+```
+
+### 4\. Machine-Readable Plan Output
+
+`--output json` prints the planned (or applied) changes as JSON on stdout;
+all logs move to stderr so stdout stays clean for parsing. Useful for posting
+a `terraform plan`-style comment on a merge request:
+
+```bash
+./netbox-gitops --dry-run --output json 2>/dev/null > plan.json
+```
+
+```json
+{
+  "dry_run": true,
+  "summary": { "create": 3, "update": 1, "delete": 0, "unchanged": 41 },
+  "changes": [
+    {
+      "action": "create",
+      "app": "dcim",
+      "endpoint": "sites",
+      "object": "slug=berlin-dc",
+      "fields": { "name": "Berlin DC", "slug": "berlin-dc" }
+    }
+  ]
+}
+```
+
+### 5\. Selective Sync
+
+Restrict a run to specific phases or devices — handy for debugging and
+targeted hotfixes:
+
+```bash
+# Only reconcile foundation objects (tags, roles, sites, racks)
+./netbox-gitops --only foundation
+
+# Only network (VRFs, VLAN groups, VLANs, prefixes) and device types
+./netbox-gitops --only network,device-types
+
+# Only devices of one site
+./netbox-gitops --only devices --site berlin-dc
+
+# A single device
+./netbox-gitops --device srv-web-01
+```
+
+Valid `--only` values: `foundation`, `network`, `device-types`, `devices`.
+`--site` and `--device` filter the device phase by site slug / device name.
+
+> **Note:** Skipped phases are not validated — if you sync `--only devices`,
+> the referenced sites, roles and device types must already exist in NetBox.
 
 ## 📚 Example Files
 

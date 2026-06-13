@@ -16,14 +16,15 @@ import (
 
 // NetBoxClient handles all NetBox API operations
 type NetBoxClient struct {
-	baseURL       string
-	token         string
-	httpClient    *http.Client
-	cache         *CacheManager
-	tagManager    *TagManager
-	logger        *utils.Logger
-	dryRun        bool
-	managedTagID  int
+	baseURL      string
+	token        string
+	httpClient   *http.Client
+	cache        *CacheManager
+	tagManager   *TagManager
+	logger       *utils.Logger
+	recorder     *ChangeRecorder
+	dryRun       bool
+	managedTagID int
 }
 
 // NewClient creates a new NetBox API client
@@ -243,12 +244,36 @@ func (c *NetBoxClient) Filter(app, endpoint string, filters map[string]interface
 
 // Create creates a new object
 func (c *NetBoxClient) Create(app, endpoint string, data map[string]interface{}) (Object, error) {
+	obj, err := c.create(app, endpoint, data)
+	if err == nil {
+		c.Recorder().Record(ChangeRecord{
+			Action: ActionCreate, App: app, Endpoint: endpoint,
+			Object: objectLabel(data), Fields: data,
+		})
+	}
+	return obj, err
+}
+
+// create issues the POST without recording; Apply records with a better label.
+func (c *NetBoxClient) create(app, endpoint string, data map[string]interface{}) (Object, error) {
 	path := fmt.Sprintf("/api/%s/%s/", app, endpoint)
 	return c.Request("POST", path, data)
 }
 
 // Update updates an existing object
 func (c *NetBoxClient) Update(app, endpoint string, id int, data map[string]interface{}) error {
+	err := c.update(app, endpoint, id, data)
+	if err == nil {
+		c.Recorder().Record(ChangeRecord{
+			Action: ActionUpdate, App: app, Endpoint: endpoint,
+			Object: fmt.Sprintf("id=%d", id), Fields: data,
+		})
+	}
+	return err
+}
+
+// update issues the PATCH without recording; Apply records with a better label.
+func (c *NetBoxClient) update(app, endpoint string, id int, data map[string]interface{}) error {
 	path := fmt.Sprintf("/api/%s/%s/%d/", app, endpoint, id)
 	_, err := c.Request("PATCH", path, data)
 	return err
@@ -258,6 +283,12 @@ func (c *NetBoxClient) Update(app, endpoint string, id int, data map[string]inte
 func (c *NetBoxClient) Delete(app, endpoint string, id int) error {
 	path := fmt.Sprintf("/api/%s/%s/%d/", app, endpoint, id)
 	_, err := c.Request("DELETE", path, nil)
+	if err == nil {
+		c.Recorder().Record(ChangeRecord{
+			Action: ActionDelete, App: app, Endpoint: endpoint,
+			Object: fmt.Sprintf("id=%d", id),
+		})
+	}
 	return err
 }
 
@@ -278,7 +309,15 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 		// Create new object
 		c.logger.Success("  ✓ Creating %s: %v", endpoint, c.formatLookup(lookup))
 		c.printDiff("CREATE", nil, payload)
-		return c.Create(app, endpoint, payload)
+		obj, err := c.create(app, endpoint, payload)
+		if err != nil {
+			return nil, err
+		}
+		c.Recorder().Record(ChangeRecord{
+			Action: ActionCreate, App: app, Endpoint: endpoint,
+			Object: c.formatLookup(lookup), Fields: payload,
+		})
+		return obj, nil
 	}
 
 	// Update existing object
@@ -300,12 +339,20 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	if len(changes) > 0 {
 		c.logger.Info("  ⟳ Updating %s (ID: %d): %v", endpoint, objID, c.formatLookup(lookup))
 		c.printDiff("UPDATE", obj, changes)
-		if err := c.Update(app, endpoint, objID, changes); err != nil {
+		if err := c.update(app, endpoint, objID, changes); err != nil {
 			return nil, fmt.Errorf("failed to update object: %w", err)
 		}
+		c.Recorder().Record(ChangeRecord{
+			Action: ActionUpdate, App: app, Endpoint: endpoint,
+			Object: c.formatLookup(lookup), Fields: changes,
+		})
 		c.logger.Success("  ✓ Update complete")
 	} else {
 		c.logger.Debug("  = No changes for %s (ID: %d)", endpoint, objID)
+		c.Recorder().Record(ChangeRecord{
+			Action: ActionUnchanged, App: app, Endpoint: endpoint,
+			Object: c.formatLookup(lookup),
+		})
 	}
 
 	return obj, nil
@@ -498,6 +545,15 @@ func (c *NetBoxClient) Cache() *CacheManager {
 // Tags returns the tag manager
 func (c *NetBoxClient) Tags() *TagManager {
 	return c.tagManager
+}
+
+// Recorder returns the change recorder, creating it on first use so that
+// directly constructed clients (e.g. in tests) work without extra setup.
+func (c *NetBoxClient) Recorder() *ChangeRecorder {
+	if c.recorder == nil {
+		c.recorder = NewChangeRecorder()
+	}
+	return c.recorder
 }
 
 // SetDryRun sets the dry-run mode
