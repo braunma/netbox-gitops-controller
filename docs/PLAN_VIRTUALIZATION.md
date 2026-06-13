@@ -7,7 +7,24 @@ Per decision §11.3, this also brings **platforms** (`dcim/platforms`) and
 **tenants/tenant groups** (`tenancy`) under management, reconciled in the
 foundation phase since devices and VMs both reference them.
 
-**Status:** Planned. Tracked as feature #6 in `docs/MISSING_FEATURES.md`.
+**Status:** ✅ Implemented across the seven chunks in §12. Tracked as feature #6
+in `docs/MISSING_FEATURES.md`.
+
+**Deviations from this plan during implementation (intentional):**
+1. **VM cluster/site rule** relaxed from "exactly one" to "at least one" — NetBox
+   permits a VM to have both a cluster and a site (§3, §11.2 updated).
+2. **IP-address pruning** is emitted once at the front of `pruneTargets` when the
+   `devices` *or* `virtualization` phase ran, rather than only under the
+   `devices` branch as §8 first described. This makes `--only virtualization
+   --prune` correctly prune orphaned VM-interface IPs.
+3. **`yamlcheck` model validation** was extended to the new loaders, and its
+   device check narrowed from a recursive `inventory` scan to
+   `inventory/hardware/{active,passive}` so VM definitions under
+   `inventory/virtual` are not mis-parsed as devices.
+4. **`--site` and clustered VMs:** `--site` matches a VM only by its own
+   `site_slug`; a clustered VM (site inherited from its cluster) is not matched.
+   Use `--vm` to target it. Consistent with the existing device-filter
+   semantics.
 
 **Guiding principle:** mirror the existing device/interface patterns
 (`pkg/reconciler/devices.go`, `pkg/reconciler/network.go`). Everything below

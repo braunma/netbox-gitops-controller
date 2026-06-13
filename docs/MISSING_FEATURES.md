@@ -83,11 +83,15 @@ or recommended, so wiring is cheap.
 
 ## 6. Virtualization support
 
-**Status:** Not implemented. Only DCIM devices are managed.
-
-**Desired:** Clusters, cluster types/groups, virtual machines, VM interfaces
-with the same interface/IP/VLAN semantics as physical devices. The device
-reconciler patterns (interfaces, IPs, primary IP) carry over largely 1:1.
+**Status:** ✅ Implemented (see `docs/PLAN_VIRTUALIZATION.md`). A new
+`virtualization` phase reconciles cluster types, cluster groups, clusters,
+virtual machines and VM interfaces (with the same VLAN/IP/primary-IP semantics
+as physical devices). Platforms (`dcim/platforms`) and tenants/tenant groups
+(`tenancy`) are managed in the foundation phase, since devices and VMs both
+reference them. VMs may belong to a cluster and/or a site. Pruning and the
+`--vm` filter are supported. Reconcilers live in
+`pkg/reconciler/virtualization.go` and the platform/tenant methods in
+`pkg/reconciler/foundation.go`.
 
 ## 7. Extended IPAM coverage
 
@@ -160,7 +164,7 @@ were prerequisites (pagination, retries, validation — all done, see
 | 5 | Test infrastructure (#11) | M | 🟡 unit tests done; integration test open |
 | 6 | Config file (#5) | S | ❌ not started |
 | 7 | Extended IPAM (#7) | S–M | ❌ not started |
-| 8 | Virtualization (#6) | M | ❌ not started |
+| 8 | Virtualization (#6) | M | ✅ done |
 | 9 | Release/packaging (#10) | S | ❌ not started |
 | 10 | Observability (#9) | M | ❌ not started |
 | 11 | Daemon/webhooks (#8) | L | ❌ not started (prereqs #1, #2 now met) |

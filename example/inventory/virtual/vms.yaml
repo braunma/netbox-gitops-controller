@@ -1,0 +1,37 @@
+# Example Virtual Machines
+# Demonstrates a clustered VM (with an interface, VLAN and primary IP) and a
+# site-only VM (no cluster), both of which NetBox supports.
+
+- name: "web-01"
+  cluster: "berlin-prod-cluster"   # clustered VM; inherits the cluster's site
+  role_slug: "server"
+  platform: "ubuntu-22-04"
+  tenant: "platform-engineering"
+  status: "active"
+  vcpus: 4
+  memory: 8192                     # MB
+  disk: 100                        # GB
+  tags: ["gitops", "production"]
+  interfaces:
+    - name: "eth0"
+      enabled: true
+      mtu: 1500
+      mode: "access"
+      untagged_vlan: "Management"  # resolved at the cluster's site (berlin-dc)
+      ip:
+        address: "10.0.100.21/24"
+        dns_name: "web-01.berlin.example.com"
+      address_role: "primary"      # promotes this IP to the VM's primary_ip4
+
+# A site-only VM has no cluster — only a site.
+- name: "edge-01"
+  site_slug: "test-lab"
+  role_slug: "server"
+  platform: "debian-12"
+  status: "active"
+  vcpus: 2
+  memory: 4096
+  tags: ["gitops", "development"]
+  interfaces:
+    - name: "eth0"
+      enabled: true

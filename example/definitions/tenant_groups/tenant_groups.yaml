@@ -1,0 +1,7 @@
+# Example Tenant Groups (tenancy app)
+# Tenant groups organize tenants; the optional parent_slug nests them.
+
+- name: "Internal"
+  slug: "internal"
+  description: "Internal business units"
+  tags: ["gitops"]
