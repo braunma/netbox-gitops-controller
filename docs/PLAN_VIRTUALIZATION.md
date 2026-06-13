@@ -486,3 +486,10 @@ live NetBox: a second run must produce a zero-change plan (idempotency).
 - **IPv6 primary IP** path in `setVMPrimaryIP` mirrors the device reconciler but
   is not unit-tested, because the in-process fake does not derive `family` from
   the address (the device reconciler shares this gap).
+- **`vcpus` is a NetBox decimal field.** Depending on the NetBox build's DRF
+  `COERCE_DECIMAL_TO_STRING` setting, the API may return `vcpus` as a string
+  (e.g. `"4.00"`) rather than a number. If so, the integer we send never matches
+  on diff and the VM is re-PATCHed (cosmetically) on every run — not data
+  corruption, but not a clean no-op. The in-memory fake stores it as a number so
+  this does not surface in tests. If observed against a real instance, handle it
+  in `calculateDiff`/`valuesEqual` (string↔number coercion) rather than per-field.
