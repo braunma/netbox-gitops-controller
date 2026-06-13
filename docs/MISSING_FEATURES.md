@@ -25,39 +25,28 @@ Manually created objects are never touched.
 
 ## 2. Plan summary & machine-readable output
 
-**Status:** Dry-run prints rich per-object diffs but no final summary and no
-structured output.
-
-**Desired behavior:**
-- End-of-run summary: `N to create, M to update, K unchanged (, J to delete)`.
-- `--output json` emitting the planned changes as structured data, so the
-  GitLab MR dry-run job can post a `terraform plan`-style comment.
-
-**Sketch:** Collect change records in the existing `Apply()` path
-(`pkg/client/client.go`) instead of only logging them; render at the end.
+**Status:** ✅ Implemented. A `ChangeRecorder` (`pkg/client/recorder.go`)
+collects every create/update/delete/no-op the client performs (in dry-run:
+would perform). Each run ends with a `Plan: N to create, M to update, J to
+delete, K unchanged` summary, and `--output json` emits the changes as
+structured data on stdout (logs move to stderr).
 
 ## 3. Drift detection via exit code
 
-**Status:** Not available. Drift (manual changes in NetBox) is only visible
-by reading dry-run logs.
-
-**Desired behavior:** `--dry-run --detailed-exitcode` (terraform convention):
-exit 0 = in sync, exit 2 = changes pending. A scheduled CI pipeline then
-becomes a drift monitor with zero extra infrastructure.
-
-**Sketch:** Trivial once feature 2 exists — exit based on the change counter.
+**Status:** ✅ Implemented. `--dry-run --detailed-exitcode` (terraform
+convention): exit 0 = in sync, exit 2 = changes pending. A scheduled CI
+pipeline then becomes a drift monitor with zero extra infrastructure.
 
 ## 4. Selective sync
 
-**Status:** Every run reconciles all object types in fixed phase order.
-
-**Desired behavior:**
-- `--only <phase|type>` (e.g. `--only devices`, `--only network`)
-- `--site <slug>` to restrict device reconciliation to one site
+**Status:** ✅ Implemented.
+- `--only <phase>` with values `foundation`, `network`, `device-types`,
+  `devices` (comma-separated or repeated)
+- `--site <slug>` restricts device reconciliation to one site
 - `--device <name>` for targeted single-device runs (debugging, hotfixes)
 
-**Sketch:** Conditional phase invocation in `cmd/netbox-gitops/main.go`;
-cache loading already supports per-site loading.
+Skipped phases are not validated: `--only devices` requires the referenced
+sites, roles and device types to already exist in NetBox.
 
 ## 5. Config-driven settings
 
@@ -129,10 +118,10 @@ for GitLab although the repository is hosted on GitHub.
 
 | Order | Feature | Effort | Prerequisite |
 |-------|---------|--------|--------------|
-| 1 | Plan summary (#2) | S | — |
-| 2 | Drift exit code (#3) | XS | #2 |
+| 1 | ~~Plan summary (#2)~~ ✅ done | S | — |
+| 2 | ~~Drift exit code (#3)~~ ✅ done | XS | #2 |
 | 3 | Orphan pruning (#1) | M | pagination fix (see BUGFIX_PLAN) |
-| 4 | Selective sync (#4) | S | — |
+| 4 | ~~Selective sync (#4)~~ ✅ done | S | — |
 | 5 | Test infrastructure (#11) | M | — |
 | 6 | Config file (#5) | S | — |
 | 7 | Extended IPAM (#7) | S–M | — |
