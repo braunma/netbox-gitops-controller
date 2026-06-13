@@ -113,7 +113,23 @@ func validateModels(base string) error {
 		func() error { _, err := dl.LoadPrefixes("definitions/prefixes"); return err },
 		func() error { _, err := dl.LoadModuleTypes("definitions/module_types"); return err },
 		func() error { _, err := dl.LoadDeviceTypes("definitions/device_types"); return err },
-		func() error { _, err := dl.LoadDevices("inventory"); return err },
+		// Match the reconciler's device folders so VM definitions under
+		// inventory/virtual are not mis-parsed as devices by a recursive scan.
+		func() error { _, err := dl.LoadDevices("inventory/hardware/active"); return err },
+		func() error { _, err := dl.LoadDevices("inventory/hardware/passive"); return err },
+		func() error { _, err := dl.LoadPlatforms("definitions/platforms"); return err },
+		func() error { _, err := dl.LoadTenantGroups("definitions/tenant_groups"); return err },
+		func() error { _, err := dl.LoadTenants("definitions/tenants"); return err },
+		func() error {
+			_, err := dl.LoadClusterTypes("definitions/virtualization/cluster_types")
+			return err
+		},
+		func() error {
+			_, err := dl.LoadClusterGroups("definitions/virtualization/cluster_groups")
+			return err
+		},
+		func() error { _, err := dl.LoadClusters("definitions/virtualization/clusters"); return err },
+		func() error { _, err := dl.LoadVMs("inventory/virtual"); return err },
 	}
 
 	for _, check := range checks {

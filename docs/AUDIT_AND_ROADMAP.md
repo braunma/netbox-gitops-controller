@@ -35,56 +35,56 @@ apply on main), `yamlcheck` validator.
 
 ---
 
-## 2. Bugs / Correctness Issues (fix first)
+## 2. Bugs / Correctness Issues — ✅ ALL RESOLVED
 
-### 2.1 No API pagination — silent data truncation (CRITICAL)
-`NetBoxClient.List()` (`pkg/client/client.go:119-155`) reads only the first
-page (`results`) and never follows `next`. NetBox paginates at **50 items by
-default**, so any instance with more than 50 objects of one type gets a
-truncated cache → missed lookups, duplicate-create attempts, wrong diffs.
-Fix: loop over `next` URLs (or request `?limit=0` where allowed) in `List`.
+> All four issues below have been fixed and verified against the code. See
+> `docs/BUGFIX_PLAN.md` for per-fix detail. Kept here for historical context.
 
-### 2.2 No retries / rate limiting
-Single-shot HTTP requests; a transient 5xx or network blip aborts the whole
-sync. Only tag creation has retry logic. Add retry with exponential backoff
-for idempotent requests and optional rate limiting.
+### 2.1 No API pagination — silent data truncation (CRITICAL) — ✅ FIXED
+`NetBoxClient.List()` (`pkg/client/client.go:196-242`) now follows the `next`
+link through every page and sets a default `limit=250`. Regression test:
+`pkg/client/pagination_test.go`. Previously it read only the first page and
+truncated the cache for any type with >50 objects.
 
-### 2.3 Mixed `GetID()` usage remains
-Global resources still use the legacy `GetID()` (e.g. `devices.go:66-76`,
-`device_types.go:31,71`, `network.go:63,171`). Correct today, but the
-legacy fallback hides future scoping bugs. Migrate fully to
-`GetGlobalID()`/`GetSiteID()` and delete `GetID()`.
+### 2.2 No retries / rate limiting — ✅ FIXED
+`doWithRetry()` (`pkg/client/client.go:105-151`) retries network errors, 429,
+and 5xx with exponential backoff (1s/2s/4s, up to 3 retries), and never retries
+POST on a server response to avoid duplicate creation.
 
-### 2.4 No model validation
-Models have no `Validate()` methods; cross-field constraints (e.g.
-`device_bay` requires `parent_device`) surface only as NetBox 400 errors at
-apply time. Add post-unmarshal validation in the loader so `--dry-run`
-catches them.
+### 2.3 Mixed `GetID()` usage remains — ✅ FIXED
+All reconcilers use `GetGlobalID()`/`GetSiteID()`, and the legacy
+`CacheManager.GetID()` has been removed from `pkg/client/cache.go`. (The
+remaining `TagManager.GetID(slug)` in `tags.go` is an unrelated tag lookup.)
+
+### 2.4 No model validation — ✅ FIXED
+Every model has a `Validate()` method (`pkg/models/validate.go`) covering
+cross-field constraints (e.g. `device_bay` ↔ `parent_device`), called by the
+loader after unmarshal (`pkg/loader/loader.go:188`). One small follow-up
+remains: wiring the same checks into `cmd/yamlcheck` (see BUGFIX_PLAN §3).
 
 ---
 
-## 3. Missing Features (implementation candidates, in suggested order)
+## 3. Missing Features
 
-1. **Orphan pruning (`--prune`)** — README advertises “Safe Pruning”
-   (gitops-tagged objects removed from YAML get deleted), but no reconciler
-   implements deletion except forced cable cleanup. Either implement
-   (list managed-tag objects per type, diff against YAML, delete with
-   confirmation/`--prune` flag) or correct the README. *Biggest gap between
-   documentation and reality.*
-2. **Plan/diff summary** — dry-run prints per-object diffs but no final
-   summary (X create / Y update / Z delete) and no machine-readable output
-   (`--output json`) for MR comments à la `terraform plan`.
-3. **Selective sync** — `--only devices`, `--only network`, `--site <slug>`
-   filters; currently every run reconciles everything in fixed phase order.
-4. **Exit-code semantics for drift** — `--dry-run` returning non-zero when
-   changes are pending enables CI-based drift detection cheaply, before
-   building any daemon/webhook machinery.
-5. **Virtualization & IPAM extensions** — clusters/VMs/VM interfaces,
-   aggregates, RIRs, route targets, IP ranges. Add based on actual need.
-6. **Drift-detection daemon / NetBox webhooks** — continuous reconcile loop;
-   only worth it after pruning + plan output exist.
-7. **Observability** — structured logging option (JSON), summary metrics,
-   `--quiet`/`--verbose` levels.
+Items 1–4 below are now **done**; the remaining candidates carry over to the
+canonical list in `docs/MISSING_FEATURES.md`.
+
+1. **Orphan pruning (`--prune`)** — ✅ done (`pkg/client/prune.go`).
+   gitops-tagged objects removed from YAML are deleted on a `--prune` run;
+   README's "Safe Pruning" claim is now accurate.
+2. **Plan/diff summary** — ✅ done. `ChangeRecorder` emits a
+   `Plan: N create / M update / J delete / K unchanged` summary, and
+   `--output json` produces machine-readable output for MR comments.
+3. **Selective sync** — ✅ done. `--only <phase>`, `--site <slug>`,
+   `--device <name>`.
+4. **Exit-code semantics for drift** — ✅ done.
+   `--dry-run --detailed-exitcode` returns 2 when changes are pending.
+5. **Virtualization & IPAM extensions** — ❌ not started. clusters/VMs/VM
+   interfaces, aggregates, RIRs, route targets, IP ranges. Add based on need.
+6. **Drift-detection daemon / NetBox webhooks** — ❌ not started. Continuous
+   reconcile loop; prerequisites (pruning + plan output) are now in place.
+7. **Observability** — ❌ not started. Structured logging option (JSON),
+   summary metrics, `--quiet`/`--verbose` levels.
 
 ---
 
@@ -107,9 +107,9 @@ catches them.
 4. **Typed object accessors.** `Object = map[string]interface{}` with ad-hoc
    type assertions everywhere (`utils.GetIDFromObject` etc.). Add safe
    accessor methods (`obj.ID()`, `obj.Slug()`) or typed response structs.
-5. **Constants for content types.** `"dcim.interface"`, `"dcim.frontport"`,
-   `"dcim.rearport"` are string-matched in `cables.go` and `devices.go`;
-   move into `internal/constants`.
+5. **Constants for content types.** ✅ Done — `"dcim.interface"`,
+   `"dcim.frontport"`, `"dcim.rearport"` and the endpoint/transform strings now
+   live in `internal/constants/constants.go`.
 6. **Consistent error strategy.** `devices.go` logs-and-continues where
    `cables.go` fail-fasts; decide per-class (config errors → fail in
    validation; per-object API errors → collect and report at end, non-zero
@@ -124,28 +124,37 @@ catches them.
 
 ## 5. Testing & Tooling Gaps
 
-- **Reconciler tests:** `foundation.go`, `network.go`, `device_types.go` have
-  zero tests; `devices.go`/`cables.go` only partial. Highest-value additions
-  after the devices.go split.
-- **Integration test:** spin up NetBox in Docker in CI, run sync twice,
-  assert second run is a no-op (idempotency proof).
-- **Pagination/cache tests:** regression test for §2.1 (>50 objects).
-- **Build tooling:** no `Makefile`, no `Dockerfile`, no release automation
-  (goreleaser), no versioning. CI exists only for GitLab although the repo
-  is hosted on GitHub — consider a GitHub Actions workflow mirroring
-  `.gitlab-ci.yml`.
+- **Reconciler tests:** ✅ Done — `foundation.go`, `network.go`,
+  `device_types.go` now have `*_reconcile_test.go` suites alongside the
+  device/cable/prune tests, all driven by `pkg/reconciler/fakenetbox_test.go`.
+- **Pagination/cache tests:** ✅ Done — `pkg/client/pagination_test.go` is the
+  regression guard for §2.1 (>50 objects).
+- **Integration test:** ❌ Still missing — spin up NetBox in Docker in CI, run
+  sync twice, assert the second run is a no-op (idempotency proof). Current
+  tests use fakes/`httptest`, not a real NetBox.
+- **Build tooling:** ❌ Still missing — no `Makefile`, no `Dockerfile`, no
+  release automation (goreleaser), no versioning/`--version`. CI exists only
+  for GitLab although the repo is hosted on GitHub — consider a GitHub Actions
+  workflow mirroring `.gitlab-ci.yml`.
 
 ---
 
-## 6. Suggested Order of Work
+## 6. Order of Work — progress
 
-| Priority | Item | Why |
+| Priority | Item | Status |
 |---|---|---|
-| 1 | Pagination in `List()` (§2.1) | Silent data corruption risk today |
-| 2 | Retry/backoff in client (§2.2) | Cheap, removes flaky-sync failures |
-| 3 | Orphan pruning or README fix (§3.1) | Advertised feature doesn't exist |
-| 4 | Model validation (§2.4) | Fail fast in dry-run instead of 400s |
-| 5 | Split devices.go + reconciler tests (§4.1, §5) | Unlocks safe iteration |
-| 6 | Plan summary + drift exit code (§3.2, §3.4) | Makes CI workflow genuinely GitOps |
-| 7 | Selective sync (§3.3) | Operator quality-of-life |
-| 8 | Generic reconciler, constants, typed objects (§4.2/4/5) | Maintainability |
+| 1 | Pagination in `List()` (§2.1) | ✅ done |
+| 2 | Retry/backoff in client (§2.2) | ✅ done |
+| 3 | Orphan pruning (§3.1) | ✅ done (implemented, not just README fix) |
+| 4 | Model validation (§2.4) | ✅ done (⚠️ `yamlcheck` wiring open) |
+| 5 | Split devices.go + reconciler tests (§4.1, §5) | 🟡 reconciler tests done; **devices.go split still pending** (936 lines) |
+| 6 | Plan summary + drift exit code (§3.2, §3.4) | ✅ done |
+| 7 | Selective sync (§3.3) | ✅ done |
+| 8 | Generic reconciler, constants, typed objects (§4.2/4/5) | 🟡 constants done; generic reconciler + typed accessors pending |
+
+**What's left from this audit:** split `devices.go` (§4.1), generic ensure-loop
+(§4.2), unify cable cleanup (§4.3), typed object accessors (§4.4), consistent
+error strategy (§4.6), `context.Context` propagation (§4.7), docs archival
+(§4.8), and the Docker idempotency integration test (§5). New-capability work
+(virtualization, extended IPAM, daemon, observability, packaging) is tracked in
+`docs/MISSING_FEATURES.md`.

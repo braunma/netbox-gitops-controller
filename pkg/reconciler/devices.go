@@ -3,6 +3,7 @@ package reconciler
 import (
 	"fmt"
 
+	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -340,7 +341,7 @@ func (dr *DeviceReconciler) reconcileIPAddress(deviceID, ifaceID int, iface *mod
 
 	payload := map[string]interface{}{
 		"address":              ipConfig.Address,
-		"assigned_object_type": "dcim.interface",
+		"assigned_object_type": constants.AssignedObjectInterface,
 		"assigned_object_id":   ifaceID,
 	}
 

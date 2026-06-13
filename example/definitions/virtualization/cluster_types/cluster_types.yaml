@@ -1,0 +1,7 @@
+# Example Cluster Types (virtualization app)
+# A cluster type describes the virtualization platform (e.g. the hypervisor).
+
+- name: "Proxmox VE"
+  slug: "proxmox-ve"
+  description: "Proxmox Virtual Environment"
+  tags: ["gitops"]

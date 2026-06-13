@@ -260,6 +260,65 @@ func TestLoadDefinitionFiles(t *testing.T) {
 			t.Error("LoadModuleTypes() returned nil")
 		}
 	})
+
+	t.Run("Load Platforms", func(t *testing.T) {
+		platforms, err := loader.LoadPlatforms("definitions/platforms")
+		if err != nil {
+			t.Errorf("LoadPlatforms() error = %v", err)
+		}
+		if len(platforms) == 0 {
+			t.Error("LoadPlatforms() returned 0 platforms")
+		}
+		for _, p := range platforms {
+			if p.Name == "" || p.Slug == "" {
+				t.Errorf("Platform has empty name/slug: %+v", p)
+			}
+		}
+	})
+
+	t.Run("Load Tenant Groups and Tenants", func(t *testing.T) {
+		groups, err := loader.LoadTenantGroups("definitions/tenant_groups")
+		if err != nil {
+			t.Errorf("LoadTenantGroups() error = %v", err)
+		}
+		if len(groups) == 0 {
+			t.Error("LoadTenantGroups() returned 0 groups")
+		}
+		tenants, err := loader.LoadTenants("definitions/tenants")
+		if err != nil {
+			t.Errorf("LoadTenants() error = %v", err)
+		}
+		if len(tenants) == 0 {
+			t.Error("LoadTenants() returned 0 tenants")
+		}
+	})
+
+	t.Run("Load Clusters", func(t *testing.T) {
+		clusterTypes, err := loader.LoadClusterTypes("definitions/virtualization/cluster_types")
+		if err != nil {
+			t.Errorf("LoadClusterTypes() error = %v", err)
+		}
+		if len(clusterTypes) == 0 {
+			t.Error("LoadClusterTypes() returned 0 cluster types")
+		}
+
+		if _, err := loader.LoadClusterGroups("definitions/virtualization/cluster_groups"); err != nil {
+			t.Errorf("LoadClusterGroups() error = %v", err)
+		}
+
+		clusters, err := loader.LoadClusters("definitions/virtualization/clusters")
+		if err != nil {
+			t.Errorf("LoadClusters() error = %v", err)
+		}
+		if len(clusters) == 0 {
+			t.Error("LoadClusters() returned 0 clusters")
+		}
+		for _, cl := range clusters {
+			if cl.Name == "" || cl.TypeSlug == "" {
+				t.Errorf("Cluster has empty name/type_slug: %+v", cl)
+			}
+		}
+	})
 }
 
 func TestLoadInventoryFiles(t *testing.T) {
@@ -330,6 +389,31 @@ func TestLoadInventoryFiles(t *testing.T) {
 			for _, fp := range device.FrontPorts {
 				if fp.RearPort == "" {
 					t.Errorf("Front port %s on %s has no rear_port reference", fp.Name, device.Name)
+				}
+			}
+		}
+	})
+
+	t.Run("Load Virtual Machines", func(t *testing.T) {
+		vms, err := loader.LoadVMs("inventory/virtual")
+		if err != nil {
+			t.Errorf("LoadVMs() error = %v", err)
+		}
+		if len(vms) == 0 {
+			t.Error("LoadVMs() returned 0 virtual machines")
+		}
+		for _, vm := range vms {
+			if vm.Name == "" {
+				t.Error("VM has empty name")
+			}
+			// Each VM must belong to a cluster or a site (validated on load).
+			if vm.Cluster == "" && vm.SiteSlug == "" {
+				t.Errorf("VM %s has neither cluster nor site_slug", vm.Name)
+			}
+			// Verify nested interface IPs round-trip.
+			for _, iface := range vm.Interfaces {
+				if iface.IP != nil && iface.IP.Address == "" {
+					t.Errorf("VM %s interface %s has an IP block with no address", vm.Name, iface.Name)
 				}
 			}
 		}

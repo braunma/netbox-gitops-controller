@@ -26,11 +26,12 @@ var (
 	onlyPhases       []string
 	siteFilter       string
 	deviceFilter     string
+	vmFilter         string
 	prune            bool
 )
 
 // validPhases are the values accepted by --only, in execution order.
-var validPhases = []string{"foundation", "network", "device-types", "devices"}
+var validPhases = []string{"foundation", "network", "device-types", "devices", "virtualization"}
 
 // exitCode is set by runSync (e.g. 2 for --detailed-exitcode with pending
 // changes) and applied after cobra finishes.
@@ -52,6 +53,7 @@ func main() {
 	rootCmd.Flags().StringSliceVar(&onlyPhases, "only", nil, fmt.Sprintf("Restrict the sync to specific phases (comma-separated or repeated): %s", strings.Join(validPhases, ", ")))
 	rootCmd.Flags().StringVar(&siteFilter, "site", "", "Restrict device reconciliation to devices of a single site slug")
 	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
+	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
 	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -64,10 +66,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if outputFormat != "text" && outputFormat != "json" {
 		return fmt.Errorf("invalid --output format %q (supported: text, json)", outputFormat)
 	}
-	if prune && (siteFilter != "" || deviceFilter != "") {
-		// Pruning scoped to a single site/device would delete the
+	if prune && (siteFilter != "" || deviceFilter != "" || vmFilter != "") {
+		// Pruning scoped to a single site/device/VM would delete the
 		// out-of-scope objects the filter excluded, so refuse the combination.
-		return fmt.Errorf("--prune cannot be combined with --site or --device")
+		return fmt.Errorf("--prune cannot be combined with --site, --device or --vm")
 	}
 	if outputFormat == "json" {
 		// Reserve stdout for the JSON plan; every logger created from here
@@ -175,6 +177,21 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// =========================================================================
+	// PHASE 4: VIRTUALIZATION
+	// =========================================================================
+	if phases["virtualization"] {
+		logger.Info("═══════════════════════════════════════════════════════")
+		logger.Info("Phase 4: Virtualization")
+		logger.Info("═══════════════════════════════════════════════════════")
+
+		if err := runVirtualization(c, dataLoader, logger); err != nil {
+			return err
+		}
+	} else {
+		logger.Info("Skipping phase 4 (virtualization): not selected via --only")
+	}
+
+	// =========================================================================
 	// PRUNE: delete gitops-managed orphans no longer declared in YAML
 	// =========================================================================
 	if prune {
@@ -240,6 +257,37 @@ func runFoundation(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger
 	}
 	if err := foundationReconciler.ReconcileRoles(roles); err != nil {
 		logger.Error("Failed to reconcile roles", err)
+		return err
+	}
+
+	platforms, err := dataLoader.LoadPlatforms("definitions/platforms")
+	if err != nil {
+		logger.Error("Failed to load platforms", err)
+		return err
+	}
+	if err := foundationReconciler.ReconcilePlatforms(platforms); err != nil {
+		logger.Error("Failed to reconcile platforms", err)
+		return err
+	}
+
+	// Tenant groups before tenants: a tenant may reference a group created here.
+	tenantGroups, err := dataLoader.LoadTenantGroups("definitions/tenant_groups")
+	if err != nil {
+		logger.Error("Failed to load tenant groups", err)
+		return err
+	}
+	if err := foundationReconciler.ReconcileTenantGroups(tenantGroups); err != nil {
+		logger.Error("Failed to reconcile tenant groups", err)
+		return err
+	}
+
+	tenants, err := dataLoader.LoadTenants("definitions/tenants")
+	if err != nil {
+		logger.Error("Failed to load tenants", err)
+		return err
+	}
+	if err := foundationReconciler.ReconcileTenants(tenants); err != nil {
+		logger.Error("Failed to reconcile tenants", err)
 		return err
 	}
 
@@ -392,6 +440,103 @@ func runDevices(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *u
 	return nil
 }
 
+// runVirtualization reconciles cluster types, cluster groups and clusters.
+// (Virtual machines are reconciled in a later step.)
+func runVirtualization(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
+	virtReconciler := reconciler.NewVirtualizationReconciler(c)
+
+	clusterTypes, err := dataLoader.LoadClusterTypes("definitions/virtualization/cluster_types")
+	if err != nil {
+		logger.Error("Failed to load cluster types", err)
+		return err
+	}
+	if err := virtReconciler.ReconcileClusterTypes(clusterTypes); err != nil {
+		logger.Error("Failed to reconcile cluster types", err)
+		return err
+	}
+
+	clusterGroups, err := dataLoader.LoadClusterGroups("definitions/virtualization/cluster_groups")
+	if err != nil {
+		logger.Error("Failed to load cluster groups", err)
+		return err
+	}
+	if err := virtReconciler.ReconcileClusterGroups(clusterGroups); err != nil {
+		logger.Error("Failed to reconcile cluster groups", err)
+		return err
+	}
+
+	clusters, err := dataLoader.LoadClusters("definitions/virtualization/clusters")
+	if err != nil {
+		logger.Error("Failed to load clusters", err)
+		return err
+	}
+	if err := virtReconciler.ReconcileClusters(clusters); err != nil {
+		logger.Error("Failed to reconcile clusters", err)
+		return err
+	}
+
+	vms, err := dataLoader.LoadVMs("inventory/virtual")
+	if err != nil {
+		logger.Error("Failed to load virtual machines", err)
+		return err
+	}
+
+	if siteFilter != "" || vmFilter != "" {
+		filtered := filterVMs(vms, siteFilter, vmFilter)
+		logger.Info("VM filter (site=%q, vm=%q) matched %d of %d VMs",
+			siteFilter, vmFilter, len(filtered), len(vms))
+		if len(filtered) == 0 {
+			logger.Warning("No VMs match the given --site/--vm filter")
+			return nil
+		}
+		vms = filtered
+	}
+
+	// Load site caches so VM interfaces can resolve VLANs. A clustered VM
+	// inherits its cluster's site, so warm caches for sites referenced by both
+	// clusters and VMs.
+	uniqueSites := make(map[string]bool)
+	for _, cl := range clusters {
+		if cl.SiteSlug != "" {
+			uniqueSites[cl.SiteSlug] = true
+		}
+	}
+	for _, vm := range vms {
+		if vm.SiteSlug != "" {
+			uniqueSites[vm.SiteSlug] = true
+		}
+	}
+	for siteSlug := range uniqueSites {
+		if err := c.Cache().LoadSite(siteSlug); err != nil {
+			logger.Error("Failed to load site cache for "+siteSlug, err)
+			return err
+		}
+	}
+
+	if err := virtReconciler.ReconcileVMs(vms); err != nil {
+		logger.Error("Failed to reconcile virtual machines", err)
+		return err
+	}
+
+	return nil
+}
+
+// filterVMs returns the VMs matching the given site slug and/or VM name.
+// Empty filter values match everything.
+func filterVMs(vms []*models.VMConfig, siteSlug, vmName string) []*models.VMConfig {
+	var filtered []*models.VMConfig
+	for _, vm := range vms {
+		if siteSlug != "" && vm.SiteSlug != siteSlug {
+			continue
+		}
+		if vmName != "" && vm.Name != vmName {
+			continue
+		}
+		filtered = append(filtered, vm)
+	}
+	return filtered
+}
+
 // filterDevices returns the devices matching the given site slug and/or
 // device name. Empty filter values match everything.
 func filterDevices(devices []*models.DeviceConfig, siteSlug, deviceName string) []*models.DeviceConfig {
@@ -446,18 +591,36 @@ func parseOnly(values []string) (map[string]bool, error) {
 func pruneTargets(phases map[string]bool) []client.PruneTarget {
 	var targets []client.PruneTarget
 
+	// IP addresses reference both device interfaces and VM interfaces, so they
+	// are pruned once up front (before any interface is removed) whenever
+	// either owning phase ran.
+	if phases["devices"] || phases["virtualization"] {
+		targets = append(targets, client.PruneTarget{App: "ipam", Endpoint: "ip-addresses"})
+	}
+
 	if phases["devices"] {
-		// Device children first (reverse dependency: IPs reference interfaces,
-		// front ports reference rear ports, all components reference the
-		// device), then the devices themselves. Deleting an orphaned device
-		// cascades any remaining managed children in NetBox.
+		// Device children first (reverse dependency: front ports reference rear
+		// ports, all components reference the device), then the devices
+		// themselves. Deleting an orphaned device cascades any remaining
+		// managed children in NetBox.
 		targets = append(targets,
-			client.PruneTarget{App: "ipam", Endpoint: "ip-addresses"},
 			client.PruneTarget{App: "dcim", Endpoint: "front-ports"},
 			client.PruneTarget{App: "dcim", Endpoint: "interfaces"},
 			client.PruneTarget{App: "dcim", Endpoint: "rear-ports"},
 			client.PruneTarget{App: "dcim", Endpoint: "modules"},
 			client.PruneTarget{App: "dcim", Endpoint: "devices"},
+		)
+	}
+	if phases["virtualization"] {
+		// VM interfaces before VMs; clusters after the VMs that reference them,
+		// then cluster groups and types. Ordered before network/foundation so
+		// the VLANs, sites and tenants these point at are still present.
+		targets = append(targets,
+			client.PruneTarget{App: "virtualization", Endpoint: "interfaces"},
+			client.PruneTarget{App: "virtualization", Endpoint: "virtual-machines"},
+			client.PruneTarget{App: "virtualization", Endpoint: "clusters"},
+			client.PruneTarget{App: "virtualization", Endpoint: "cluster-groups"},
+			client.PruneTarget{App: "virtualization", Endpoint: "cluster-types"},
 		)
 	}
 	if phases["device-types"] {
@@ -475,10 +638,16 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 		)
 	}
 	if phases["foundation"] {
+		// Sites, roles, platforms and tenants are referenced by devices, VMs
+		// and clusters, so they come after those phases. Tenants before tenant
+		// groups (a tenant references its group).
 		targets = append(targets,
 			client.PruneTarget{App: "dcim", Endpoint: "racks"},
 			client.PruneTarget{App: "dcim", Endpoint: "device-roles"},
+			client.PruneTarget{App: "dcim", Endpoint: "platforms"},
 			client.PruneTarget{App: "dcim", Endpoint: "sites"},
+			client.PruneTarget{App: "tenancy", Endpoint: "tenants"},
+			client.PruneTarget{App: "tenancy", Endpoint: "tenant-groups"},
 			// The managed tag carries its own slug; never prune it.
 			client.PruneTarget{App: "extras", Endpoint: "tags", KeepSlugs: []string{constants.ManagedTagSlug}},
 		)

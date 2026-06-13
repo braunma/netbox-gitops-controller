@@ -22,6 +22,12 @@ const (
 	TerminationRearPort  = "dcim.rearport"
 )
 
+// Assigned-object types for IP addresses
+const (
+	AssignedObjectInterface   = "dcim.interface"
+	AssignedObjectVMInterface = "virtualization.vminterface"
+)
+
 // Endpoints
 const (
 	EndpointInterfaces = "interfaces"
@@ -63,6 +69,12 @@ var CacheResourceTypes = []string{
 	"vrfs",
 	"tags",
 	"manufacturers",
+	"platforms",
+	"tenant_groups",
+	"tenants",
+	"cluster_types",
+	"cluster_groups",
+	"clusters",
 }
 
 // Cable color map
