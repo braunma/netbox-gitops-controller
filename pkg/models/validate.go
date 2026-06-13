@@ -219,6 +219,83 @@ func (d *DeviceConfig) Validate() error {
 	return wrap("device", d.Name, errs)
 }
 
+// Validate checks required fields of a Platform.
+func (p *Platform) Validate() error {
+	errs := requireFields(map[string]string{
+		"name": p.Name,
+		"slug": p.Slug,
+	})
+	return wrap("platform", p.Name, errs)
+}
+
+// Validate checks required fields of a TenantGroup.
+func (g *TenantGroup) Validate() error {
+	errs := requireFields(map[string]string{
+		"name": g.Name,
+		"slug": g.Slug,
+	})
+	return wrap("tenant group", g.Name, errs)
+}
+
+// Validate checks required fields of a Tenant.
+func (t *Tenant) Validate() error {
+	errs := requireFields(map[string]string{
+		"name": t.Name,
+		"slug": t.Slug,
+	})
+	return wrap("tenant", t.Name, errs)
+}
+
+// Validate checks required fields of a ClusterType.
+func (c *ClusterType) Validate() error {
+	errs := requireFields(map[string]string{
+		"name": c.Name,
+		"slug": c.Slug,
+	})
+	return wrap("cluster type", c.Name, errs)
+}
+
+// Validate checks required fields of a ClusterGroup.
+func (c *ClusterGroup) Validate() error {
+	errs := requireFields(map[string]string{
+		"name": c.Name,
+		"slug": c.Slug,
+	})
+	return wrap("cluster group", c.Name, errs)
+}
+
+// Validate checks required fields of a Cluster.
+func (c *Cluster) Validate() error {
+	errs := requireFields(map[string]string{
+		"name":      c.Name,
+		"type_slug": c.TypeSlug,
+	})
+	return wrap("cluster", c.Name, errs)
+}
+
+// Validate checks required fields and cross-field constraints of a VMConfig,
+// including its nested interface configs. A VM must belong to a cluster or a
+// site (NetBox allows non-clustered, site-scoped VMs); both may be set.
+func (v *VMConfig) Validate() error {
+	errs := requireFields(map[string]string{"name": v.Name})
+
+	if v.Cluster == "" && v.SiteSlug == "" {
+		errs = append(errs, errors.New("one of cluster or site_slug is required"))
+	}
+
+	for i, iface := range v.Interfaces {
+		if iface.Name == "" {
+			errs = append(errs, fmt.Errorf("interface %d: name is required", i+1))
+			continue
+		}
+		if iface.IP != nil && iface.IP.Address == "" {
+			errs = append(errs, fmt.Errorf("interface %q: ip.address is required", iface.Name))
+		}
+	}
+
+	return wrap("virtual machine", v.Name, errs)
+}
+
 // validateLink checks that a cable link definition names both ends.
 func validateLink(link *LinkConfig) error {
 	if link == nil {

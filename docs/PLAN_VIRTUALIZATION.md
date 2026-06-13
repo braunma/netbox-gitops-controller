@@ -158,7 +158,7 @@ type VMInterfaceConfig struct {
 
 type VMConfig struct {
     Name        string  // required
-    Cluster     string  // exactly one of Cluster / SiteSlug (decision §11.2)
+    Cluster     string  // at least one of Cluster / SiteSlug (decision §11.2)
     SiteSlug    string  `yaml:"site_slug,omitempty"`
     RoleSlug    string  `yaml:"role_slug,omitempty"`
     Platform    string  `yaml:"platform,omitempty"` // platform slug, via cache
@@ -180,8 +180,8 @@ Add a `Validate() error` to each new type (every model already has one;
 the loader calls it via `validateItems`). Cross-field rules to enforce:
 - `Platform`/`Tenant`/`TenantGroup`: `Name` and `Slug` required.
 - `Cluster.TypeSlug` required; `Cluster.Name` required.
-- `VMConfig`: require **exactly one** of `Cluster` / `SiteSlug` (decision
-  §11.2 — a VM belongs to a cluster or a site, not neither/both).
+- `VMConfig`: require **at least one** of `Cluster` / `SiteSlug` (decision
+  §11.2 — a VM belongs to a cluster or a site; NetBox permits both).
 - `VMInterfaceConfig.Name` required; `IPConfig.Address` required when `IP` set.
 
 Add tests in `pkg/models/validate_test.go`.
@@ -396,8 +396,8 @@ Target: keep package coverage at/above the current ~73% CI threshold.
    is added alongside the existing `--device`, scoping VM reconciliation to one
    VM. `--site` continues to scope by site. (See §7.)
 2. **Non-clustered VMs → support both.** A VM may belong to a cluster **or**
-   just a site. `VMConfig.Validate()` requires exactly one of `Cluster` /
-   `SiteSlug` to be set.
+   just a site. `VMConfig.Validate()` requires at least one of `Cluster` /
+   `SiteSlug` to be set (NetBox permits both simultaneously, so both is allowed).
 3. **Platforms & tenants → manage them.** Platforms (`dcim/platforms`) and
    tenants + tenant groups (`tenancy/tenants`, `tenancy/tenant-groups`) become
    first-class declarable, reconciled objects. Because devices reference them
