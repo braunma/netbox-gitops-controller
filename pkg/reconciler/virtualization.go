@@ -3,6 +3,7 @@ package reconciler
 import (
 	"fmt"
 
+	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -122,6 +123,302 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 	}
 
 	return nil
+}
+
+// ReconcileVMs reconciles virtual machine definitions, including their
+// interfaces and IP addresses. A VM is attached to its cluster and/or site
+// (at least one is required, per VMConfig.Validate). The optional role,
+// platform and tenant are resolved with live lookups since they are created
+// in earlier phases of this same run.
+func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
+	vr.logger.Info("Reconciling %d virtual machines...", len(vms))
+
+	for _, vm := range vms {
+		payload := map[string]interface{}{"name": vm.Name}
+		if vm.Status != "" {
+			payload["status"] = vm.Status
+		}
+		if vm.VCPUs > 0 {
+			payload["vcpus"] = vm.VCPUs
+		}
+		if vm.Memory > 0 {
+			payload["memory"] = vm.Memory
+		}
+		if vm.Disk > 0 {
+			payload["disk"] = vm.Disk
+		}
+
+		// Resolve cluster and/or site. The effective site (used for VLAN
+		// lookups on interfaces) is the VM's own site, or its cluster's site.
+		clusterID, clusterSiteID, hasCluster := 0, 0, false
+		if vm.Cluster != "" {
+			if id, siteID, ok := vr.lookupCluster(vm.Cluster); ok {
+				clusterID, clusterSiteID, hasCluster = id, siteID, true
+			} else {
+				vr.logger.Warning("Cluster %s not found for VM %s", vm.Cluster, vm.Name)
+			}
+		}
+		siteID, hasSite := 0, false
+		if vm.SiteSlug != "" {
+			if id, ok := vr.lookupSiteID(vm.SiteSlug); ok {
+				siteID, hasSite = id, true
+			} else {
+				vr.logger.Warning("Site %s not found for VM %s", vm.SiteSlug, vm.Name)
+			}
+		}
+
+		if !hasCluster && !hasSite {
+			vr.logger.Warning("VM %s has no resolvable cluster or site, skipping", vm.Name)
+			vr.client.MarkReconcileIncomplete("virtualization", "virtual-machines")
+			continue
+		}
+		if hasCluster {
+			payload["cluster"] = clusterID
+		}
+		if hasSite {
+			payload["site"] = siteID
+		}
+
+		if vm.RoleSlug != "" {
+			if roleID, ok := vr.lookupID("dcim", "device-roles", vm.RoleSlug); ok {
+				payload["role"] = roleID
+			} else {
+				vr.logger.Warning("Role %s not found for VM %s, leaving unset", vm.RoleSlug, vm.Name)
+			}
+		}
+		if vm.Platform != "" {
+			if platformID, ok := vr.lookupID("dcim", "platforms", vm.Platform); ok {
+				payload["platform"] = platformID
+			} else {
+				vr.logger.Warning("Platform %s not found for VM %s, leaving unset", vm.Platform, vm.Name)
+			}
+		}
+		if vm.Tenant != "" {
+			if tenantID, ok := vr.lookupID("tenancy", "tenants", vm.Tenant); ok {
+				payload["tenant"] = tenantID
+			} else {
+				vr.logger.Warning("Tenant %s not found for VM %s, leaving unset", vm.Tenant, vm.Name)
+			}
+		}
+
+		lookup := map[string]interface{}{"name": vm.Name}
+		if hasCluster {
+			lookup["cluster_id"] = clusterID
+		}
+
+		vmObj, err := vr.client.Apply("virtualization", "virtual-machines", lookup, payload)
+		if err != nil {
+			return fmt.Errorf("failed to reconcile VM %s: %w", vm.Name, err)
+		}
+		vmID := utils.GetIDFromObject(vmObj)
+
+		effectiveSiteID := siteID
+		if !hasSite {
+			effectiveSiteID = clusterSiteID
+		}
+
+		if err := vr.reconcileVMInterfaces(vmID, effectiveSiteID, vm); err != nil {
+			return fmt.Errorf("failed to reconcile interfaces for VM %s: %w", vm.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// reconcileVMInterfaces reconciles a VM's interfaces, including site-scoped
+// VLAN resolution and IP assignment. It mirrors the device interface
+// reconciler but cannot cable, so there is no link handling.
+func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *models.VMConfig) error {
+	for i, iface := range vm.Interfaces {
+		vr.logger.Debug("    VM interface %d/%d: %s", i+1, len(vm.Interfaces), iface.Name)
+
+		payload := map[string]interface{}{
+			"virtual_machine": vmID,
+			"name":            iface.Name,
+			"enabled":         iface.Enabled,
+		}
+		if iface.Description != "" {
+			payload["description"] = iface.Description
+		}
+		if iface.MTU > 0 {
+			payload["mtu"] = iface.MTU
+		}
+		if iface.MACAddress != "" {
+			payload["mac_address"] = iface.MACAddress
+		}
+		if iface.Mode != "" {
+			payload["mode"] = iface.Mode
+		}
+
+		// VLANs are resolved with site-scoped cache keys, exactly like device
+		// interfaces. A clustered VM inherits its cluster's site.
+		if iface.UntaggedVLAN != "" {
+			if vlanID, ok := vr.lookupSiteVLAN(siteID, iface.UntaggedVLAN); ok {
+				payload["untagged_vlan"] = vlanID
+			} else {
+				vr.logger.Warning("      Untagged VLAN %s not found at site %d for VM %s", iface.UntaggedVLAN, siteID, vm.Name)
+			}
+		}
+		if len(iface.TaggedVLANs) > 0 {
+			var vlanIDs []int
+			for _, vlanName := range iface.TaggedVLANs {
+				if vlanID, ok := vr.lookupSiteVLAN(siteID, vlanName); ok {
+					vlanIDs = append(vlanIDs, vlanID)
+				} else {
+					vr.logger.Warning("      Tagged VLAN %s not found at site %d for VM %s", vlanName, siteID, vm.Name)
+				}
+			}
+			if len(vlanIDs) > 0 {
+				payload["tagged_vlans"] = vlanIDs
+			}
+		}
+
+		// A parent interface (e.g. for a sub-interface) is resolved live, as it
+		// is created earlier in this same loop.
+		if iface.Parent != "" {
+			if parentID, ok := vr.lookupVMInterface(vmID, iface.Parent); ok {
+				payload["parent"] = parentID
+			} else {
+				vr.logger.Warning("      Parent interface %s not found for VM %s, leaving unset", iface.Parent, vm.Name)
+			}
+		}
+
+		lookup := map[string]interface{}{
+			"virtual_machine_id": vmID,
+			"name":               iface.Name,
+		}
+
+		ifaceObj, err := vr.client.Apply("virtualization", "interfaces", lookup, payload)
+		if err != nil {
+			return fmt.Errorf("failed to apply VM interface %s: %w", iface.Name, err)
+		}
+		ifaceID := utils.GetIDFromObject(ifaceObj)
+
+		if iface.IP != nil && ifaceID > 0 {
+			if err := vr.reconcileVMIP(vmID, ifaceID, &iface); err != nil {
+				return fmt.Errorf("failed to reconcile IP for %s: %w", iface.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// reconcileVMIP reconciles an IP address bound to a VM interface, and
+// optionally promotes it to the VM's primary IP. Mirrors the device
+// reconciler's reconcileIPAddress.
+func (vr *VirtualizationReconciler) reconcileVMIP(vmID, ifaceID int, iface *models.VMInterfaceConfig) error {
+	ipConfig := iface.IP
+
+	payload := map[string]interface{}{
+		"address":              ipConfig.Address,
+		"assigned_object_type": constants.AssignedObjectVMInterface,
+		"assigned_object_id":   ifaceID,
+	}
+	if ipConfig.Status != "" {
+		payload["status"] = ipConfig.Status
+	}
+	if ipConfig.DNSName != "" {
+		payload["dns_name"] = ipConfig.DNSName
+	}
+	if ipConfig.Description != "" {
+		payload["description"] = ipConfig.Description
+	}
+	if ipConfig.VRF != "" {
+		if vrfID, ok := vr.client.Cache().GetGlobalID("vrfs", ipConfig.VRF); ok {
+			payload["vrf"] = vrfID
+		}
+	}
+
+	lookup := map[string]interface{}{"address": ipConfig.Address}
+	if ipConfig.VRF != "" {
+		if vrfID, ok := vr.client.Cache().GetGlobalID("vrfs", ipConfig.VRF); ok {
+			lookup["vrf_id"] = vrfID
+		}
+	}
+
+	ipObj, err := vr.client.Apply("ipam", "ip-addresses", lookup, payload)
+	if err != nil {
+		return fmt.Errorf("failed to apply IP address: %w", err)
+	}
+
+	if iface.AddressRole == "primary" {
+		if ipID := utils.GetIDFromObject(ipObj); ipID > 0 {
+			if err := vr.setVMPrimaryIP(vmID, ipID); err != nil {
+				return fmt.Errorf("failed to set primary IP: %w", err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// setVMPrimaryIP sets the primary IP for a virtual machine, choosing the
+// IPv4 or IPv6 field by address family. Mirrors the device setPrimaryIP.
+func (vr *VirtualizationReconciler) setVMPrimaryIP(vmID, ipID int) error {
+	ipObj, err := vr.client.Get("ipam", "ip-addresses", ipID)
+	if err != nil {
+		return fmt.Errorf("failed to get IP address: %w", err)
+	}
+
+	family := 4
+	if fam, ok := ipObj["family"].(map[string]interface{}); ok {
+		if val, ok := fam["value"].(float64); ok {
+			family = int(val)
+		}
+	} else if fam, ok := ipObj["family"].(float64); ok {
+		family = int(fam)
+	}
+
+	field := "primary_ip4"
+	if family == 6 {
+		field = "primary_ip6"
+	}
+
+	if err := vr.client.Update("virtualization", "virtual-machines", vmID, map[string]interface{}{
+		field: ipID,
+	}); err != nil {
+		return fmt.Errorf("failed to update VM primary IP: %w", err)
+	}
+
+	vr.logger.Info("Set primary IP for VM %d", vmID)
+	return nil
+}
+
+// lookupCluster resolves a cluster by name, returning its ID and the ID of
+// its site (0 if the cluster has no site). A live lookup, since clusters are
+// created in this same phase just before VMs.
+func (vr *VirtualizationReconciler) lookupCluster(name string) (id, siteID int, ok bool) {
+	clusters, err := vr.client.Filter("virtualization", "clusters", map[string]interface{}{"name": name})
+	if err != nil || len(clusters) == 0 {
+		return 0, 0, false
+	}
+	cl := clusters[0]
+	id = utils.GetIDFromObject(cl)
+	siteID = utils.GetIDFromObject(cl["site"])
+	return id, siteID, id != 0
+}
+
+// lookupVMInterface resolves a VM interface by name on a given VM.
+func (vr *VirtualizationReconciler) lookupVMInterface(vmID int, name string) (int, bool) {
+	ifaces, err := vr.client.Filter("virtualization", "interfaces", map[string]interface{}{
+		"virtual_machine_id": vmID,
+		"name":               name,
+	})
+	if err != nil || len(ifaces) == 0 {
+		return 0, false
+	}
+	id := utils.GetIDFromObject(ifaces[0])
+	return id, id != 0
+}
+
+// lookupSiteVLAN resolves a VLAN name to its ID using the site-scoped cache,
+// falling back to a global lookup. Returns false when no site is known.
+func (vr *VirtualizationReconciler) lookupSiteVLAN(siteID int, name string) (int, bool) {
+	if siteID == 0 {
+		return 0, false
+	}
+	return vr.client.Cache().GetSiteID("vlans", siteID, name)
 }
 
 // lookupID resolves an object slug to its ID with a live API lookup, so

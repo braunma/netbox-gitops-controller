@@ -26,6 +26,7 @@ var (
 	onlyPhases       []string
 	siteFilter       string
 	deviceFilter     string
+	vmFilter         string
 	prune            bool
 )
 
@@ -52,6 +53,7 @@ func main() {
 	rootCmd.Flags().StringSliceVar(&onlyPhases, "only", nil, fmt.Sprintf("Restrict the sync to specific phases (comma-separated or repeated): %s", strings.Join(validPhases, ", ")))
 	rootCmd.Flags().StringVar(&siteFilter, "site", "", "Restrict device reconciliation to devices of a single site slug")
 	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
+	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
 	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
 
 	if err := rootCmd.Execute(); err != nil {
@@ -64,10 +66,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if outputFormat != "text" && outputFormat != "json" {
 		return fmt.Errorf("invalid --output format %q (supported: text, json)", outputFormat)
 	}
-	if prune && (siteFilter != "" || deviceFilter != "") {
-		// Pruning scoped to a single site/device would delete the
+	if prune && (siteFilter != "" || deviceFilter != "" || vmFilter != "") {
+		// Pruning scoped to a single site/device/VM would delete the
 		// out-of-scope objects the filter excluded, so refuse the combination.
-		return fmt.Errorf("--prune cannot be combined with --site or --device")
+		return fmt.Errorf("--prune cannot be combined with --site, --device or --vm")
 	}
 	if outputFormat == "json" {
 		// Reserve stdout for the JSON plan; every logger created from here
@@ -473,7 +475,66 @@ func runVirtualization(c *client.NetBoxClient, dataLoader *loader.DataLoader, lo
 		return err
 	}
 
+	vms, err := dataLoader.LoadVMs("inventory/virtual")
+	if err != nil {
+		logger.Error("Failed to load virtual machines", err)
+		return err
+	}
+
+	if siteFilter != "" || vmFilter != "" {
+		filtered := filterVMs(vms, siteFilter, vmFilter)
+		logger.Info("VM filter (site=%q, vm=%q) matched %d of %d VMs",
+			siteFilter, vmFilter, len(filtered), len(vms))
+		if len(filtered) == 0 {
+			logger.Warning("No VMs match the given --site/--vm filter")
+			return nil
+		}
+		vms = filtered
+	}
+
+	// Load site caches so VM interfaces can resolve VLANs. A clustered VM
+	// inherits its cluster's site, so warm caches for sites referenced by both
+	// clusters and VMs.
+	uniqueSites := make(map[string]bool)
+	for _, cl := range clusters {
+		if cl.SiteSlug != "" {
+			uniqueSites[cl.SiteSlug] = true
+		}
+	}
+	for _, vm := range vms {
+		if vm.SiteSlug != "" {
+			uniqueSites[vm.SiteSlug] = true
+		}
+	}
+	for siteSlug := range uniqueSites {
+		if err := c.Cache().LoadSite(siteSlug); err != nil {
+			logger.Error("Failed to load site cache for "+siteSlug, err)
+			return err
+		}
+	}
+
+	if err := virtReconciler.ReconcileVMs(vms); err != nil {
+		logger.Error("Failed to reconcile virtual machines", err)
+		return err
+	}
+
 	return nil
+}
+
+// filterVMs returns the VMs matching the given site slug and/or VM name.
+// Empty filter values match everything.
+func filterVMs(vms []*models.VMConfig, siteSlug, vmName string) []*models.VMConfig {
+	var filtered []*models.VMConfig
+	for _, vm := range vms {
+		if siteSlug != "" && vm.SiteSlug != siteSlug {
+			continue
+		}
+		if vmName != "" && vm.Name != vmName {
+			continue
+		}
+		filtered = append(filtered, vm)
+	}
+	return filtered
 }
 
 // filterDevices returns the devices matching the given site slug and/or
