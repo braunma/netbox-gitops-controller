@@ -243,6 +243,37 @@ func runFoundation(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger
 		return err
 	}
 
+	platforms, err := dataLoader.LoadPlatforms("definitions/platforms")
+	if err != nil {
+		logger.Error("Failed to load platforms", err)
+		return err
+	}
+	if err := foundationReconciler.ReconcilePlatforms(platforms); err != nil {
+		logger.Error("Failed to reconcile platforms", err)
+		return err
+	}
+
+	// Tenant groups before tenants: a tenant may reference a group created here.
+	tenantGroups, err := dataLoader.LoadTenantGroups("definitions/tenant_groups")
+	if err != nil {
+		logger.Error("Failed to load tenant groups", err)
+		return err
+	}
+	if err := foundationReconciler.ReconcileTenantGroups(tenantGroups); err != nil {
+		logger.Error("Failed to reconcile tenant groups", err)
+		return err
+	}
+
+	tenants, err := dataLoader.LoadTenants("definitions/tenants")
+	if err != nil {
+		logger.Error("Failed to load tenants", err)
+		return err
+	}
+	if err := foundationReconciler.ReconcileTenants(tenants); err != nil {
+		logger.Error("Failed to reconcile tenants", err)
+		return err
+	}
+
 	sites, err := dataLoader.LoadSites("definitions/sites")
 	if err != nil {
 		logger.Error("Failed to load sites", err)
