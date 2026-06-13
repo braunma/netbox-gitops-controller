@@ -96,11 +96,17 @@ func (f *fakeNetBox) handle(w http.ResponseWriter, r *http.Request) {
 		fmt.Fprint(w, `{"detail": "Not found."}`)
 
 	case r.Method == "GET":
+		query := r.URL.Query()
+		tagSlug := query.Get("tag")
 		results := []client.Object{}
 		for _, obj := range f.store[key] {
-			if matchesFilters(obj, r.URL.Query()) {
-				results = append(results, obj)
+			if !matchesFilters(obj, query) {
+				continue
 			}
+			if tagSlug != "" && !f.objectHasTagSlugLocked(obj, tagSlug) {
+				continue
+			}
+			results = append(results, obj)
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{"results": results, "next": nil})
 
@@ -156,7 +162,9 @@ func (f *fakeNetBox) handle(w http.ResponseWriter, r *http.Request) {
 // ignored.
 func matchesFilters(obj client.Object, query url.Values) bool {
 	for k, vals := range query {
-		if k == "limit" || k == "page" || k == "offset" {
+		if k == "limit" || k == "page" || k == "offset" || k == "tag" {
+			// "tag" is a slug filter resolved against the tag store by the
+			// caller (objectHasTagSlugLocked), not a plain field comparison.
 			continue
 		}
 		want := vals[0]
@@ -225,6 +233,34 @@ func (f *fakeNetBox) setCableRefLocked(cable client.Object, ref interface{}) {
 			}
 		}
 	}
+}
+
+// objectHasTagSlugLocked emulates NetBox's ?tag=<slug> filter: it resolves
+// the slug to a tag ID via the tag store, then reports whether the object's
+// "tags" reference that ID. Objects are created with integer tag IDs and
+// seeded with nested tag objects, both of which GetIDFromObject handles.
+func (f *fakeNetBox) objectHasTagSlugLocked(obj client.Object, slug string) bool {
+	tagID := 0
+	for _, t := range f.store["extras/tags"] {
+		if s, _ := t["slug"].(string); s == slug {
+			tagID = utils.GetIDFromObject(t)
+			break
+		}
+	}
+	if tagID == 0 {
+		return false
+	}
+
+	tags, ok := obj["tags"].([]interface{})
+	if !ok {
+		return false
+	}
+	for _, t := range tags {
+		if utils.GetIDFromObject(t) == tagID {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeNetBox) findLocked(key string, id int) client.Object {
