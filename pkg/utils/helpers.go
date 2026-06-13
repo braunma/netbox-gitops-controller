@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"reflect"
 	"strings"
-	"time"
 )
 
 // Slugify converts a string to a URL-safe slug
@@ -72,26 +71,6 @@ func GetIDFromObject(obj interface{}) int {
 	return 0
 }
 
-// ExtractTagIDsAndSlugs extracts tag IDs and slugs from a mixed tag list
-func ExtractTagIDsAndSlugs(tags []interface{}) (ids []int, slugs []string) {
-	for _, tag := range tags {
-		switch v := tag.(type) {
-		case int:
-			ids = append(ids, v)
-		case string:
-			slugs = append(slugs, v)
-		case map[string]interface{}:
-			if id := GetIDFromObject(v); id != 0 {
-				ids = append(ids, id)
-			}
-			if slug, ok := v["slug"].(string); ok {
-				slugs = append(slugs, slug)
-			}
-		}
-	}
-	return ids, slugs
-}
-
 // IsManaged checks if an object is managed by gitops
 func IsManaged(obj map[string]interface{}, managedTagID int) bool {
 	tags, ok := obj["tags"].([]interface{})
@@ -110,46 +89,5 @@ func IsManaged(obj map[string]interface{}, managedTagID int) bool {
 		}
 	}
 
-	return false
-}
-
-// SafeSleep sleeps for the specified duration unless in dry-run mode
-func SafeSleep(durationMs int, dryRun bool) {
-	if !dryRun && durationMs > 0 {
-		time.Sleep(time.Duration(durationMs) * time.Millisecond)
-	}
-}
-
-// GetTerminationType determines the termination type from an endpoint name
-func GetTerminationType(endpoint string) string {
-	switch endpoint {
-	case "interfaces":
-		return "dcim.interface"
-	case "front_ports":
-		return "dcim.frontport"
-	case "rear_ports":
-		return "dcim.rearport"
-	default:
-		return ""
-	}
-}
-
-// Contains checks if a string slice contains a specific string
-func Contains(slice []string, item string) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
-	return false
-}
-
-// ContainsInt checks if an int slice contains a specific int
-func ContainsInt(slice []int, item int) bool {
-	for _, s := range slice {
-		if s == item {
-			return true
-		}
-	}
 	return false
 }

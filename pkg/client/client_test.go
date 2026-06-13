@@ -389,7 +389,7 @@ func TestExtractTagIDs(t *testing.T) {
 	}
 }
 
-func TestTagsEqual(t *testing.T) {
+func TestIDSetEqual(t *testing.T) {
 	logger := utils.NewLogger(true)
 	client := &NetBoxClient{
 		logger: logger,
@@ -407,7 +407,7 @@ func TestTagsEqual(t *testing.T) {
 				map[string]interface{}{"id": float64(1)},
 				map[string]interface{}{"id": float64(2)},
 			},
-			desired: []int{1, 2},
+			desired:  []int{1, 2},
 			expected: true,
 		},
 		{
@@ -416,7 +416,7 @@ func TestTagsEqual(t *testing.T) {
 				map[string]interface{}{"id": float64(1)},
 				map[string]interface{}{"id": float64(2)},
 			},
-			desired: []int{1, 3},
+			desired:  []int{1, 3},
 			expected: false,
 		},
 		{
@@ -424,7 +424,7 @@ func TestTagsEqual(t *testing.T) {
 			existing: []interface{}{
 				map[string]interface{}{"id": float64(1)},
 			},
-			desired: []int{1, 2},
+			desired:  []int{1, 2},
 			expected: false,
 		},
 		{
@@ -437,10 +437,39 @@ func TestTagsEqual(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := client.tagsEqual(tt.existing, tt.desired)
+			result := client.idSetEqual(tt.existing, tt.desired)
 			if result != tt.expected {
-				t.Errorf("tagsEqual() = %v, expected %v", result, tt.expected)
+				t.Errorf("idSetEqual() = %v, expected %v", result, tt.expected)
 			}
 		})
+	}
+}
+
+// TestCalculateDiffListFields guards the idempotency of slice-valued fields
+// such as tagged_vlans: NetBox returns them as nested objects while we send
+// plain []int, so an unchanged list must not be reported as a change.
+func TestCalculateDiffListFields(t *testing.T) {
+	client := &NetBoxClient{logger: utils.NewLogger(true)}
+
+	existing := Object{
+		"tagged_vlans": []interface{}{
+			map[string]interface{}{"id": float64(10), "name": "vlan10"},
+			map[string]interface{}{"id": float64(20), "name": "vlan20"},
+		},
+	}
+
+	// Same VLANs, different order and representation: must be a no-op.
+	if changes := client.calculateDiff(existing, map[string]interface{}{
+		"tagged_vlans": []int{20, 10},
+	}); len(changes) != 0 {
+		t.Errorf("expected no changes for equal tagged_vlans set, got %v", changes)
+	}
+
+	// A genuinely different set must still be detected.
+	changes := client.calculateDiff(existing, map[string]interface{}{
+		"tagged_vlans": []int{10, 30},
+	})
+	if _, ok := changes["tagged_vlans"]; !ok {
+		t.Errorf("expected tagged_vlans change to be detected, got %v", changes)
 	}
 }
