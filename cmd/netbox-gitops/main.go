@@ -591,18 +591,36 @@ func parseOnly(values []string) (map[string]bool, error) {
 func pruneTargets(phases map[string]bool) []client.PruneTarget {
 	var targets []client.PruneTarget
 
+	// IP addresses reference both device interfaces and VM interfaces, so they
+	// are pruned once up front (before any interface is removed) whenever
+	// either owning phase ran.
+	if phases["devices"] || phases["virtualization"] {
+		targets = append(targets, client.PruneTarget{App: "ipam", Endpoint: "ip-addresses"})
+	}
+
 	if phases["devices"] {
-		// Device children first (reverse dependency: IPs reference interfaces,
-		// front ports reference rear ports, all components reference the
-		// device), then the devices themselves. Deleting an orphaned device
-		// cascades any remaining managed children in NetBox.
+		// Device children first (reverse dependency: front ports reference rear
+		// ports, all components reference the device), then the devices
+		// themselves. Deleting an orphaned device cascades any remaining
+		// managed children in NetBox.
 		targets = append(targets,
-			client.PruneTarget{App: "ipam", Endpoint: "ip-addresses"},
 			client.PruneTarget{App: "dcim", Endpoint: "front-ports"},
 			client.PruneTarget{App: "dcim", Endpoint: "interfaces"},
 			client.PruneTarget{App: "dcim", Endpoint: "rear-ports"},
 			client.PruneTarget{App: "dcim", Endpoint: "modules"},
 			client.PruneTarget{App: "dcim", Endpoint: "devices"},
+		)
+	}
+	if phases["virtualization"] {
+		// VM interfaces before VMs; clusters after the VMs that reference them,
+		// then cluster groups and types. Ordered before network/foundation so
+		// the VLANs, sites and tenants these point at are still present.
+		targets = append(targets,
+			client.PruneTarget{App: "virtualization", Endpoint: "interfaces"},
+			client.PruneTarget{App: "virtualization", Endpoint: "virtual-machines"},
+			client.PruneTarget{App: "virtualization", Endpoint: "clusters"},
+			client.PruneTarget{App: "virtualization", Endpoint: "cluster-groups"},
+			client.PruneTarget{App: "virtualization", Endpoint: "cluster-types"},
 		)
 	}
 	if phases["device-types"] {
@@ -620,10 +638,16 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 		)
 	}
 	if phases["foundation"] {
+		// Sites, roles, platforms and tenants are referenced by devices, VMs
+		// and clusters, so they come after those phases. Tenants before tenant
+		// groups (a tenant references its group).
 		targets = append(targets,
 			client.PruneTarget{App: "dcim", Endpoint: "racks"},
 			client.PruneTarget{App: "dcim", Endpoint: "device-roles"},
+			client.PruneTarget{App: "dcim", Endpoint: "platforms"},
 			client.PruneTarget{App: "dcim", Endpoint: "sites"},
+			client.PruneTarget{App: "tenancy", Endpoint: "tenants"},
+			client.PruneTarget{App: "tenancy", Endpoint: "tenant-groups"},
 			// The managed tag carries its own slug; never prune it.
 			client.PruneTarget{App: "extras", Endpoint: "tags", KeepSlugs: []string{constants.ManagedTagSlug}},
 		)

@@ -65,6 +65,98 @@ func TestPruneEndToEnd(t *testing.T) {
 	}
 }
 
+// TestPruneVirtualMachinesEndToEnd verifies that an orphaned managed VM is
+// pruned while a still-declared VM and an unmanaged (untagged) VM survive.
+func TestPruneVirtualMachinesEndToEnd(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	// A managed VM left over from a previous run, no longer declared.
+	f.seed("virtualization", "virtual-machines", client.Object{
+		"name": "old-vm", "tags": managedTags(c),
+	})
+	// A hand-created VM with no managed tag, which must be protected.
+	f.seed("virtualization", "virtual-machines", client.Object{"name": "manual-vm"})
+
+	// Reconcile the desired set: only keep-vm remains declared.
+	vr := NewVirtualizationReconciler(c)
+	desired := []*models.VMConfig{{Name: "keep-vm", SiteSlug: "berlin-dc", Status: "active"}}
+	if err := vr.ReconcileVMs(desired); err != nil {
+		t.Fatalf("ReconcileVMs() error = %v", err)
+	}
+
+	if err := c.Prune([]client.PruneTarget{{App: "virtualization", Endpoint: "virtual-machines"}}); err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	got := map[string]bool{}
+	for _, obj := range f.objects("virtualization", "virtual-machines") {
+		got[obj["name"].(string)] = true
+	}
+	if got["old-vm"] {
+		t.Errorf("managed orphan old-vm was not pruned: %v", got)
+	}
+	if !got["keep-vm"] {
+		t.Errorf("declared VM keep-vm was wrongly pruned: %v", got)
+	}
+	if !got["manual-vm"] {
+		t.Errorf("unmanaged VM manual-vm was wrongly pruned: %v", got)
+	}
+}
+
+// TestPrunePlatformsAndTenantsEndToEnd verifies that orphaned managed
+// platforms and tenants are pruned while still-declared ones survive.
+func TestPrunePlatformsAndTenantsEndToEnd(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	f.seed("dcim", "platforms", client.Object{"name": "Old OS", "slug": "old-os", "tags": managedTags(c)})
+	f.seed("tenancy", "tenants", client.Object{"name": "Old Tenant", "slug": "old-tenant", "tags": managedTags(c)})
+
+	fr := NewFoundationReconciler(c)
+	if err := fr.ReconcilePlatforms([]*models.Platform{{Name: "Ubuntu", Slug: "ubuntu"}}); err != nil {
+		t.Fatalf("ReconcilePlatforms() error = %v", err)
+	}
+	if err := fr.ReconcileTenants([]*models.Tenant{{Name: "Acme", Slug: "acme"}}); err != nil {
+		t.Fatalf("ReconcileTenants() error = %v", err)
+	}
+
+	err := c.Prune([]client.PruneTarget{
+		{App: "dcim", Endpoint: "platforms"},
+		{App: "tenancy", Endpoint: "tenants"},
+	})
+	if err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	platforms := map[string]bool{}
+	for _, o := range f.objects("dcim", "platforms") {
+		platforms[o["slug"].(string)] = true
+	}
+	if platforms["old-os"] {
+		t.Errorf("orphaned managed platform old-os was not pruned: %v", platforms)
+	}
+	if !platforms["ubuntu"] {
+		t.Errorf("declared platform ubuntu was wrongly pruned: %v", platforms)
+	}
+
+	tenants := map[string]bool{}
+	for _, o := range f.objects("tenancy", "tenants") {
+		tenants[o["slug"].(string)] = true
+	}
+	if tenants["old-tenant"] {
+		t.Errorf("orphaned managed tenant old-tenant was not pruned: %v", tenants)
+	}
+	if !tenants["acme"] {
+		t.Errorf("declared tenant acme was wrongly pruned: %v", tenants)
+	}
+}
+
 // TestPruneDeviceChildrenEndToEnd verifies that orphaned device children
 // (interfaces and IP addresses) are pruned while the still-declared child and
 // an unmanaged (untagged) child are protected. This exercises the seen-wiring
