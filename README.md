@@ -283,11 +283,13 @@ are never touched.
 ```
 
 Pruning runs after all selected phases and deletes endpoints in reverse
-dependency order (devices first, sites/tags last) to respect NetBox foreign-key
-constraints. It is scoped to the phases that run via `--only`, and cannot be
-combined with `--site`/`--device` (a filtered run would delete the out-of-scope
-objects the filter excluded). Nested device children (interfaces, IPs, cables)
-are not pruned individually — see `docs/MISSING_FEATURES.md`.
+dependency order (device children and devices first, sites/tags last) to
+respect NetBox foreign-key constraints. It is scoped to the phases that run via
+`--only`, and cannot be combined with `--site`/`--device` (a filtered run would
+delete the out-of-scope objects the filter excluded). Device children
+(interfaces, IP addresses, front/rear ports, modules) are pruned too; cables
+are not (they are untagged and NetBox removes them when their port or device is
+deleted). See `docs/MISSING_FEATURES.md` for details.
 
 ## 📚 Example Files
 

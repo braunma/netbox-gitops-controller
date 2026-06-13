@@ -21,10 +21,11 @@ Manually created objects are never touched.
 - After all phases run, `Prune` lists each managed endpoint filtered by
   `tag=gitops`, and deletes every returned object whose ID was not seen — i.e.
   it is still managed but no longer declared in YAML.
-- Endpoints are pruned in reverse dependency order (devices → device/module
-  types → prefixes → VLANs → VLAN groups → VRFs → racks → roles → sites →
-  tags) to satisfy NetBox FK constraints. The managed `gitops` tag itself is
-  protected via `KeepSlugs`.
+- Endpoints are pruned in reverse dependency order — device children (IP
+  addresses → front ports → interfaces → rear ports → modules) → devices →
+  device/module types → prefixes → VLANs → VLAN groups → VRFs → racks → roles
+  → sites → tags — to satisfy NetBox FK constraints. The managed `gitops` tag
+  itself is protected via `KeepSlugs`.
 - Only endpoints whose phase actually ran are pruned, so `--only` keeps prune
   in scope. `--prune` is rejected together with `--site`/`--device`, since a
   filtered run would delete the out-of-scope objects the filter excluded.
@@ -36,10 +37,16 @@ Manually created objects are never touched.
 - `--dry-run --prune` records the planned deletions (visible in the plan
   summary and `--output json`) without issuing any destructive request.
 
-**Not yet covered:** nested device children (interfaces, IP addresses, cables,
-ports) are not pruned individually — deleting a device cascades them in NetBox,
-but stale children on a still-declared device are left in place. Auto-created
-manufacturers are also left untouched.
+**Cables and manufacturers are excluded.** Cables are not pruned: the tool
+does not tag them, so the managed-tag query never returns them, and NetBox
+already cascade-deletes a port's cables when the port or device is removed.
+Auto-created manufacturers are likewise left untouched (they are shared,
+not declared per-definition).
+
+Note that because pruning is scoped to the `gitops` tag, a device child only
+gets pruned once the tool has managed it at least once (which adds the tag).
+Interfaces auto-instantiated from a device type but never declared in YAML stay
+untagged and are therefore protected.
 
 ## 2. Plan summary & machine-readable output
 

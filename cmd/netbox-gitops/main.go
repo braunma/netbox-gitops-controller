@@ -440,14 +440,23 @@ func parseOnly(values []string) (map[string]bool, error) {
 // violate NetBox foreign-key constraints. Only endpoints belonging to a phase
 // that actually ran are included, so --only keeps prune in scope.
 //
-// Nested device children (interfaces, IPs, cables, ports) are intentionally
-// not pruned individually: deleting a device cascades them in NetBox, and
-// scoping them per-device is left for a later iteration.
+// Cables are intentionally excluded: the tool does not tag them, so the
+// managed-tag query would never return them, and NetBox already
+// cascade-deletes a port's cables when the port or device is removed.
 func pruneTargets(phases map[string]bool) []client.PruneTarget {
 	var targets []client.PruneTarget
 
 	if phases["devices"] {
+		// Device children first (reverse dependency: IPs reference interfaces,
+		// front ports reference rear ports, all components reference the
+		// device), then the devices themselves. Deleting an orphaned device
+		// cascades any remaining managed children in NetBox.
 		targets = append(targets,
+			client.PruneTarget{App: "ipam", Endpoint: "ip-addresses"},
+			client.PruneTarget{App: "dcim", Endpoint: "front-ports"},
+			client.PruneTarget{App: "dcim", Endpoint: "interfaces"},
+			client.PruneTarget{App: "dcim", Endpoint: "rear-ports"},
+			client.PruneTarget{App: "dcim", Endpoint: "modules"},
 			client.PruneTarget{App: "dcim", Endpoint: "devices"},
 		)
 	}
