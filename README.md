@@ -8,8 +8,9 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
   * **Idempotency:** The script calculates differences and only applies necessary changes. Repeated executions result in "No-Ops" (no API calls) if the state is already correct.
   * **Safety (Shared Management):**
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
-      * ⚠️ **No Pruning (yet):** The tool creates and updates objects, but it does **not** delete objects that were removed from the YAML files — they remain in NetBox and must be cleaned up manually. (The only exception: conflicting cables are removed during re-wiring.) Automatic orphan pruning for `gitops`-tagged objects is planned; see `docs/MISSING_FEATURES.md`.
+      * **Opt-in Pruning (`--prune`):** Objects removed from YAML are deleted only when you pass `--prune`, and only if they carry the `gitops` tag — manually created objects are never touched. Combine with `--dry-run` to preview. See the Pruning section below.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
+  * **Coverage:** Manages DCIM (sites, racks, device types, devices, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -25,11 +26,16 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 │   ├── roles/           # Device Roles (e.g., Server, Leaf Switch)
 │   ├── vlans/           # VLAN Definitions
 │   ├── prefixes/        # IP Subnets / Prefixes
+│   ├── platforms/       # OS / firmware families
+│   ├── tenant_groups/   # Tenant Groups (tenancy)
+│   ├── tenants/         # Tenants (tenancy)
+│   ├── virtualization/  # cluster_types/, cluster_groups/, clusters/
 │   └── ...              # Other NetBox object types
-├── inventory/           # Your Private Hardware Inventory (gitignored)
-│   └── hardware/
-│       ├── active/      # Active Servers & Switches
-│       └── passive/     # Patch Panels, PDUs
+├── inventory/           # Your Private Inventory (gitignored)
+│   ├── hardware/
+│   │   ├── active/      # Active Servers & Switches
+│   │   └── passive/     # Patch Panels, PDUs
+│   └── virtual/         # Virtual Machines
 ├── example/             # Public Example Data for Tests
 │   ├── definitions/     # Example definitions (for learning/testing)
 │   └── inventory/       # Example inventory (for learning/testing)
@@ -130,7 +136,7 @@ File: `inventory/hardware/active/switches.yaml`
 
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`).
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
-  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`. See `docs/MISSING_FEATURES.md` for details and current limitations.
+  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See `docs/MISSING_FEATURES.md` for details and current limitations.
 
 ### Common Errors
 
@@ -256,13 +262,24 @@ targeted hotfixes:
 
 # A single device
 ./netbox-gitops --device srv-web-01
+
+# Only virtual machines, and just one of them
+./netbox-gitops --only virtualization --vm web-01
 ```
 
-Valid `--only` values: `foundation`, `network`, `device-types`, `devices`.
-`--site` and `--device` filter the device phase by site slug / device name.
+Valid `--only` values: `foundation`, `network`, `device-types`, `devices`,
+`virtualization`. `--site` filters the device and virtualization phases by site
+slug; `--device` filters a single device; `--vm` filters a single virtual
+machine by name.
 
 > **Note:** Skipped phases are not validated — if you sync `--only devices`,
 > the referenced sites, roles and device types must already exist in NetBox.
+> Likewise `--only virtualization` assumes its sites, roles, platforms, tenants
+> and VLANs already exist.
+>
+> **Note:** `--site` matches a VM only if the VM declares that `site_slug`
+> directly; a clustered VM (whose site comes from its cluster) is not matched by
+> `--site`. Use `--vm` to target such a VM by name.
 
 ### 6\. Pruning Orphans
 
@@ -283,10 +300,10 @@ are never touched.
 ```
 
 Pruning runs after all selected phases and deletes endpoints in reverse
-dependency order (device children and devices first, sites/tags last) to
-respect NetBox foreign-key constraints. It is scoped to the phases that run via
-`--only`, and cannot be combined with `--site`/`--device` (a filtered run would
-delete the out-of-scope objects the filter excluded). Device children
+dependency order (device/VM children first, then sites/platforms/tenants/tags
+last) to respect NetBox foreign-key constraints. It is scoped to the phases that
+run via `--only`, and cannot be combined with `--site`/`--device`/`--vm` (a
+filtered run would delete the out-of-scope objects the filter excluded). Device children
 (interfaces, IP addresses, front/rear ports, modules) are pruned too; cables
 are not (they are untagged and NetBox removes them when their port or device is
 deleted). See `docs/MISSING_FEATURES.md` for details.

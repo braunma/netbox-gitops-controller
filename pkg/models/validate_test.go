@@ -395,3 +395,142 @@ func TestWrap(t *testing.T) {
 		t.Errorf("wrap() with no errors = %v, expected nil", err)
 	}
 }
+
+func TestPlatformValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		platform Platform
+		wantErrs []string
+	}{
+		{"valid", Platform{Name: "Ubuntu 22.04", Slug: "ubuntu-22-04"}, nil},
+		{"valid with manufacturer", Platform{Name: "IOS-XE", Slug: "ios-xe", Manufacturer: "cisco"}, nil},
+		{"missing slug", Platform{Name: "Ubuntu 22.04"}, []string{`platform "Ubuntu 22.04"`, "slug is required"}},
+		{"missing name", Platform{Slug: "ubuntu-22-04"}, []string{"name is required"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidation(t, tt.platform.Validate(), tt.wantErrs)
+		})
+	}
+}
+
+func TestTenantGroupValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		group    TenantGroup
+		wantErrs []string
+	}{
+		{"valid", TenantGroup{Name: "Customers", Slug: "customers"}, nil},
+		{"missing slug", TenantGroup{Name: "Customers"}, []string{`tenant group "Customers"`, "slug is required"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidation(t, tt.group.Validate(), tt.wantErrs)
+		})
+	}
+}
+
+func TestTenantValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		tenant   Tenant
+		wantErrs []string
+	}{
+		{"valid", Tenant{Name: "Acme Corp", Slug: "acme-corp"}, nil},
+		{"missing name", Tenant{Slug: "acme-corp"}, []string{"name is required"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidation(t, tt.tenant.Validate(), tt.wantErrs)
+		})
+	}
+}
+
+func TestClusterTypeValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		ct       ClusterType
+		wantErrs []string
+	}{
+		{"valid", ClusterType{Name: "VMware vSphere", Slug: "vmware-vsphere"}, nil},
+		{"missing slug", ClusterType{Name: "VMware vSphere"}, []string{`cluster type "VMware vSphere"`, "slug is required"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidation(t, tt.ct.Validate(), tt.wantErrs)
+		})
+	}
+}
+
+func TestClusterGroupValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		cg       ClusterGroup
+		wantErrs []string
+	}{
+		{"valid", ClusterGroup{Name: "Production", Slug: "production"}, nil},
+		{"missing name", ClusterGroup{Slug: "production"}, []string{"name is required"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidation(t, tt.cg.Validate(), tt.wantErrs)
+		})
+	}
+}
+
+func TestClusterValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		cluster  Cluster
+		wantErrs []string
+	}{
+		{"valid", Cluster{Name: "prod-cluster", TypeSlug: "vmware-vsphere"}, nil},
+		{"missing type_slug", Cluster{Name: "prod-cluster"}, []string{`cluster "prod-cluster"`, "type_slug is required"}},
+		{"missing name", Cluster{TypeSlug: "vmware-vsphere"}, []string{"name is required"}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidation(t, tt.cluster.Validate(), tt.wantErrs)
+		})
+	}
+}
+
+func TestVMConfigValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		vm       VMConfig
+		wantErrs []string
+	}{
+		{"valid clustered", VMConfig{Name: "web-01", Cluster: "prod-cluster"}, nil},
+		{"valid site-only", VMConfig{Name: "web-01", SiteSlug: "berlin-dc"}, nil},
+		{"valid with both cluster and site", VMConfig{Name: "web-01", Cluster: "prod-cluster", SiteSlug: "berlin-dc"}, nil},
+		{"missing name", VMConfig{Cluster: "prod-cluster"}, []string{"name is required"}},
+		{
+			"neither cluster nor site",
+			VMConfig{Name: "web-01"},
+			[]string{`virtual machine "web-01"`, "one of cluster or site_slug is required"},
+		},
+		{
+			"interface without name",
+			VMConfig{Name: "web-01", Cluster: "prod-cluster", Interfaces: []VMInterfaceConfig{{}}},
+			[]string{"interface 1: name is required"},
+		},
+		{
+			"interface ip without address",
+			VMConfig{Name: "web-01", Cluster: "prod-cluster",
+				Interfaces: []VMInterfaceConfig{{Name: "eth0", IP: &IPConfig{DNSName: "web-01.example.com"}}}},
+			[]string{`interface "eth0": ip.address is required`},
+		},
+		{
+			"valid interface with ip",
+			VMConfig{Name: "web-01", Cluster: "prod-cluster",
+				Interfaces: []VMInterfaceConfig{{Name: "eth0", IP: &IPConfig{Address: "10.0.0.10/24"}}}},
+			nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidation(t, tt.vm.Validate(), tt.wantErrs)
+		})
+	}
+}

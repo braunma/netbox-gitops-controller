@@ -155,6 +155,138 @@ func TestReconcileRolesNormalizesColor(t *testing.T) {
 	f.requireMutationCount(t, 0)
 }
 
+func TestReconcilePlatformsCreatesAndResolvesManufacturer(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	mfg := f.seed("dcim", "manufacturers", client.Object{"name": "Canonical", "slug": "canonical"})
+	mfgID := utils.GetIDFromObject(mfg)
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	fr := NewFoundationReconciler(c)
+	platforms := []*models.Platform{{
+		Name:         "Ubuntu 22.04",
+		Slug:         "ubuntu-22-04",
+		Manufacturer: "canonical",
+		Description:  "LTS",
+	}}
+	if err := fr.ReconcilePlatforms(platforms); err != nil {
+		t.Fatalf("ReconcilePlatforms() error = %v", err)
+	}
+
+	stored := f.objects("dcim", "platforms")
+	if len(stored) != 1 {
+		t.Fatalf("expected 1 platform in store, got %d", len(stored))
+	}
+	if got := utils.GetIDFromObject(stored[0]["manufacturer"]); got != mfgID {
+		t.Errorf("platform manufacturer = %d, expected resolved manufacturer ID %d", got, mfgID)
+	}
+
+	// Second run is a no-op.
+	f.resetMutations()
+	if err := fr.ReconcilePlatforms(platforms); err != nil {
+		t.Fatalf("ReconcilePlatforms() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
+}
+
+func TestReconcilePlatformsAutoCreatesMissingManufacturer(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	fr := NewFoundationReconciler(c)
+	platforms := []*models.Platform{{Name: "VyOS", Slug: "vyos", Manufacturer: "VyOS Networks"}}
+	if err := fr.ReconcilePlatforms(platforms); err != nil {
+		t.Fatalf("ReconcilePlatforms() error = %v", err)
+	}
+
+	mfgs := f.objects("dcim", "manufacturers")
+	if len(mfgs) != 1 || mfgs[0]["slug"] != "vyos-networks" {
+		t.Fatalf("expected an auto-created manufacturer with slug vyos-networks, got %v", mfgs)
+	}
+	if got := utils.GetIDFromObject(f.objects("dcim", "platforms")[0]["manufacturer"]); got != utils.GetIDFromObject(mfgs[0]) {
+		t.Errorf("platform manufacturer = %d, expected the auto-created manufacturer", got)
+	}
+}
+
+func TestReconcileTenantGroupsResolvesParent(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	fr := NewFoundationReconciler(c)
+
+	// Parent and child declared in one run; the parent must resolve via the
+	// live lookup even though it was created moments earlier.
+	groups := []*models.TenantGroup{
+		{Name: "Customers", Slug: "customers"},
+		{Name: "Enterprise", Slug: "enterprise", ParentSlug: "customers"},
+	}
+	if err := fr.ReconcileTenantGroups(groups); err != nil {
+		t.Fatalf("ReconcileTenantGroups() error = %v", err)
+	}
+
+	stored := f.objects("tenancy", "tenant-groups")
+	if len(stored) != 2 {
+		t.Fatalf("expected 2 tenant groups in store, got %d", len(stored))
+	}
+	var parentID, childParent int
+	for _, g := range stored {
+		if g["slug"] == "customers" {
+			parentID = utils.GetIDFromObject(g)
+		}
+		if g["slug"] == "enterprise" {
+			childParent = utils.GetIDFromObject(g["parent"])
+		}
+	}
+	if childParent != parentID || parentID == 0 {
+		t.Errorf("enterprise parent = %d, expected customers ID %d", childParent, parentID)
+	}
+
+	// Second run is a no-op.
+	f.resetMutations()
+	if err := fr.ReconcileTenantGroups(groups); err != nil {
+		t.Fatalf("ReconcileTenantGroups() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
+}
+
+func TestReconcileTenantsResolvesGroup(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	group := f.seed("tenancy", "tenant-groups", client.Object{"name": "Customers", "slug": "customers"})
+	groupID := utils.GetIDFromObject(group)
+
+	fr := NewFoundationReconciler(c)
+	tenants := []*models.Tenant{{Name: "Acme Corp", Slug: "acme-corp", GroupSlug: "customers"}}
+	if err := fr.ReconcileTenants(tenants); err != nil {
+		t.Fatalf("ReconcileTenants() error = %v", err)
+	}
+
+	stored := f.objects("tenancy", "tenants")
+	if len(stored) != 1 {
+		t.Fatalf("expected 1 tenant in store, got %d", len(stored))
+	}
+	if got := utils.GetIDFromObject(stored[0]["group"]); got != groupID {
+		t.Errorf("tenant group = %d, expected resolved group ID %d", got, groupID)
+	}
+}
+
+func TestReconcileTenantsSkipsUnknownGroup(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	fr := NewFoundationReconciler(c)
+
+	tenants := []*models.Tenant{{Name: "Acme Corp", Slug: "acme-corp", GroupSlug: "does-not-exist"}}
+	if err := fr.ReconcileTenants(tenants); err != nil {
+		t.Fatalf("ReconcileTenants() error = %v, expected unknown group to be tolerated", err)
+	}
+	stored := f.objects("tenancy", "tenants")
+	if len(stored) != 1 {
+		t.Fatalf("expected the tenant to still be created, got %d", len(stored))
+	}
+	if _, set := stored[0]["group"]; set {
+		t.Errorf("tenant group should be unset when the group is unknown, got %v", stored[0]["group"])
+	}
+}
+
 func TestReconcileTagsCreatesTags(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	fr := NewFoundationReconciler(c)

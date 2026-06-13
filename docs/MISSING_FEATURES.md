@@ -83,11 +83,15 @@ or recommended, so wiring is cheap.
 
 ## 6. Virtualization support
 
-**Status:** Not implemented. Only DCIM devices are managed.
-
-**Desired:** Clusters, cluster types/groups, virtual machines, VM interfaces
-with the same interface/IP/VLAN semantics as physical devices. The device
-reconciler patterns (interfaces, IPs, primary IP) carry over largely 1:1.
+**Status:** ✅ Implemented (see `docs/PLAN_VIRTUALIZATION.md`). A new
+`virtualization` phase reconciles cluster types, cluster groups, clusters,
+virtual machines and VM interfaces (with the same VLAN/IP/primary-IP semantics
+as physical devices). Platforms (`dcim/platforms`) and tenants/tenant groups
+(`tenancy`) are managed in the foundation phase, since devices and VMs both
+reference them. VMs may belong to a cluster and/or a site. Pruning and the
+`--vm` filter are supported. Reconcilers live in
+`pkg/reconciler/virtualization.go` and the platform/tenant methods in
+`pkg/reconciler/foundation.go`.
 
 ## 7. Extended IPAM coverage
 
@@ -130,27 +134,37 @@ for GitLab although the repository is hosted on GitHub.
 
 ## 11. Test infrastructure (enabler, not user-facing)
 
-- Unit tests for `foundation.go`, `network.go`, `device_types.go` (currently
-  zero coverage).
-- Idempotency integration test: NetBox in Docker, sync the `example/` data
-  twice, assert the second run is a no-op.
-- This is the safety net required before any refactoring of the working
-  device/cable logic is attempted.
+**Status:** Partially done.
+
+- ✅ Unit tests now exist for `foundation.go`, `network.go`, `device_types.go`
+  (`*_reconcile_test.go`), alongside the existing device/cable/prune tests, all
+  driven by the in-process fake NetBox (`pkg/reconciler/fakenetbox_test.go`).
+  Pagination has a dedicated regression test (`pkg/client/pagination_test.go`).
+- ❌ **Still missing:** an idempotency *integration* test — NetBox in Docker,
+  sync the `example/` data twice, assert the second run is a no-op. Current
+  tests use fakes/`httptest`, not a real NetBox.
+
+The unit-test safety net required before refactoring the working device/cable
+logic now exists; the integration test remains the last gap.
 
 ---
 
 ## Suggested implementation order
 
-| Order | Feature | Effort | Prerequisite |
-|-------|---------|--------|--------------|
-| 1 | ~~Plan summary (#2)~~ ✅ done | S | — |
-| 2 | ~~Drift exit code (#3)~~ ✅ done | XS | #2 |
-| 3 | Orphan pruning (#1) | M | pagination fix (see BUGFIX_PLAN) |
-| 4 | ~~Selective sync (#4)~~ ✅ done | S | — |
-| 5 | Test infrastructure (#11) | M | — |
-| 6 | Config file (#5) | S | — |
-| 7 | Extended IPAM (#7) | S–M | — |
-| 8 | Virtualization (#6) | M | — |
-| 9 | Release/packaging (#10) | S | — |
-| 10 | Observability (#9) | M | — |
-| 11 | Daemon/webhooks (#8) | L | #1, #2 |
+Everything through orphan pruning is now shipped, including the bug fixes that
+were prerequisites (pagination, retries, validation — all done, see
+`docs/BUGFIX_PLAN.md`). Remaining work is the bottom half of the table.
+
+| Order | Feature | Effort | Status |
+|-------|---------|--------|--------|
+| 1 | Plan summary (#2) | S | ✅ done |
+| 2 | Drift exit code (#3) | XS | ✅ done |
+| 3 | Orphan pruning (#1) | M | ✅ done |
+| 4 | Selective sync (#4) | S | ✅ done |
+| 5 | Test infrastructure (#11) | M | 🟡 unit tests done; integration test open |
+| 6 | Config file (#5) | S | ❌ not started |
+| 7 | Extended IPAM (#7) | S–M | ❌ not started |
+| 8 | Virtualization (#6) | M | ✅ done |
+| 9 | Release/packaging (#10) | S | ❌ not started |
+| 10 | Observability (#9) | M | ❌ not started |
+| 11 | Daemon/webhooks (#8) | L | ❌ not started (prereqs #1, #2 now met) |

@@ -31,24 +31,36 @@ definitions/                    # Global blueprints and definitions
 │   └── prefixes.yaml          # 12 IP prefixes with container hierarchies
 ├── module_types/
 │   └── gpu-modules.yaml       # 6 module types (GPUs, NICs)
-└── device_types/
-    ├── switches/
-    │   └── S5248F-ON.yaml     # Dell 48-port 25G + 6x100G switch
-    ├── servers/
-    │   ├── poweredge-r740.yaml    # 2U server with multiple NICs
-    │   ├── poweredge-r7615.yaml   # AMD-based server
-    │   └── poweredge-xe9680.yaml  # AI/ML optimized server
-    ├── storage/
-    │   └── isilon-a300.yaml   # Storage array
-    └── patchpanel-*.yaml      # Fiber patch panels (12/48 port)
+├── device_types/
+│   ├── switches/
+│   │   └── S5248F-ON.yaml     # Dell 48-port 25G + 6x100G switch
+│   ├── servers/
+│   │   ├── poweredge-r740.yaml    # 2U server with multiple NICs
+│   │   ├── poweredge-r7615.yaml   # AMD-based server
+│   │   └── poweredge-xe9680.yaml  # AI/ML optimized server
+│   ├── storage/
+│   │   └── isilon-a300.yaml   # Storage array
+│   └── patchpanel-*.yaml      # Fiber patch panels (12/48 port)
+├── platforms/
+│   └── platforms.yaml        # OS / firmware families (Ubuntu, Debian)
+├── tenant_groups/
+│   └── tenant_groups.yaml    # Tenant group (Internal)
+├── tenants/
+│   └── tenants.yaml          # Tenant (Platform Engineering)
+└── virtualization/
+    ├── cluster_types/        # Proxmox VE
+    ├── cluster_groups/       # Production
+    └── clusters/             # berlin-prod-cluster
 
-inventory/                      # Concrete hardware instances
+inventory/                      # Concrete instances
 ├── hardware/
 │   ├── active/
 │   │   ├── servers.yaml       # 6 server instances
 │   │   └── switches.yaml      # 3 switch instances
 │   └── passive/
 │       └── patchpanels.yaml   # 4 patch panel instances
+└── virtual/
+    └── vms.yaml              # virtual machines (clustered + site-only)
 ```
 
 ## 🎯 Key Concepts Demonstrated
@@ -170,6 +182,40 @@ All GitOps-managed objects include the `gitops` tag:
 - Enables safe cleanup (only tagged objects can be deleted)
 - Protects manually created NetBox objects
 - Additional tags for categorization (production, lab, ai-ml)
+
+### 9. Virtualization (Clusters & VMs)
+
+Virtual machines are managed alongside physical hardware. A **cluster** ties a
+**cluster type** (the hypervisor) and optional **cluster group**/site/tenant
+together; **virtual machines** then live on a cluster (or directly on a site):
+
+```yaml
+# definitions/virtualization/clusters/clusters.yaml
+- name: "berlin-prod-cluster"
+  type_slug: "proxmox-ve"
+  group_slug: "production"
+  site_slug: "berlin-dc"
+  tenant: "platform-engineering"
+
+# inventory/virtual/vms.yaml
+- name: "web-01"
+  cluster: "berlin-prod-cluster"   # clustered VM; site inherited from cluster
+  role_slug: "vm"                  # role must have vm_role: true in NetBox
+  platform: "ubuntu-22-04"
+  vcpus: 4
+  memory: 8192                     # MB
+  interfaces:
+    - name: "eth0"
+      mode: "access"
+      untagged_vlan: "Management"  # resolved at the cluster's site
+      ip:
+        address: "10.0.100.21/24"
+      address_role: "primary"      # promotes to the VM's primary_ip4
+```
+
+VM interfaces reuse the device interface semantics (VLANs, IPs, primary IP) but
+are not cabled. **Platforms** and **tenants** are managed in the foundation
+phase and referenced here by slug.
 
 ## 🚀 Using the Examples
 

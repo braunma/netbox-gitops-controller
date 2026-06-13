@@ -1,0 +1,11 @@
+# Example Platforms (OS / firmware families)
+# Platforms are referenced by slug from virtual machines (and devices).
+
+- name: "Ubuntu 22.04 LTS"
+  slug: "ubuntu-22-04"
+  description: "Canonical Ubuntu Server 22.04 LTS"
+  tags: ["gitops"]
+
+- name: "Debian 12"
+  slug: "debian-12"
+  tags: ["gitops"]

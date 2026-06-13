@@ -148,6 +148,83 @@ func (dl *DataLoader) LoadDevices(folder string) ([]*models.DeviceConfig, error)
 	return devices, nil
 }
 
+// LoadPlatforms loads platform definitions from a folder
+func (dl *DataLoader) LoadPlatforms(folder string) ([]*models.Platform, error) {
+	var platforms []*models.Platform
+	err := dl.loadFromFolder(folder, &platforms)
+	if err != nil {
+		return nil, err
+	}
+	dl.logger.Debug("Loaded %d platforms from %s", len(platforms), folder)
+	return platforms, nil
+}
+
+// LoadTenantGroups loads tenant group definitions from a folder
+func (dl *DataLoader) LoadTenantGroups(folder string) ([]*models.TenantGroup, error) {
+	var groups []*models.TenantGroup
+	err := dl.loadFromFolder(folder, &groups)
+	if err != nil {
+		return nil, err
+	}
+	dl.logger.Debug("Loaded %d tenant groups from %s", len(groups), folder)
+	return groups, nil
+}
+
+// LoadTenants loads tenant definitions from a folder
+func (dl *DataLoader) LoadTenants(folder string) ([]*models.Tenant, error) {
+	var tenants []*models.Tenant
+	err := dl.loadFromFolder(folder, &tenants)
+	if err != nil {
+		return nil, err
+	}
+	dl.logger.Debug("Loaded %d tenants from %s", len(tenants), folder)
+	return tenants, nil
+}
+
+// LoadClusterTypes loads cluster type definitions from a folder
+func (dl *DataLoader) LoadClusterTypes(folder string) ([]*models.ClusterType, error) {
+	var clusterTypes []*models.ClusterType
+	err := dl.loadFromFolder(folder, &clusterTypes)
+	if err != nil {
+		return nil, err
+	}
+	dl.logger.Debug("Loaded %d cluster types from %s", len(clusterTypes), folder)
+	return clusterTypes, nil
+}
+
+// LoadClusterGroups loads cluster group definitions from a folder
+func (dl *DataLoader) LoadClusterGroups(folder string) ([]*models.ClusterGroup, error) {
+	var clusterGroups []*models.ClusterGroup
+	err := dl.loadFromFolder(folder, &clusterGroups)
+	if err != nil {
+		return nil, err
+	}
+	dl.logger.Debug("Loaded %d cluster groups from %s", len(clusterGroups), folder)
+	return clusterGroups, nil
+}
+
+// LoadClusters loads cluster definitions from a folder
+func (dl *DataLoader) LoadClusters(folder string) ([]*models.Cluster, error) {
+	var clusters []*models.Cluster
+	err := dl.loadFromFolder(folder, &clusters)
+	if err != nil {
+		return nil, err
+	}
+	dl.logger.Debug("Loaded %d clusters from %s", len(clusters), folder)
+	return clusters, nil
+}
+
+// LoadVMs loads virtual machine configurations from a folder
+func (dl *DataLoader) LoadVMs(folder string) ([]*models.VMConfig, error) {
+	var vms []*models.VMConfig
+	err := dl.loadFromFolder(folder, &vms)
+	if err != nil {
+		return nil, err
+	}
+	dl.logger.Debug("Loaded %d virtual machines from %s", len(vms), folder)
+	return vms, nil
+}
+
 // loadFromFolder loads YAML files from a folder and unmarshals into the target
 func (dl *DataLoader) loadFromFolder(folder string, target interface{}) error {
 	targetDir := filepath.Join(dl.basePath, folder)
@@ -324,6 +401,76 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		data, _ := yaml.Marshal(items)
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal devices: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.Platform:
+		var newItems []*models.Platform
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal platforms: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.TenantGroup:
+		var newItems []*models.TenantGroup
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal tenant groups: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.Tenant:
+		var newItems []*models.Tenant
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal tenants: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.ClusterType:
+		var newItems []*models.ClusterType
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal cluster types: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.ClusterGroup:
+		var newItems []*models.ClusterGroup
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal cluster groups: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.Cluster:
+		var newItems []*models.Cluster
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal clusters: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.VMConfig:
+		var newItems []*models.VMConfig
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal virtual machines: %w", err)
 		}
 		if err := validateItems(path, newItems); err != nil {
 			return err

@@ -27,12 +27,18 @@ func (cm *CacheManager) LoadGlobal() error {
 	cm.client.logger.Info("Loading global caches...")
 
 	resources := map[string]string{
-		"device_types":  "dcim/device-types",
-		"module_types":  "dcim/module-types",
-		"roles":         "dcim/device-roles",
-		"manufacturers": "dcim/manufacturers",
-		"sites":         "dcim/sites",
-		"vrfs":          "ipam/vrfs",
+		"device_types":   "dcim/device-types",
+		"module_types":   "dcim/module-types",
+		"roles":          "dcim/device-roles",
+		"manufacturers":  "dcim/manufacturers",
+		"sites":          "dcim/sites",
+		"vrfs":           "ipam/vrfs",
+		"platforms":      "dcim/platforms",
+		"tenant_groups":  "tenancy/tenant-groups",
+		"tenants":        "tenancy/tenants",
+		"cluster_types":  "virtualization/cluster-types",
+		"cluster_groups": "virtualization/cluster-groups",
+		"clusters":       "virtualization/clusters",
 	}
 
 	for resource, path := range resources {

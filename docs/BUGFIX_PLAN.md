@@ -1,10 +1,16 @@
 # Bug-Fix Plan
 
-> **Status: all five fixes implemented** (June 2026). Additionally fixed
+> **Status: all five fixes implemented and verified against the code (June
+> 2026).** The only remaining sub-item is wiring model validation into the
+> `yamlcheck` CLI (Priority 3, step 3 — see note below). Additionally fixed
 > along the way: the loader now accepts single-mapping YAML files (the
 > `example/definitions/device_types/*.yaml` files were previously unloadable),
 > and two test fixtures were corrected (`u_height: 0` is valid for child
 > device types; NetBox stores cable colors as hex, not names).
+>
+> This document is now a historical record of the fixes; each priority below
+> carries its current status. Open follow-up work lives in
+> `docs/MISSING_FEATURES.md` and `docs/AUDIT_AND_ROADMAP.md`.
 
 Prioritized plan for correctness fixes. **Guiding principle: the current
 reconciliation logic — especially cable reconciliation (`pkg/reconciler/cables.go`)
@@ -14,15 +20,20 @@ lookup plumbing, so observable behavior only changes where it is currently wrong
 
 ---
 
-## Priority 1: API pagination in `NetBoxClient.List()` — CRITICAL
+## Priority 1: API pagination in `NetBoxClient.List()` — ✅ DONE
 
-**Location:** `pkg/client/client.go:119-175` (`List()`, used by `Filter()` and
+**Location:** `pkg/client/client.go` (`List()`, used by `Filter()` and
 all cache loaders)
 
-**Bug:** Only the first page of a list response is read (`results` field);
-the `next` link is never followed. NetBox paginates at **50 items by default**,
-so any instance with more than 50 objects of a single type (VLANs, devices,
-interfaces, cables, …) gets silently truncated results.
+**Resolved:** `List()` (`pkg/client/client.go:196-242`) now follows the `next`
+link through every page and sets a default `limit=250` to reduce round-trips,
+keeping the fallback for direct-array responses. Regression test:
+`pkg/client/pagination_test.go`.
+
+**Bug (historical):** Only the first page of a list response was read
+(`results` field); the `next` link was never followed. NetBox paginates at
+**50 items by default**, so any instance with more than 50 objects of a single
+type (VLANs, devices, interfaces, cables, …) got silently truncated results.
 
 **Impact:**
 - Cache (`LoadGlobal()` / `LoadSite()`) misses objects → lookups fail →
@@ -42,13 +53,19 @@ are returned. Regression guard for >50-object environments.
 
 ---
 
-## Priority 2: Retry with backoff for transient API failures
+## Priority 2: Retry with backoff for transient API failures — ✅ DONE
 
 **Location:** `pkg/client/client.go` (`Request()` and `List()`)
 
-**Bug:** Every HTTP call is single-shot. One transient 502/503/timeout from
-NetBox (or a proxy) aborts the entire sync run. Only tag creation
-(`pkg/client/tags.go`) has retry handling today.
+**Resolved:** `doWithRetry()` (`pkg/client/client.go:105-151`) wraps every HTTP
+call with up to 3 retries and exponential backoff (1s/2s/4s) on network errors,
+HTTP 429, and 5xx. `isRetryableStatus()` keeps 4xx (except 429) non-retryable
+and never retries POST on a server response, to avoid duplicate creation. Each
+retry is logged at warning level.
+
+**Bug (historical):** Every HTTP call was single-shot. One transient
+502/503/timeout from NetBox (or a proxy) aborted the entire sync run. Only tag
+creation (`pkg/client/tags.go`) had retry handling.
 
 **Fix (client-only):**
 1. Wrap the HTTP execution in a retry loop: up to 3 retries with exponential
@@ -60,13 +77,23 @@ NetBox (or a proxy) aborts the entire sync run. Only tag creation
 
 ---
 
-## Priority 3: Post-unmarshal model validation (fail fast in dry-run)
+## Priority 3: Post-unmarshal model validation (fail fast in dry-run) — ✅ DONE (one gap)
 
 **Location:** `pkg/loader/loader.go`, `pkg/models/*.go`
 
-**Bug:** No validation after YAML unmarshaling. Config mistakes surface as
-NetBox 400 errors mid-sync (after some objects were already applied) instead
-of failing before any API call. Known cases:
+**Resolved:** Every model has a `Validate() error` method
+(`pkg/models/validate.go`), including the cross-field cases below (e.g.
+`DeviceConfig.Validate` rejects `device_bay` without `parent_device` and vice
+versa). The loader calls `item.Validate()` after unmarshal
+(`pkg/loader/loader.go:188`). Covered by `pkg/models/validate_test.go`.
+
+**Remaining gap:** step 3 below — wiring the same `Validate()` checks into the
+`cmd/yamlcheck` CLI — is **not done**; `yamlcheck` only checks YAML syntax, not
+model constraints. Tracked as a small follow-up.
+
+**Bug (historical):** No validation after YAML unmarshaling. Config mistakes
+surfaced as NetBox 400 errors mid-sync (after some objects were already applied)
+instead of failing before any API call. Known cases:
 - `device_bay` set without `parent_device` (and vice versa)
 - interface templates without `type` (documented as a common error in README)
 - `rack_slug` together with `parent_device` (mutually exclusive placement)
@@ -80,16 +107,18 @@ of failing before any API call. Known cases:
 
 ---
 
-## Priority 4: Finish `GetID()` → `GetGlobalID()`/`GetSiteID()` migration
+## Priority 4: Finish `GetID()` → `GetGlobalID()`/`GetSiteID()` migration — ✅ DONE
 
-**Locations:** `pkg/reconciler/devices.go:66-76, 358, 369, 431`,
-`pkg/reconciler/device_types.go:31, 71`, `pkg/reconciler/network.go:63, 171,
-178, 200, 216`
+**Resolved:** All reconcilers now use the explicit `GetGlobalID()`/`GetSiteID()`
+accessors (`pkg/reconciler/{devices,device_types,network}.go`), and the legacy
+`CacheManager.GetID()` has been removed from `pkg/client/cache.go` (the only
+`GetID` left is `TagManager.GetID(slug)` in `pkg/client/tags.go`, an unrelated
+tag-by-slug lookup).
 
-**Issue:** Global resources (sites, roles, device types, VRFs, module types,
-manufacturers) still use the legacy `GetID()`. Functionally correct today, but
-the legacy fallback masks scoping mistakes in future code (this is exactly how
-the past VLAN/rack collisions happened).
+**Issue (historical):** Global resources (sites, roles, device types, VRFs,
+module types, manufacturers) used the legacy `GetID()`. Functionally correct,
+but the legacy fallback masked scoping mistakes in future code (this is exactly
+how the past VLAN/rack collisions happened).
 
 **Fix (mechanical rename, no behavior change):**
 1. Replace each legacy call with the explicit `GetGlobalID()`.
@@ -98,18 +127,18 @@ the past VLAN/rack collisions happened).
 
 ---
 
-## Priority 5: Documentation correctness — “Safe Pruning” claim
+## Priority 5: Documentation correctness — “Safe Pruning” claim — ✅ RESOLVED
 
 **Location:** `README.md` (Key Features and “The gitops Tag” sections)
 
-**Bug:** README states that objects removed from YAML are deleted if they
-carry the `gitops` tag. No reconciler implements deletion (only forced cable
-conflict cleanup in `cables.go:431, 529-534`). Operators may rely on cleanup
-that never happens.
+**Resolved:** Pruning is now actually implemented (`pkg/client/prune.go`, opt-in
+via `--prune`; see `docs/MISSING_FEATURES.md` §1), so the README's "Safe
+Pruning" claim is now accurate rather than aspirational. Orphaned
+`gitops`-tagged objects removed from YAML are deleted on a `--prune` run.
 
-**Fix:** Update README to describe actual behavior (create/update only,
-orphans are left in place) until pruning is implemented — see
-`docs/MISSING_FEATURES.md` for the pruning feature itself.
+**Bug (historical):** README stated that objects removed from YAML are deleted
+if they carry the `gitops` tag, but no reconciler implemented deletion (only
+forced cable conflict cleanup).
 
 ---
 
@@ -124,16 +153,16 @@ orphans are left in place) until pruning is implemented — see
 - New features (pruning, selective sync, plan output) — see
   `docs/MISSING_FEATURES.md`.
 
-## Suggested order of execution
+## Order of execution (all complete)
 
-| Step | Fix | Risk | Touches |
-|------|-----|------|---------|
-| 1 | Pagination | Low (client only) | `pkg/client/client.go` |
-| 2 | Retry/backoff | Low (client only) | `pkg/client/client.go` |
-| 3 | Model validation | Low (pre-flight only) | `pkg/loader`, `pkg/models`, `cmd/yamlcheck` |
-| 4 | Cache API migration | Very low (rename) | reconcilers, `pkg/client/cache.go` |
-| 5 | README pruning claim | None (docs) | `README.md` |
+| Step | Fix | Status | Touches |
+|------|-----|--------|---------|
+| 1 | Pagination | ✅ done | `pkg/client/client.go`, `pkg/client/pagination_test.go` |
+| 2 | Retry/backoff | ✅ done | `pkg/client/client.go` |
+| 3 | Model validation | ✅ done (⚠️ `yamlcheck` wiring still open) | `pkg/loader`, `pkg/models` |
+| 4 | Cache API migration | ✅ done | reconcilers, `pkg/client/cache.go` |
+| 5 | README pruning claim | ✅ resolved (pruning implemented) | `README.md`, `pkg/client/prune.go` |
 
-Each step is independently shippable and verifiable with `--dry-run` against a
-live instance: the dry-run diff before and after steps 1–4 must be identical
-for environments with <50 objects per type.
+Each step was independently shippable and verifiable with `--dry-run` against a
+live instance: the dry-run diff before and after steps 1–4 is identical for
+environments with <50 objects per type.

@@ -1,0 +1,7 @@
+# Example Cluster Groups (virtualization app)
+# A cluster group is an organizational grouping of clusters.
+
+- name: "Production"
+  slug: "production"
+  description: "Production virtualization clusters"
+  tags: ["gitops"]

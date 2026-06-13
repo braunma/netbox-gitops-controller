@@ -48,3 +48,32 @@ type Manufacturer struct {
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
+
+// Platform represents a NetBox platform (e.g. an OS or firmware family that a
+// device or virtual machine runs). Referenced by slug from VMs and devices.
+type Platform struct {
+	Name         string   `yaml:"name" json:"name" validate:"required"`
+	Slug         string   `yaml:"slug" json:"slug" validate:"required"`
+	Manufacturer string   `yaml:"manufacturer,omitempty" json:"manufacturer,omitempty"`
+	Description  string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Tags         []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+}
+
+// TenantGroup represents a NetBox tenant group (tenancy app).
+type TenantGroup struct {
+	Name        string   `yaml:"name" json:"name" validate:"required"`
+	Slug        string   `yaml:"slug" json:"slug" validate:"required"`
+	ParentSlug  string   `yaml:"parent_slug,omitempty" json:"parent_slug,omitempty"`
+	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+}
+
+// Tenant represents a NetBox tenant (tenancy app). Referenced by slug from
+// clusters, VMs and devices.
+type Tenant struct {
+	Name        string   `yaml:"name" json:"name" validate:"required"`
+	Slug        string   `yaml:"slug" json:"slug" validate:"required"`
+	GroupSlug   string   `yaml:"group_slug,omitempty" json:"group_slug,omitempty"`
+	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+}
