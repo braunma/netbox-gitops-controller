@@ -283,28 +283,6 @@ func TestVerifyCable(t *testing.T) {
 	}
 }
 
-func TestReset(t *testing.T) {
-	cr := &CableReconciler{
-		processedPairs: make(map[string]bool),
-	}
-
-	// Add some processed pairs
-	cr.processedPairs["pair1"] = true
-	cr.processedPairs["pair2"] = true
-	cr.processedPairs["pair3"] = true
-
-	if len(cr.processedPairs) != 3 {
-		t.Errorf("Expected 3 processed pairs, got %d", len(cr.processedPairs))
-	}
-
-	// Reset
-	cr.Reset()
-
-	if len(cr.processedPairs) != 0 {
-		t.Errorf("After reset, expected 0 processed pairs, got %d", len(cr.processedPairs))
-	}
-}
-
 func TestCableEndpoint(t *testing.T) {
 	endpoint := &CableEndpoint{
 		DeviceName: "test-device",

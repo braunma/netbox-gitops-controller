@@ -172,16 +172,6 @@ func (cm *CacheManager) GetGlobalID(resource, identifier string) (int, bool) {
 	return id, ok
 }
 
-// GetID retrieves an ID from the cache.
-//
-// Deprecated: use GetGlobalID for global resources or GetSiteID for
-// site-scoped resources. This method performs an unscoped lookup and masks
-// site-collision bugs; it will be removed in a future release. No internal
-// callers remain.
-func (cm *CacheManager) GetID(resource, identifier string) (int, bool) {
-	return cm.GetGlobalID(resource, identifier)
-}
-
 // GetSiteID retrieves an ID for a site-specific resource using composite key
 // Use this for: vlans, racks, and other site-scoped resources
 // Key format: "site-{siteID}:{identifier}"
@@ -202,22 +192,6 @@ func (cm *CacheManager) GetSiteID(resource string, siteID int, identifier string
 	// Fallback to simple key for backwards compatibility (will be removed later)
 	id, ok := cm.cache[resource][identifier]
 	return id, ok
-}
-
-// Invalidate clears the cache for a specific resource
-func (cm *CacheManager) Invalidate(resource string) {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	delete(cm.cache, resource)
-}
-
-// InvalidateAll clears all caches
-func (cm *CacheManager) InvalidateAll() {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	cm.cache = make(map[string]map[string]int)
 }
 
 // Resources returns a list of cached resources
