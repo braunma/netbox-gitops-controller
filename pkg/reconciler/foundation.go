@@ -75,12 +75,14 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 
 		if err != nil || len(sites) == 0 {
 			fr.logger.Warning("Site %s not found for rack %s, skipping", rack.SiteSlug, rack.Name)
+			fr.client.MarkReconcileIncomplete("dcim", "racks")
 			continue
 		}
 
 		siteID := utils.GetIDFromObject(sites[0])
 		if siteID == 0 {
 			fr.logger.Warning("Site %s has invalid ID for rack %s, skipping", rack.SiteSlug, rack.Name)
+			fr.client.MarkReconcileIncomplete("dcim", "racks")
 			continue
 		}
 

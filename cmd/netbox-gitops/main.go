@@ -9,6 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/loader"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
@@ -25,6 +26,7 @@ var (
 	onlyPhases       []string
 	siteFilter       string
 	deviceFilter     string
+	prune            bool
 )
 
 // validPhases are the values accepted by --only, in execution order.
@@ -50,6 +52,7 @@ func main() {
 	rootCmd.Flags().StringSliceVar(&onlyPhases, "only", nil, fmt.Sprintf("Restrict the sync to specific phases (comma-separated or repeated): %s", strings.Join(validPhases, ", ")))
 	rootCmd.Flags().StringVar(&siteFilter, "site", "", "Restrict device reconciliation to devices of a single site slug")
 	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
+	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -60,6 +63,11 @@ func main() {
 func runSync(cmd *cobra.Command, args []string) error {
 	if outputFormat != "text" && outputFormat != "json" {
 		return fmt.Errorf("invalid --output format %q (supported: text, json)", outputFormat)
+	}
+	if prune && (siteFilter != "" || deviceFilter != "") {
+		// Pruning scoped to a single site/device would delete the
+		// out-of-scope objects the filter excluded, so refuse the combination.
+		return fmt.Errorf("--prune cannot be combined with --site or --device")
 	}
 	if outputFormat == "json" {
 		// Reserve stdout for the JSON plan; every logger created from here
@@ -164,6 +172,20 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	} else {
 		logger.Info("Skipping phase 3 (devices): not selected via --only")
+	}
+
+	// =========================================================================
+	// PRUNE: delete gitops-managed orphans no longer declared in YAML
+	// =========================================================================
+	if prune {
+		logger.Info("═══════════════════════════════════════════════════════")
+		logger.Info("Prune: removing orphaned gitops-managed objects")
+		logger.Info("═══════════════════════════════════════════════════════")
+
+		if err := c.Prune(pruneTargets(phases)); err != nil {
+			logger.Error("Failed to prune orphaned objects", err)
+			return err
+		}
 	}
 
 	// =========================================================================
@@ -411,6 +433,58 @@ func parseOnly(values []string) (map[string]bool, error) {
 		phases[v] = true
 	}
 	return phases, nil
+}
+
+// pruneTargets returns the endpoints to prune for the selected phases, in
+// reverse dependency order (children before parents) so that deletions do not
+// violate NetBox foreign-key constraints. Only endpoints belonging to a phase
+// that actually ran are included, so --only keeps prune in scope.
+//
+// Cables are intentionally excluded: the tool does not tag them, so the
+// managed-tag query would never return them, and NetBox already
+// cascade-deletes a port's cables when the port or device is removed.
+func pruneTargets(phases map[string]bool) []client.PruneTarget {
+	var targets []client.PruneTarget
+
+	if phases["devices"] {
+		// Device children first (reverse dependency: IPs reference interfaces,
+		// front ports reference rear ports, all components reference the
+		// device), then the devices themselves. Deleting an orphaned device
+		// cascades any remaining managed children in NetBox.
+		targets = append(targets,
+			client.PruneTarget{App: "ipam", Endpoint: "ip-addresses"},
+			client.PruneTarget{App: "dcim", Endpoint: "front-ports"},
+			client.PruneTarget{App: "dcim", Endpoint: "interfaces"},
+			client.PruneTarget{App: "dcim", Endpoint: "rear-ports"},
+			client.PruneTarget{App: "dcim", Endpoint: "modules"},
+			client.PruneTarget{App: "dcim", Endpoint: "devices"},
+		)
+	}
+	if phases["device-types"] {
+		targets = append(targets,
+			client.PruneTarget{App: "dcim", Endpoint: "device-types"},
+			client.PruneTarget{App: "dcim", Endpoint: "module-types"},
+		)
+	}
+	if phases["network"] {
+		targets = append(targets,
+			client.PruneTarget{App: "ipam", Endpoint: "prefixes"},
+			client.PruneTarget{App: "ipam", Endpoint: "vlans"},
+			client.PruneTarget{App: "ipam", Endpoint: "vlan-groups"},
+			client.PruneTarget{App: "ipam", Endpoint: "vrfs"},
+		)
+	}
+	if phases["foundation"] {
+		targets = append(targets,
+			client.PruneTarget{App: "dcim", Endpoint: "racks"},
+			client.PruneTarget{App: "dcim", Endpoint: "device-roles"},
+			client.PruneTarget{App: "dcim", Endpoint: "sites"},
+			// The managed tag carries its own slug; never prune it.
+			client.PruneTarget{App: "extras", Endpoint: "tags", KeepSlugs: []string{constants.ManagedTagSlug}},
+		)
+	}
+
+	return targets
 }
 
 // writePlanJSON emits the collected changes as a machine-readable plan,

@@ -433,6 +433,9 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 		moduleTypeID, ok := dr.client.Cache().GetGlobalID("module_types", module.ModuleTypeSlug)
 		if !ok {
 			dr.logger.Warning("Module type %s not found, skipping", module.ModuleTypeSlug)
+			// A declared module was skipped; keep prune off this endpoint so a
+			// declared-but-unreconciled module is not mistaken for an orphan.
+			dr.client.MarkReconcileIncomplete("dcim", "modules")
 			continue
 		}
 
@@ -447,6 +450,7 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 
 		if len(bays) == 0 {
 			dr.logger.Warning("Module bay %s not found on device, skipping", module.Name)
+			dr.client.MarkReconcileIncomplete("dcim", "modules")
 			continue
 		}
 
@@ -640,6 +644,9 @@ func (dr *DeviceReconciler) reconcileFrontPorts(deviceID int, device *models.Dev
 
 		if len(rearPorts) == 0 {
 			dr.logger.Warning("      Rear port %s not found, skipping front port", port.RearPort)
+			// A declared front port was skipped; do not let prune treat the
+			// existing one (if any) as an orphan.
+			dr.client.MarkReconcileIncomplete("dcim", "front-ports")
 			continue
 		}
 

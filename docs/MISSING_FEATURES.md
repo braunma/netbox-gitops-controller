@@ -8,20 +8,45 @@ separately in `docs/BUGFIX_PLAN.md`.
 
 ## 1. Orphan pruning (`--prune`)
 
-**Status:** Advertised in README, not implemented. The only deletions in the
-codebase are forced cable-conflict cleanups (`pkg/reconciler/cables.go`).
+**Status:** ✅ Implemented for top-level managed objects. Opt-in via the
+`--prune` flag (`pkg/client/prune.go`, wired in `cmd/netbox-gitops/main.go`).
 
-**Desired behavior:** When an object is removed from YAML, the next sync
+**Behavior:** When an object is removed from YAML, a sync run with `--prune`
 deletes it from NetBox — but only if it carries the `gitops` managed tag.
 Manually created objects are never touched.
 
-**Sketch:**
-- Per object type: list all NetBox objects with `tag=gitops`, diff against the
-  set defined in YAML, delete the remainder.
-- Deletion order must be reverse of creation order (cables → IPs → interfaces →
-  devices → racks/VLANs/prefixes → sites) to satisfy NetBox FK constraints.
-- Opt-in via `--prune` flag; in `--dry-run --prune` show planned deletions.
-- Start with low-risk types (tags, roles, VLANs, prefixes) before devices.
+**How it works:**
+- Every object reconciled through `client.Apply` is recorded as "seen" (by ID,
+  keyed by `app/endpoint`).
+- After all phases run, `Prune` lists each managed endpoint filtered by
+  `tag=gitops`, and deletes every returned object whose ID was not seen — i.e.
+  it is still managed but no longer declared in YAML.
+- Endpoints are pruned in reverse dependency order — device children (IP
+  addresses → front ports → interfaces → rear ports → modules) → devices →
+  device/module types → prefixes → VLANs → VLAN groups → VRFs → racks → roles
+  → sites → tags — to satisfy NetBox FK constraints. The managed `gitops` tag
+  itself is protected via `KeepSlugs`.
+- Only endpoints whose phase actually ran are pruned, so `--only` keeps prune
+  in scope. `--prune` is rejected together with `--site`/`--device`, since a
+  filtered run would delete the out-of-scope objects the filter excluded.
+- **Safety guard:** if reconciliation skipped a declared object at an endpoint
+  (e.g. a VLAN or rack whose site could not be resolved), that endpoint is
+  marked incomplete and pruning skips it entirely — a declared object that
+  merely failed to reconcile would otherwise be indistinguishable from an
+  orphan and wrongly deleted.
+- `--dry-run --prune` records the planned deletions (visible in the plan
+  summary and `--output json`) without issuing any destructive request.
+
+**Cables and manufacturers are excluded.** Cables are not pruned: the tool
+does not tag them, so the managed-tag query never returns them, and NetBox
+already cascade-deletes a port's cables when the port or device is removed.
+Auto-created manufacturers are likewise left untouched (they are shared,
+not declared per-definition).
+
+Note that because pruning is scoped to the `gitops` tag, a device child only
+gets pruned once the tool has managed it at least once (which adds the tag).
+Interfaces auto-instantiated from a device type but never declared in YAML stay
+untagged and are therefore protected.
 
 ## 2. Plan summary & machine-readable output
 
