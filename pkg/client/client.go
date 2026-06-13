@@ -469,9 +469,13 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 			continue
 		}
 
-		// Handle tags specially
-		if key == "tags" {
-			if !c.tagsEqual(existingValue, desiredValue) {
+		// Slice-valued fields (e.g. tags, tagged_vlans) are compared as an
+		// order-insensitive set of referenced IDs. NetBox returns them as
+		// nested objects ([{id, ...}]) while we send plain []int, so a direct
+		// comparison would never match and the field would be re-PATCHed on
+		// every run. Treating them as ID sets keeps list fields idempotent.
+		if isListField(desiredValue) || isListField(existingValue) {
+			if !c.idSetEqual(existingValue, desiredValue) {
 				changes[key] = desiredValue
 			}
 			continue
@@ -491,8 +495,10 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 	return changes
 }
 
-// tagsEqual compares two tag lists
-func (c *NetBoxClient) tagsEqual(existing, desired interface{}) bool {
+// idSetEqual reports whether two slice-valued fields reference the same set of
+// object IDs, ignoring order and representation (nested objects vs. plain IDs).
+// It is used for list fields such as tags and tagged_vlans.
+func (c *NetBoxClient) idSetEqual(existing, desired interface{}) bool {
 	existingTags := c.extractTagIDs(existing)
 	desiredTags := c.extractTagIDs(desired)
 
@@ -530,6 +536,18 @@ func (c *NetBoxClient) extractTagIDs(tags interface{}) []int {
 	}
 
 	return ids
+}
+
+// isListField reports whether a value is a slice that must be compared as an
+// ID set rather than by direct equality (a plain == on two slices either
+// always reports unequal across representations or panics on identical
+// uncomparable types).
+func isListField(v interface{}) bool {
+	switch v.(type) {
+	case []interface{}, []int, []string:
+		return true
+	}
+	return false
 }
 
 // valuesEqual compares two values for equality

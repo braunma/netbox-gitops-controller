@@ -12,16 +12,16 @@ import (
 
 // CableReconciler handles cable reconciliation with full idempotency
 type CableReconciler struct {
-	client        *client.NetBoxClient
-	logger        *utils.Logger
+	client         *client.NetBoxClient
+	logger         *utils.Logger
 	processedPairs map[string]bool // Track processed cable pairs to avoid duplicates
 }
 
 // NewCableReconciler creates a new cable reconciler
 func NewCableReconciler(c *client.NetBoxClient) *CableReconciler {
 	return &CableReconciler{
-		client:        c,
-		logger:        c.Logger(),
+		client:         c,
+		logger:         c.Logger(),
 		processedPairs: make(map[string]bool),
 	}
 }
@@ -564,10 +564,4 @@ func (cr *CableReconciler) cableConnectsTo(cable client.Object, targetObjectID i
 	}
 
 	return false
-}
-
-// Reset clears the processed pairs cache (call between reconciliation runs)
-func (cr *CableReconciler) Reset() {
-	cr.processedPairs = make(map[string]bool)
-	cr.logger.Debug("Cable reconciler state reset")
 }
