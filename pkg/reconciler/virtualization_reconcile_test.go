@@ -249,6 +249,70 @@ func TestReconcileVMsTaggedVLANsIdempotent(t *testing.T) {
 	f.requireMutationCount(t, 0)
 }
 
+func TestReconcileVMInterfaceResolvesParent(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	vr := NewVirtualizationReconciler(c)
+	// eth0 is declared before its sub-interface, so the live parent lookup
+	// finds it.
+	vms := []*models.VMConfig{{
+		Name: "vm1", SiteSlug: "berlin-dc",
+		Interfaces: []models.VMInterfaceConfig{
+			{Name: "eth0", Enabled: true},
+			{Name: "eth0.100", Enabled: true, Parent: "eth0"},
+		},
+	}}
+	if err := vr.ReconcileVMs(vms); err != nil {
+		t.Fatalf("ReconcileVMs() error = %v", err)
+	}
+
+	var eth0ID, childParent int
+	for _, iface := range f.objects("virtualization", "interfaces") {
+		switch iface["name"] {
+		case "eth0":
+			eth0ID = utils.GetIDFromObject(iface)
+		case "eth0.100":
+			childParent = utils.GetIDFromObject(iface["parent"])
+		}
+	}
+	if eth0ID == 0 || childParent != eth0ID {
+		t.Errorf("eth0.100 parent = %d, expected eth0 ID %d", childParent, eth0ID)
+	}
+}
+
+func TestReconcileVMIPWithVRF(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})
+	vrf := f.seed("ipam", "vrfs", client.Object{"name": "prod"})
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	vr := NewVirtualizationReconciler(c)
+	vms := []*models.VMConfig{{
+		Name: "vm1", SiteSlug: "berlin-dc",
+		Interfaces: []models.VMInterfaceConfig{{
+			Name: "eth0", Enabled: true,
+			IP: &models.IPConfig{Address: "10.0.0.5/24", VRF: "prod"},
+		}},
+	}}
+	if err := vr.ReconcileVMs(vms); err != nil {
+		t.Fatalf("ReconcileVMs() error = %v", err)
+	}
+
+	ips := f.objects("ipam", "ip-addresses")
+	if len(ips) != 1 {
+		t.Fatalf("expected 1 IP address, got %d", len(ips))
+	}
+	if got := utils.GetIDFromObject(ips[0]["vrf"]); got != utils.GetIDFromObject(vrf) {
+		t.Errorf("IP vrf = %d, expected resolved VRF ID %d", got, utils.GetIDFromObject(vrf))
+	}
+}
+
 func TestReconcileVMsSiteOnly(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	site := f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})

@@ -462,5 +462,27 @@ live NetBox: a second run must produce a zero-change plan (idempotency).
   paths, it needs generalizing first; check before chunk 3.
 - **Loader type-switch duplication** grows by 4 cases. Accepted as existing
   debt; do not refactor here.
-</content>
-</invoke>
+
+---
+
+## 14. Known limitations (post-implementation)
+
+- **`vm_role` requirement.** NetBox only allows a virtual machine to use a
+  device role whose `vm_role: true`. Assigning a role without it is rejected by
+  the API. The example data ships a dedicated `vm` role for this; document the
+  requirement for users.
+- **Clustered-VM VLAN site cache.** VM-interface VLANs are resolved against the
+  VM's effective site (its own, or its cluster's). The site caches are warmed
+  from the `site_slug` of the clusters and VMs **declared in the current run**.
+  If a VM references a cluster that exists only in NetBox (not in this run's
+  YAML), that cluster's site cache is not warmed and the VM's VLAN references
+  will not resolve (they are warned and skipped, never mis-assigned). The normal
+  GitOps case — declaring clusters alongside the VMs that use them — is
+  unaffected. A future improvement could resolve the effective site live and
+  `LoadSite` it on demand.
+- **VM interface `mac_address`** is sent as a field on the interface; on very
+  recent NetBox versions that model MAC addresses as separate objects this may
+  need revisiting for full idempotency.
+- **IPv6 primary IP** path in `setVMPrimaryIP` mirrors the device reconciler but
+  is not unit-tested, because the in-process fake does not derive `family` from
+  the address (the device reconciler shares this gap).

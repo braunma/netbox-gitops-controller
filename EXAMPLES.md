@@ -200,7 +200,7 @@ together; **virtual machines** then live on a cluster (or directly on a site):
 # inventory/virtual/vms.yaml
 - name: "web-01"
   cluster: "berlin-prod-cluster"   # clustered VM; site inherited from cluster
-  role_slug: "server"
+  role_slug: "vm"                  # role must have vm_role: true in NetBox
   platform: "ubuntu-22-04"
   vcpus: 4
   memory: 8192                     # MB
