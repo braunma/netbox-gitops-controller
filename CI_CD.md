@@ -80,6 +80,18 @@ TF_VAR_proxmox_api_token=user@realm!tokenid=secret
 2. Open an MR → `go_plan` produces a `plan-output.txt` artifact; review it.
 3. Merge to the default branch → trigger `go_apply` manually to deploy.
 
+### Validating branches that add new objects
+
+`go_validate`/`go_plan` run `--dry-run` against live NetBox, so references are
+resolved against what NetBox already contains. Objects a branch *declares* but
+has not applied yet (the site/role/device-type for a brand-new device, etc.)
+do not exist in NetBox during validation. The controller resolves such
+references against the objects reconciled earlier in the *same* run, so a
+branch that adds a new site **and** a device in it validates as a plan rather
+than failing with `site ... not found`. A reference that is neither in NetBox
+nor declared anywhere in the YAML is still reported as an error, so genuine
+typos are caught before merge.
+
 ## Local equivalents
 
 ```bash

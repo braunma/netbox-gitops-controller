@@ -165,6 +165,49 @@ func TestReconcileDevicesErrorsOnUnresolvedReferences(t *testing.T) {
 	}
 }
 
+// TestReconcileDeviceDryRunResolvesSameRunDependencies reproduces a feature
+// branch that adds a new site, role and device type *together with* a device
+// that references them, and validates it with --dry-run before merging. None
+// of the dependencies exist in NetBox yet, so this used to abort with
+// "site ... not found". They are declared in the same run, so the device must
+// validate (be planned) instead, while nothing is written to NetBox.
+func TestReconcileDeviceDryRunResolvesSameRunDependencies(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	c.SetDryRun(true)
+
+	// Empty NetBox, exactly as a branch pipeline sees it before the apply.
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	fr := NewFoundationReconciler(c)
+	if err := fr.ReconcileSites([]*models.Site{{Name: "Berlin DC", Slug: "berlin-dc", Status: "active"}}); err != nil {
+		t.Fatalf("ReconcileSites() error = %v", err)
+	}
+	if err := fr.ReconcileRoles([]*models.Role{{Name: "Switch", Slug: "switch"}}); err != nil {
+		t.Fatalf("ReconcileRoles() error = %v", err)
+	}
+	dtr := NewDeviceTypeReconciler(c)
+	if err := dtr.ReconcileDeviceTypes([]*models.DeviceType{{Model: "C9300", Slug: "c9300", Manufacturer: "Cisco"}}); err != nil {
+		t.Fatalf("ReconcileDeviceTypes() error = %v", err)
+	}
+
+	device := &models.DeviceConfig{
+		Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
+	}
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{device}); err != nil {
+		t.Fatalf("ReconcileDevices() in dry-run = %v; a device referencing a same-run site/role/device-type must validate, not abort", err)
+	}
+
+	// Dry-run must not have written anything to NetBox.
+	if got := len(f.objects("dcim", "devices")); got != 0 {
+		t.Errorf("dry-run wrote %d device(s), expected 0", got)
+	}
+	if muts := f.mutationLog(); len(muts) != 0 {
+		t.Errorf("dry-run sent %d mutating request(s), expected 0: %+v", len(muts), muts)
+	}
+}
+
 func TestReconcileDevicesInstallsChildIntoBay(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	siteID, roleID, deviceTypeID := seedDeviceFoundation(t, f, c)
