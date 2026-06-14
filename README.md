@@ -71,7 +71,8 @@ When you run tests, they use the `example/` directory.
 
 ### Step 1: Define a Device Type (if new)
 
-File: `definitions/device_types.yaml`
+File: `definitions/device_types/servers.yaml` (any `*.yaml` under the
+`definitions/device_types/` directory is loaded)
 
 Here we define the "blueprint" including all physical ports. NetBox copies these ports *once* when a device is instantiated.
 
@@ -149,7 +150,7 @@ File: `inventory/hardware/active/switches.yaml`
 **Error: "400 Bad Request: {'type': ['This field may not be blank.']}"**
 
   * **Cause:** A device interface or template is missing the `type` definition in the YAML.
-  * **Solution:** Ensure every interface in `definitions/device_types.yaml` has a valid type (e.g., `1000base-t`, `virtual`, `lag`).
+  * **Solution:** Ensure every interface in your `definitions/device_types/` files has a valid type (e.g., `1000base-t`, `virtual`, `lag`).
 
 **Cables are "flapping" (Deleting... Creating... on every run)**
 
@@ -316,27 +317,19 @@ deleted). See `docs/MISSING_FEATURES.md` for details.
 
 ## 📚 Example Files
 
-This repository includes comprehensive **example inventory and definition files** that demonstrate all major features of the GitOps controller.
+The `example/` directory ships a small, self-contained dataset used by the test
+suite and as a format reference. It covers two sites (Berlin DC, Test Lab) and a
+few objects of each supported type:
 
-### What's Included
+- 2 sites, 5 device roles, 2 platforms, 1 tenant (+ group)
+- 2 VRFs, 2 VLAN groups, 3 VLANs, 3 prefixes, 3 racks
+- 6 device types, 2 module types, 1 `vmid` custom field
+- 7 hardware devices — including a blade chassis with two child blades, a GPU
+  server, and a patch panel (front/rear ports)
+- 2 virtual machines on a Proxmox cluster (one clustered, one site-only)
 
-✅ **4 example sites** (Berlin DC, Frankfurt DC, Munich Lab, Hamburg DR)
-✅ **8 device roles** (Server, Switch, Storage, Patch Panel, etc.)
-✅ **12 IP prefixes** with VRF and VLAN mappings
-✅ **8 VLANs** across multiple sites
-✅ **6 racks** in different locations
-✅ **9 device instances** (servers, switches, storage, patch panels)
-✅ **Complete cabling examples** (auto-wiring demonstrations)
-✅ **AI/ML infrastructure** (GPU-capable servers, high-speed networking)
-✅ **Structured cabling** (patch panels with front/rear port mappings)
-
-### Getting Started with Examples
-
-See **[EXAMPLES.md](./EXAMPLES.md)** for:
-- Detailed explanation of each example file
-- Key concepts demonstrated (VRFs, VLANs, cabling, etc.)
-- How to customize examples for your environment
-- Common scenarios and troubleshooting
+See **[EXAMPLES.md](./EXAMPLES.md)** for the full breakdown, file layout, and the
+key concepts each file demonstrates.
 
 ### Quick Test
 
