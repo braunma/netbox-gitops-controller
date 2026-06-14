@@ -1,0 +1,28 @@
+# A provisioned production VM: documented in NetBox AND created in Proxmox by
+# Terraform (cloned from the template at vm_template_id), using the per-env
+# "proxmox-prod" Terraform state. One file per VM.
+
+- name: "web-01"
+  provision: true                  # create this VM in Proxmox via Terraform
+  vmid: 101                        # Proxmox VMID to create; stored in NetBox `vmid` custom field
+  vm_template_id: 800              # template VMID to clone from (your cloud-init template)
+  node: "pve-01"                   # target Proxmox node the VM is spawned on
+  cluster: "berlin-prod-cluster"   # clustered VM; inherits the cluster's site → Proxmox pool
+  role_slug: "vm"                  # role must have vm_role: true
+  platform: "ubuntu-22-04"         # NetBox documentation only (not used to clone)
+  tenant: "platform-engineering"
+  status: "active"
+  vcpus: 4
+  memory: 8192                     # MB
+  disk: 100                        # GB
+  tags: ["gitops", "production"]
+  interfaces:
+    - name: "eth0"
+      enabled: true
+      mtu: 1500
+      mode: "access"
+      untagged_vlan: "Management"  # resolved at the cluster's site (berlin-dc)
+      ip:
+        address: "10.0.100.21/24"
+        dns_name: "web-01.berlin.example.com"
+      address_role: "primary"      # promotes this IP to the VM's primary_ip4

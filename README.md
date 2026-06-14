@@ -11,7 +11,7 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
       * **Opt-in Pruning (`--prune`):** Objects removed from YAML are deleted only when you pass `--prune`, and only if they carry the `gitops` tag — manually created objects are never touched. Combine with `--dry-run` to preview. See the Pruning section below.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
   * **Coverage:** Manages DCIM (sites, racks, device types, devices, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
-  * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. `cmd/tfgen` renders `inventory/virtual/*.yaml` to Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them — a second, independent consumer of one source of truth. See [`docs/PLAN_YAML_VM_PIPELINE.md`](docs/PLAN_YAML_VM_PIPELINE.md) and [`terraform/README.md`](terraform/README.md).
+  * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`docs/PLAN_YAML_VM_PIPELINE.md`](docs/PLAN_YAML_VM_PIPELINE.md) and [`terraform/README.md`](terraform/README.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -323,10 +323,10 @@ few objects of each supported type:
 
 - 2 sites, 5 device roles, 2 platforms, 1 tenant (+ group)
 - 2 VRFs, 2 VLAN groups, 3 VLANs, 3 prefixes, 3 racks
-- 6 device types, 2 module types, 1 `vmid` custom field
+- 6 device types, 2 module types, 2 VM custom fields (`vmid`, `vm_template_id`)
 - 7 hardware devices — including a blade chassis with two child blades, a GPU
   server, and a patch panel (front/rear ports)
-- 2 virtual machines on a Proxmox cluster (one clustered, one site-only)
+- 2 virtual machines (one provisioned in Proxmox, one NetBox documentation-only)
 
 See **[EXAMPLES.md](./EXAMPLES.md)** for the full breakdown, file layout, and the
 key concepts each file demonstrates.

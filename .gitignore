@@ -37,4 +37,9 @@ bin/
 # Private data - exclude actual definitions and inventory from repository root
 # (Tests use example/ directory instead)
 /definitions/
-/inventory/
+/inventory/*
+# ...except the VM definitions: these drive BOTH NetBox documentation and
+# Proxmox provisioning and are meant to be committed (one YAML per VM, per env
+# under inventory/virtual/<env>/). They contain no secrets — credentials come
+# from CI variables, not the YAML.
+!/inventory/virtual/

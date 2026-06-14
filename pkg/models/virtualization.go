@@ -51,21 +51,33 @@ type VMInterfaceConfig struct {
 
 // VMConfig represents a virtual machine. A VM must belong to exactly one of a
 // cluster or a site (NetBox allows non-clustered, site-scoped VMs).
+//
+// Provisioning is opt-in and independent of NetBox documentation: a VM is only
+// created in Proxmox when Provision is true. Documentation-only VMs (Provision
+// false or unset) are reconciled into NetBox but skipped by the Terraform
+// generator, even if they carry a VMID/VMTemplateID for reference.
 type VMConfig struct {
-	Name       string              `yaml:"name" json:"name" validate:"required"`
-	VMID       int                 `yaml:"vmid,omitempty" json:"vmid,omitempty"`
-	Node       string              `yaml:"node,omitempty" json:"node,omitempty"`
-	Cluster    string              `yaml:"cluster,omitempty" json:"cluster,omitempty"`
-	SiteSlug   string              `yaml:"site_slug,omitempty" json:"site_slug,omitempty"`
-	RoleSlug   string              `yaml:"role_slug,omitempty" json:"role_slug,omitempty"`
-	Platform   string              `yaml:"platform,omitempty" json:"platform,omitempty"`
-	Tenant     string              `yaml:"tenant,omitempty" json:"tenant,omitempty"`
-	Status     string              `yaml:"status,omitempty" json:"status,omitempty"`
-	VCPUs      int                 `yaml:"vcpus,omitempty" json:"vcpus,omitempty"`
-	Memory     int                 `yaml:"memory,omitempty" json:"memory,omitempty"`
-	Disk       int                 `yaml:"disk,omitempty" json:"disk,omitempty"`
-	Tags       []string            `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Interfaces []VMInterfaceConfig `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
+	Name string `yaml:"name" json:"name" validate:"required"`
+	// Provision opts the VM into Proxmox provisioning via Terraform. When false
+	// (the default) the VM is documented in NetBox only.
+	Provision bool `yaml:"provision,omitempty" json:"provision,omitempty"`
+	VMID      int  `yaml:"vmid,omitempty" json:"vmid,omitempty"`
+	// VMTemplateID is the numeric Proxmox VMID of the template VM to clone from
+	// (e.g. 800). It is the only thing used to provision the VM; Platform is kept
+	// purely for NetBox documentation. Stored in NetBox as a custom field too.
+	VMTemplateID int                 `yaml:"vm_template_id,omitempty" json:"vm_template_id,omitempty"`
+	Node         string              `yaml:"node,omitempty" json:"node,omitempty"`
+	Cluster      string              `yaml:"cluster,omitempty" json:"cluster,omitempty"`
+	SiteSlug     string              `yaml:"site_slug,omitempty" json:"site_slug,omitempty"`
+	RoleSlug     string              `yaml:"role_slug,omitempty" json:"role_slug,omitempty"`
+	Platform     string              `yaml:"platform,omitempty" json:"platform,omitempty"`
+	Tenant       string              `yaml:"tenant,omitempty" json:"tenant,omitempty"`
+	Status       string              `yaml:"status,omitempty" json:"status,omitempty"`
+	VCPUs        int                 `yaml:"vcpus,omitempty" json:"vcpus,omitempty"`
+	Memory       int                 `yaml:"memory,omitempty" json:"memory,omitempty"`
+	Disk         int                 `yaml:"disk,omitempty" json:"disk,omitempty"`
+	Tags         []string            `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Interfaces   []VMInterfaceConfig `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
 }
 
 // Slug generates a slug from the virtual machine name.

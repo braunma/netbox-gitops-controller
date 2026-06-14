@@ -22,7 +22,7 @@ few objects of each supported type:
 | Platforms         | 2     | Ubuntu 22.04 LTS, Debian 12                                      |
 | Tenant groups     | 1     | Internal                                                         |
 | Tenants           | 1     | Platform Engineering                                            |
-| Custom fields     | 1     | `vmid` (consumed by virtual machines)                           |
+| Custom fields     | 2     | `vmid`, `vm_template_id` (consumed by virtual machines)         |
 | VRFs              | 2     | Management, Production                                          |
 | VLAN groups       | 2     | Berlin DC VLANs, Test Lab VLANs                                 |
 | VLANs             | 3     | Management, Production Network, Test Network                   |
@@ -31,7 +31,7 @@ few objects of each supported type:
 | Module types      | 2     | 10G SFP+ module, GPU A100                                       |
 | Device types      | 6     | server, switch, GPU server, blade chassis, blade, patch panel  |
 | Hardware devices  | 7     | server, switch, GPU server, chassis + 2 blades, patch panel    |
-| Virtual machines  | 2     | `web-01` (clustered), `edge-01` (site-only)                    |
+| Virtual machines  | 2     | `web-01` (provisioned in Proxmox), `edge-01` (doc-only)        |
 | Virtualization    | —     | cluster type Proxmox VE, group Production, cluster `berlin-prod-cluster` |
 
 ## File layout
@@ -61,7 +61,10 @@ example/
     ├── hardware/
     │   ├── active/              # servers.yaml, switches.yaml, gpu-servers.yaml, chassis.yaml
     │   └── passive/             # patchpanels.yaml
-    └── virtual/                 # vms.yaml
+    └── virtual/                 # per-env folders, one YAML per VM
+        ├── prod/                # web-01.yaml      (provisioned → state proxmox-prod)
+        ├── stage/               # (empty here)
+        └── playground/          # edge-01.yaml     (NetBox documentation only)
 ```
 
 ## Key concepts demonstrated
@@ -119,13 +122,21 @@ or directly on a site. VM interfaces reuse the device interface semantics
 (VLANs, IPs, primary IP) but are not cabled. Platforms and tenants are managed
 in the foundation phase and referenced here by slug.
 
+VMs are organised one file per VM under a per-environment folder
+(`inventory/virtual/{prod,stage,playground}/`); each environment is provisioned
+into its own Terraform state, while NetBox documents them all (the controller
+scans `inventory/virtual/` recursively).
+
 ```yaml
-# inventory/virtual/vms.yaml
+# inventory/virtual/prod/web-01.yaml
 - name: "web-01"
+  provision: true                  # also create this VM in Proxmox (optional)
   vmid: 101                        # Proxmox VMID, also stored in NetBox
+  vm_template_id: 800              # template VMID to clone (provisioning only)
+  node: "pve-01"                   # target Proxmox node (provisioning only)
   cluster: "berlin-prod-cluster"   # clustered VM; site inherited from cluster
   role_slug: "vm"                  # role must have vm_role: true in NetBox
-  platform: "ubuntu-22-04"
+  platform: "ubuntu-22-04"         # NetBox documentation (not used to clone)
   vcpus: 4
   memory: 8192                     # MB
   interfaces:
@@ -137,8 +148,10 @@ in the foundation phase and referenced here by slug.
       address_role: "primary"      # promotes to the VM's primary_ip4
 ```
 
-The `vmid`/`node`/`platform` fields are only needed if you also provision the
-VMs in Proxmox from the same YAML — NetBox itself ignores `node`. See
+The `provision`/`vmid`/`vm_template_id`/`node` fields are only needed if you also
+provision the VMs in Proxmox from the same YAML — NetBox itself ignores them
+(except the `vmid`/`vm_template_id` it stores as custom fields). Without
+`provision: true` a VM is documentation-only. See
 [`terraform/README.md`](terraform/README.md) for that optional pipeline.
 
 ### Auto-wiring (feature reference)
