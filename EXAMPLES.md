@@ -61,7 +61,10 @@ example/
     ├── hardware/
     │   ├── active/              # servers.yaml, switches.yaml, gpu-servers.yaml, chassis.yaml
     │   └── passive/             # patchpanels.yaml
-    └── virtual/                 # vms.yaml
+    └── virtual/                 # per-env folders, one YAML per VM
+        ├── prod/                # web-01.yaml      (provisioned → state proxmox-prod)
+        ├── stage/               # (empty here)
+        └── playground/          # edge-01.yaml     (NetBox documentation only)
 ```
 
 ## Key concepts demonstrated
@@ -119,8 +122,13 @@ or directly on a site. VM interfaces reuse the device interface semantics
 (VLANs, IPs, primary IP) but are not cabled. Platforms and tenants are managed
 in the foundation phase and referenced here by slug.
 
+VMs are organised one file per VM under a per-environment folder
+(`inventory/virtual/{prod,stage,playground}/`); each environment is provisioned
+into its own Terraform state, while NetBox documents them all (the controller
+scans `inventory/virtual/` recursively).
+
 ```yaml
-# inventory/virtual/vms.yaml
+# inventory/virtual/prod/web-01.yaml
 - name: "web-01"
   provision: true                  # also create this VM in Proxmox (optional)
   vmid: 101                        # Proxmox VMID, also stored in NetBox

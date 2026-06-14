@@ -22,6 +22,7 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", ".", "Base directory containing inventory/ (falls back to example/ when not found)")
 	out := flag.String("out", "terraform/generated.tfvars.json", "Output tfvars.json path (use '-' for stdout)")
+	group := flag.String("group", "", "Inventory subfolder under inventory/virtual to load, e.g. an environment like 'prod' (empty = every environment)")
 	flag.Parse()
 
 	// When emitting to stdout, reserve it for the tfvars JSON and route all
@@ -38,8 +39,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Each environment (prod/stage/playground) lives in its own subfolder under
+	// inventory/virtual and is provisioned into its own Terraform state. With no
+	// --group, load every environment (back-compat / NetBox-style full scan).
+	folder := "inventory/virtual"
+	if *group != "" {
+		folder = filepath.Join("inventory/virtual", *group)
+	}
+
 	dl := loader.NewDataLoader(dir, logger)
-	vms, err := dl.LoadVMs("inventory/virtual")
+	vms, err := dl.LoadVMs(folder)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ failed to load VMs: %v\n", err)
 		os.Exit(1)

@@ -1,8 +1,8 @@
 # YAML → NetBox + Proxmox VM Pipeline — Design Record
 
-**Goal:** use one VM YAML (`inventory/virtual/*.yaml`) as the single source of
-truth to **both** describe VMs in NetBox **and** provision them in Proxmox via
-Terraform — one repo, one pipeline.
+**Goal:** use one VM YAML (`inventory/virtual/<env>/*.yaml`, one file per VM) as
+the single source of truth to **both** describe VMs in NetBox **and** provision
+them in Proxmox via Terraform — one repo, one pipeline.
 
 **Status:** ✅ Implemented (scaffold). Done: `provision`/`vmid`/`vm_template_id`/
 `node` model fields, the declarative `vmid` and `vm_template_id` custom fields
@@ -47,6 +47,17 @@ mapping and operational detail see [`terraform/README.md`](../terraform/README.m
    `vm_template_id` (the template's Proxmox VMID); `platform` is documentation
    only and no longer selects the template.
 
+6. **One state per environment, not per VM.** VMs live in per-env folders
+   (`inventory/virtual/{prod,stage,playground}/`, one file per VM). tfgen
+   `--group <env>` emits a per-env tfvars; the same Terraform module is applied
+   once per env (`parallel:matrix`) into its own GitLab-managed state
+   (`proxmox-<env>`). Environments are a small fixed set, so the blast radius
+   that matters (prod vs. the rest) is isolated with a tiny matrix; a single VM
+   can still be changed in isolation via `-target`. Per-VM state was rejected: it
+   needs dynamic child pipelines and produces unbounded states/locks. The NetBox
+   controller still scans `inventory/virtual/` recursively, so all environments
+   are documented from the same files.
+
 ## Components
 
 - **`cmd/tfgen` / `pkg/tfgen`** — pure, deterministic, unit-tested. Reuses
@@ -54,8 +65,8 @@ mapping and operational detail see [`terraform/README.md`](../terraform/README.m
   (no second YAML schema). Emits a single `vms` Terraform variable keyed by VM
   name. Skips VMs without `provision: true` (NetBox-only); errors when a
   provisioned VM lacks a `node`, `vmid` or `vm_template_id`, or on duplicate VM
-  names.
-  Run: `go run ./cmd/tfgen --data-dir <dir> --out terraform/generated.tfvars.json`.
+  names. `--group <env>` scopes the load to one environment subfolder.
+  Run: `go run ./cmd/tfgen --data-dir <dir> --group prod --out terraform/generated.prod.tfvars.json`.
 - **`terraform/`** — `for_each` over the generated VM map →
   `proxmox_virtual_environment_vm` (`bpg/proxmox`); `vm_id` from `vmid`,
   `clone.vm_id` from `vm_template_id`, cloud-init static IP from the interface IP.

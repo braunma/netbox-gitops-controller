@@ -1,6 +1,6 @@
 # Proxmox provisioning (Terraform)
 
-This module provisions the VMs declared in `inventory/virtual/*.yaml` onto
+This module provisions the VMs declared in `inventory/virtual/<env>/*.yaml` onto
 Proxmox VE, using the [`bpg/proxmox`](https://registry.terraform.io/providers/bpg/proxmox)
 provider. It is the **second consumer** of the single YAML source of truth — the
 first being the NetBox controller. The two run independently (see
@@ -9,15 +9,22 @@ first being the NetBox controller. The two run independently (see
 ## How the data gets here
 
 ```
-inventory/virtual/*.yaml
-   └─ cmd/tfgen ──▶ terraform/generated.tfvars.json   (var "vms")
-                       └─ terraform plan/apply ──▶ Proxmox
+inventory/virtual/<env>/*.yaml          (one file per VM; env = prod|stage|playground)
+   └─ cmd/tfgen --group <env> ──▶ terraform/generated.<env>.tfvars.json   (var "vms")
+                                     └─ terraform plan/apply ──▶ Proxmox   (state proxmox-<env>)
 ```
 
-Never edit `generated.tfvars.json` by hand — change the YAML and regenerate:
+Each **environment** is a subfolder of `inventory/virtual/` and is provisioned
+into its **own GitLab-managed Terraform state** (`proxmox-<env>`), so a change in
+`playground` can never touch `prod`. Put **one YAML file per VM** inside the env
+folder. The NetBox controller scans `inventory/virtual/` recursively, so every VM
+in every environment is still documented in NetBox from the same files.
+
+Never edit a `generated.<env>.tfvars.json` by hand — change the YAML and
+regenerate (per environment):
 
 ```sh
-go run ./cmd/tfgen --data-dir . --out terraform/generated.tfvars.json
+go run ./cmd/tfgen --data-dir . --group prod --out terraform/generated.prod.tfvars.json
 ```
 
 Only VMs that set `provision: true` are provisioned here; every other VM is
@@ -120,6 +127,29 @@ secrets). So set everything in **GitLab → Settings → CI/CD → Variables**:
 > **CPU type.** Every VM is cloned with `cpu.type = var.cpu_type` (default
 > `x86-64-v2-AES`) — a cluster-portable type so VMs can later live-migrate
 > between nodes. Don't use `host` if your nodes aren't identical.
+
+## Environments & state isolation
+
+The pipeline provisions one **environment per folder**, each into its own
+GitLab-managed state:
+
+| Folder                          | Terraform state    | CI `environment` |
+|---------------------------------|--------------------|------------------|
+| `inventory/virtual/prod/`       | `proxmox-prod`     | `proxmox-prod`   |
+| `inventory/virtual/stage/`      | `proxmox-stage`    | `proxmox-stage`  |
+| `inventory/virtual/playground/` | `proxmox-playground` | `proxmox-playground` |
+
+`tf_plan`/`tf_apply` run as a GitLab `parallel:matrix` over these envs (see
+`.gitlab-ci.yml`); `tf_apply` is a manual gate per env. The same Proxmox
+credentials (`TF_VAR_*`) are shared across all environments.
+
+**Why per-env, not per-VM state:** environments are a small fixed set, so the
+blast radius that matters (prod vs. the rest) is isolated with a 3-line matrix.
+A single VM can still be changed in isolation within its env state with
+`terraform apply -target='proxmox_virtual_environment_vm.this["web-01"]'`.
+
+**Add an environment:** create `inventory/virtual/<env>/`, then add `<env>` to
+`PROXMOX_ENVS` and to the `parallel:matrix` lists in `.gitlab-ci.yml`.
 
 ## Status
 
