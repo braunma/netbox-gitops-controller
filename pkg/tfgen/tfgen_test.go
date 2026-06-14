@@ -72,6 +72,39 @@ func TestBuildRequiresVMID(t *testing.T) {
 	}
 }
 
+func TestBuildAlwaysStampsManagedTag(t *testing.T) {
+	// VM with no managed tag and a duplicate: gitops is appended once, dupes drop.
+	vm := clusteredVM()
+	vm.Tags = []string{"production", "production"}
+	doc, err := Build([]*models.VMConfig{vm})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	got := doc.VMs["web-01"].Tags
+	want := []string{"production", "gitops"}
+	if len(got) != len(want) {
+		t.Fatalf("expected tags %v, got %v", want, got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("expected tags %v, got %v", want, got)
+		}
+	}
+
+	// A VM that already lists gitops must not get a second copy.
+	vm2 := clusteredVM() // Tags: ["gitops", "production"]
+	doc2, _ := Build([]*models.VMConfig{vm2})
+	count := 0
+	for _, tag := range doc2.VMs["web-01"].Tags {
+		if tag == "gitops" {
+			count++
+		}
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one gitops tag, got %d in %v", count, doc2.VMs["web-01"].Tags)
+	}
+}
+
 func TestBuildRequiresNode(t *testing.T) {
 	vm := clusteredVM()
 	vm.Node = ""

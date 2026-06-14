@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"sort"
 
+	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 )
 
@@ -70,7 +71,7 @@ func Build(vms []*models.VMConfig) (*Document, error) {
 			VCPUs:    vm.VCPUs,
 			Memory:   vm.Memory,
 			Disk:     vm.Disk,
-			Tags:     vm.Tags,
+			Tags:     withManagedTag(vm.Tags),
 		}
 
 		out.Interfaces = make([]Interface, 0, len(vm.Interfaces))
@@ -91,6 +92,26 @@ func Build(vms []*models.VMConfig) (*Document, error) {
 	}
 
 	return doc, nil
+}
+
+// withManagedTag returns the VM's tags with the GitOps managed tag guaranteed
+// to be present, mirroring the NetBox controller's auto-stamping so a VM carries
+// the same `gitops` marker in both systems. Input order is preserved (with the
+// managed tag appended if absent) and duplicates are removed for stable output.
+func withManagedTag(tags []string) []string {
+	out := make([]string, 0, len(tags)+1)
+	seen := make(map[string]bool, len(tags)+1)
+	for _, t := range tags {
+		if t == "" || seen[t] {
+			continue
+		}
+		seen[t] = true
+		out = append(out, t)
+	}
+	if !seen[constants.ManagedTagSlug] {
+		out = append(out, constants.ManagedTagSlug)
+	}
+	return out
 }
 
 // Marshal renders the document as deterministic, indented JSON. Map key order

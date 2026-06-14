@@ -33,6 +33,27 @@ go run ./cmd/tfgen --data-dir . --out terraform/generated.tfvars.json
 | `disk`          | `disk.size` on `scsi0`                |
 | `interfaces[].ip`   | cloud-init static `ip_config`     |
 | `interfaces[].vlan` | NIC `vlan_id` via `var.vlan_tags` |
+| `tags`          | `tags` (always includes `gitops`)     |
+
+tfgen always stamps the `gitops` tag (same `ManagedTagSlug` the NetBox
+controller uses), so every provisioned VM is identifiable as GitOps-managed in
+both NetBox and Proxmox.
+
+## Full lifecycle (day-2 updates)
+
+The module is the desired state, so editing the YAML and re-running the pipeline
+reconciles existing VMs — not just first-time creation:
+
+- **More CPU/RAM/disk:** change `vcpus`/`memory`/`disk`; Terraform updates the
+  running VM in place (a larger `disk` grows the volume — Proxmox can't shrink a
+  disk, so reducing the number is a no-op/error, not a rebuild).
+- **Add a second NIC:** append an entry to `interfaces`; a new `network_device`
+  (and matching cloud-init `ip_config`) is added to the VM.
+- **Re-IP / change VLAN:** edit the interface; cloud-init config updates.
+
+No `lifecycle`/`ignore_changes` guards are set, so these are genuine in-place
+updates. Some (NIC add, cloud-init change) take effect on the next VM reboot, per
+Proxmox/cloud-init behaviour.
 
 ## Environment-specific setup
 
@@ -53,6 +74,6 @@ Connection + credentials come from CI variables (see `.gitlab-ci.yml`):
 
 ## Status
 
-Scaffold — written to be correct against bpg/proxmox ~0.66 but **not yet run
+Scaffold — written to be correct against bpg/proxmox ~0.109 but **not yet run
 against a live Proxmox**. Validate with `terraform validate` and a `plan`
 against your environment before applying.

@@ -3,8 +3,10 @@ terraform {
 
   required_providers {
     proxmox = {
-      source  = "bpg/proxmox"
-      version = "~> 0.66"
+      source = "bpg/proxmox"
+      # Pinned to the 0.109.x line (latest at time of writing). bpg is pre-1.0,
+      # so minor bumps can break — review the changelog before widening this.
+      version = "~> 0.109.0"
     }
   }
 
