@@ -78,17 +78,15 @@ Proxmox/cloud-init behaviour.
 
 ### Credentials (set as masked GitLab CI variables)
 
-| CI variable                        | Purpose                                        |
-|------------------------------------|------------------------------------------------|
-| `TF_VAR_proxmox_endpoint`          | API URL, e.g. `https://pve.example.com:8006/`  |
-| `TF_VAR_proxmox_api_token_id`      | token id, e.g. `gitops@pve!terraform`          |
-| `TF_VAR_proxmox_api_token_secret`  | token secret (the UUID); mark **masked**       |
-| `TF_VAR_ci_ssh_keys`               | SSH public key(s) injected via cloud-init      |
+| CI variable                  | Purpose                                                  |
+|------------------------------|----------------------------------------------------------|
+| `TF_VAR_proxmox_endpoint`    | API URL, e.g. `https://pve.example.com:8006/api2/json`   |
+| `TF_VAR_proxmox_api_token`   | full token `user@realm!tokenid=secret`; mark **masked**  |
+| `TF_VAR_ci_ssh_keys`         | SSH public key(s) injected via cloud-init                |
 
-The API token is supplied as two variables so the id and secret can be rotated
-independently; `providers.tf` joins them into the `id=secret` string the bpg
-provider expects (`token_id` is `user@realm!tokenid`, the secret is the UUID).
-For a self-signed Proxmox cert set `TF_VAR_proxmox_insecure=true`. Optional:
+The API token is the single combined `user@realm!tokenid=secret` string the bpg
+provider expects (the token id is `user@realm!tokenid`; append `=` and the secret
+UUID). For a self-signed Proxmox cert set `TF_VAR_proxmox_insecure=true`. Optional:
 `TF_VAR_default_gateway`, `TF_VAR_vlan_tags`, `TF_VAR_dns_servers`,
 `TF_VAR_ci_username`, `TF_VAR_cpu_type`, `TF_VAR_vm_on_boot`.
 

@@ -1,8 +1,6 @@
 provider "proxmox" {
-  endpoint = var.proxmox_endpoint
-  # bpg wants the token as one 'user@realm!tokenid=secret' string; we keep the
-  # id and secret as separate CI variables and join them here.
-  api_token = "${var.proxmox_api_token_id}=${var.proxmox_api_token_secret}"
+  endpoint  = var.proxmox_endpoint
+  api_token = var.proxmox_api_token
   insecure  = var.proxmox_insecure
 
   # No ssh{} block: a full clone + cloud-init on the same node runs entirely over
