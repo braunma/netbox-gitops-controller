@@ -94,11 +94,28 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 
 	// Handle parent device and device bay installation
 	if device.ParentDevice != "" {
-		// Find parent device
+		// device_bay is required to place a child into a parent.
+		if device.DeviceBay == "" {
+			return fmt.Errorf("device_bay must be specified when parent_device is set")
+		}
+
+		// Find parent device (live lookup: a parent declared in the same run has
+		// really been created by an earlier iteration on a live apply).
 		parentDevices, err := dr.client.Filter("dcim", "devices", map[string]interface{}{
 			"name": device.ParentDevice,
 		})
-		if err != nil || len(parentDevices) == 0 {
+		if err != nil {
+			return fmt.Errorf("failed to look up parent device %s: %w", device.ParentDevice, err)
+		}
+		if len(parentDevices) == 0 {
+			// In --dry-run a parent added in this same run does not exist in
+			// NetBox yet, so it cannot be resolved. Skip placing the child rather
+			// than aborting validation; it is placed for real on the apply.
+			if dr.client.IsDryRun() {
+				dr.logger.Warning("Parent device %s not found yet (declared this run?); skipping %s placement in dry-run", device.ParentDevice, device.Name)
+				dr.client.MarkReconcileIncomplete("dcim", "devices")
+				return nil
+			}
 			return fmt.Errorf("parent device %s not found", device.ParentDevice)
 		}
 		parentDevice := parentDevices[0]
@@ -111,16 +128,22 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 			}
 		}
 
-		// Find device bay on parent
-		if device.DeviceBay == "" {
-			return fmt.Errorf("device_bay must be specified when parent_device is set")
-		}
-
 		bays, err := dr.client.Filter("dcim", "device-bays", map[string]interface{}{
 			"device_id": parentDeviceID,
 			"name":      device.DeviceBay,
 		})
-		if err != nil || len(bays) == 0 {
+		if err != nil {
+			return fmt.Errorf("failed to look up device bay %s on parent %s: %w", device.DeviceBay, device.ParentDevice, err)
+		}
+		if len(bays) == 0 {
+			// The bay is self-healed from a device-bay template during the apply
+			// (see reconcileDeviceBays), so in dry-run a not-yet-created parent's
+			// bay is expected to be missing. Skip placement instead of failing.
+			if dr.client.IsDryRun() {
+				dr.logger.Warning("Device bay %s not found on parent %s yet; skipping %s placement in dry-run", device.DeviceBay, device.ParentDevice, device.Name)
+				dr.client.MarkReconcileIncomplete("dcim", "devices")
+				return nil
+			}
 			return fmt.Errorf("device bay %s not found on parent %s", device.DeviceBay, device.ParentDevice)
 		}
 		deviceBayID = utils.GetIDFromObject(bays[0])

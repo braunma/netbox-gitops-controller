@@ -208,6 +208,33 @@ func TestReconcileDeviceDryRunResolvesSameRunDependencies(t *testing.T) {
 	}
 }
 
+// TestReconcileDeviceDryRunSkipsUnresolvedParentInBay covers a branch that
+// adds a parent chassis and a child device installed into its bay in one go.
+// In dry-run the parent is never created, so the child's parent/bay cannot be
+// resolved; this must be skipped with a warning rather than aborting the run.
+func TestReconcileDeviceDryRunSkipsUnresolvedParentInBay(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	siteID, roleID, deviceTypeID := seedDeviceFoundation(t, f, c)
+	_, _, _ = siteID, roleID, deviceTypeID
+	c.SetDryRun(true)
+
+	devices := []*models.DeviceConfig{
+		// New parent chassis: in dry-run it is planned but not created.
+		{Name: "chassis-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch"},
+		// Child placed into the not-yet-created parent's bay.
+		{
+			Name: "node-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
+			ParentDevice: "chassis-01", DeviceBay: "bay-1",
+		},
+	}
+	if err := NewDeviceReconciler(c).ReconcileDevices(devices); err != nil {
+		t.Fatalf("ReconcileDevices() in dry-run = %v; an unresolved same-run parent must be skipped, not abort", err)
+	}
+	if muts := f.mutationLog(); len(muts) != 0 {
+		t.Errorf("dry-run sent %d mutating request(s), expected 0: %+v", len(muts), muts)
+	}
+}
+
 func TestReconcileDevicesInstallsChildIntoBay(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	siteID, roleID, deviceTypeID := seedDeviceFoundation(t, f, c)
