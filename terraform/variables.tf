@@ -38,7 +38,7 @@ variable "vms" {
 # Proxmox connection (set via TF_VAR_* / masked CI variables)
 # -----------------------------------------------------------------------------
 variable "proxmox_endpoint" {
-  description = "Proxmox VE API endpoint, e.g. https://pve.example.com:8006/"
+  description = "Proxmox VE API endpoint, e.g. https://pve.example.com:8006/api2/json"
   type        = string
 }
 
@@ -57,9 +57,24 @@ variable "proxmox_api_token_secret" {
 }
 
 variable "proxmox_insecure" {
-  description = "Skip TLS verification for the Proxmox endpoint."
+  description = "Skip TLS verification for the Proxmox endpoint (set true for self-signed certs)."
   type        = bool
   default     = false
+}
+
+# -----------------------------------------------------------------------------
+# VM hardware defaults (apply to every cloned VM)
+# -----------------------------------------------------------------------------
+variable "cpu_type" {
+  description = "QEMU CPU type for every VM. Use a cluster-portable type (not 'host') so VMs can live-migrate between nodes."
+  type        = string
+  default     = "x86-64-v2-AES"
+}
+
+variable "vm_on_boot" {
+  description = "Start VMs automatically when their Proxmox node boots."
+  type        = bool
+  default     = true
 }
 
 # -----------------------------------------------------------------------------

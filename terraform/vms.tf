@@ -19,6 +19,7 @@ resource "proxmox_virtual_environment_vm" "this" {
   node_name = each.value.node
   pool_id   = each.value.cluster != "" ? each.value.cluster : null
   tags      = each.value.tags
+  on_boot   = var.vm_on_boot
 
   clone {
     vm_id = each.value.vm_template_id
@@ -27,6 +28,8 @@ resource "proxmox_virtual_environment_vm" "this" {
 
   cpu {
     cores = each.value.vcpus
+    # Cluster-portable CPU type so cloned VMs can live-migrate between nodes.
+    type = var.cpu_type
   }
 
   memory {

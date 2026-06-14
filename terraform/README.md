@@ -87,15 +87,23 @@ Proxmox/cloud-init behaviour.
 
 The API token is supplied as two variables so the id and secret can be rotated
 independently; `providers.tf` joins them into the `id=secret` string the bpg
-provider expects. Optional: `TF_VAR_default_gateway`, `TF_VAR_vlan_tags`,
-`TF_VAR_dns_servers`, `TF_VAR_ci_username`.
+provider expects (`token_id` is `user@realm!tokenid`, the secret is the UUID).
+For a self-signed Proxmox cert set `TF_VAR_proxmox_insecure=true`. Optional:
+`TF_VAR_default_gateway`, `TF_VAR_vlan_tags`, `TF_VAR_dns_servers`,
+`TF_VAR_ci_username`, `TF_VAR_cpu_type`, `TF_VAR_vm_on_boot`.
 
-> **SSH access for clone/cloud-init.** The bpg provider performs the full clone
-> and cloud-init disk import over **SSH** to the target node (`providers.tf` uses
-> `ssh { agent = true }`). The CI runner must therefore reach an SSH agent or be
-> given `PROXMOX_VE_SSH_USERNAME` / `PROXMOX_VE_SSH_PASSWORD` (or a key) — the API
-> token alone is not enough. This is the most common reason a first live run
-> fails.
+> **No SSH needed.** A full clone + cloud-init on the same node runs entirely
+> over the API, so the provider has no `ssh{}` block and the CI runner needs no
+> SSH agent. (SSH would only be required for snippet/file uploads or cross-node
+> disk import, which this module doesn't perform.)
+
+> **Provider version.** Pinned to `~> 0.109.0`. The resource schema used here is
+> unchanged from the 0.83.x line validated against the live cluster. bpg is
+> pre-1.0; review its changelog before bumping.
+
+> **CPU type.** Every VM is cloned with `cpu.type = var.cpu_type` (default
+> `x86-64-v2-AES`) — a cluster-portable type so VMs can later live-migrate
+> between nodes. Don't use `host` if your nodes aren't identical.
 
 ## Status
 

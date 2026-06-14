@@ -4,8 +4,10 @@ terraform {
   required_providers {
     proxmox = {
       source = "bpg/proxmox"
-      # Pinned to the 0.109.x line (latest at time of writing). bpg is pre-1.0,
-      # so minor bumps can break — review the changelog before widening this.
+      # Pinned to the 0.109.x line. The resource schema this module uses (clone,
+      # cpu, memory, network_device, initialization) is unchanged from the 0.83.x
+      # line validated against the live cluster. bpg is pre-1.0, so minor bumps
+      # can break the schema — review the changelog before widening this.
       version = "~> 0.109.0"
     }
   }
