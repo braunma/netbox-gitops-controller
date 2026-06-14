@@ -29,7 +29,7 @@ few objects of each supported type:
 | Prefixes          | 3     | 10.0.0.0/8, 10.0.100.0/24, 10.0.200.0/24                       |
 | Racks             | 3     | Rack A-01, Rack A-02, Test Rack                                |
 | Module types      | 2     | 10G SFP+ module, GPU A100                                       |
-| Device types      | 5     | server, switch, GPU server, blade chassis, blade               |
+| Device types      | 6     | server, switch, GPU server, blade chassis, blade, patch panel  |
 | Hardware devices  | 7     | server, switch, GPU server, chassis + 2 blades, patch panel    |
 | Virtual machines  | 2     | `web-01` (clustered), `edge-01` (site-only)                    |
 | Virtualization    | —     | cluster type Proxmox VE, group Production, cluster `berlin-prod-cluster` |
@@ -53,7 +53,8 @@ example/
 │   │   ├── example-switch.yaml
 │   │   ├── example-gpu-server.yaml
 │   │   ├── example-chassis.yaml               # device bays
-│   │   └── example-blade.yaml                 # child device (u_height 0)
+│   │   ├── example-blade.yaml                 # child device (u_height 0)
+│   │   └── example-patch-panel.yaml           # ports defined per instance
 │   └── virtualization/
 │       ├── cluster_types/, cluster_groups/, clusters/
 └── inventory/                   # Concrete instances
