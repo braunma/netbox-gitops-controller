@@ -62,7 +62,7 @@ modules:
 ```
 
 **Features:**
-- Modules are automatically tagged with `gitops:managed`
+- Modules are automatically tagged with the managed `gitops` tag
 - Serial field defaults to empty string if not provided (matches NetBox requirements)
 - Module bays are auto-created from device type templates
 
@@ -112,14 +112,4 @@ To test these features:
 3. Verify in NetBox:
    - Check device bays are auto-created
    - Check blade servers are installed in chassis
-   - Check modules have the `gitops:managed` tag
-
-## Behavioral Compatibility
-
-All features in this Go implementation match the behavior of the original
-(now removed) Python implementation:
-- Module serial handling
-- Managed tag on modules
-- Device bay self-healing
-- Parent device/bay installation
-- Rack/face/position logic
+   - Check modules have the `gitops` tag

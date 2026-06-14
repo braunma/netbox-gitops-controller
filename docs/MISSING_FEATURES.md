@@ -1,170 +1,68 @@
 # Missing Features
 
-Features a production GitOps controller for NetBox would typically offer that
-are not implemented yet, roughly in order of value. Bug fixes are tracked
-separately in `docs/BUGFIX_PLAN.md`.
+Features a production GitOps controller for NetBox would typically offer,
+roughly in order of value. Bug fixes are tracked in `docs/BUGFIX_PLAN.md`.
 
----
+## Already shipped
 
-## 1. Orphan pruning (`--prune`)
+These were once on this list and are now implemented (documented in `README.md`,
+`EXAMPLES.md` and `docs/PLAN_VIRTUALIZATION.md`):
 
-**Status:** ✅ Implemented for top-level managed objects. Opt-in via the
-`--prune` flag (`pkg/client/prune.go`, wired in `cmd/netbox-gitops/main.go`).
+- **Orphan pruning** (`--prune`) — deletes gitops-tagged objects removed from
+  YAML, in reverse dependency order, scoped to the phases that ran; never
+  touches untagged objects; `--dry-run --prune` previews. See the README's
+  pruning section for the full semantics (`pkg/client/prune.go`).
+- **Plan summary & JSON output** — `Plan: N to create, …` per run; `--output
+  json` emits structured changes on stdout (`pkg/client/recorder.go`).
+- **Drift exit code** — `--dry-run --detailed-exitcode` returns 2 when changes
+  are pending (terraform convention), so a scheduled CI job is a drift monitor.
+- **Selective sync** — `--only <phase>`, `--site`, `--device`, `--vm`.
+- **Virtualization** — clusters, VMs and VM interfaces, plus platforms/tenants
+  in the foundation phase (`pkg/reconciler/virtualization.go`).
+- **Reconciler unit tests** — `*_reconcile_test.go` driven by the in-process
+  fake NetBox (`pkg/reconciler/fakenetbox_test.go`), plus a pagination
+  regression test.
 
-**Behavior:** When an object is removed from YAML, a sync run with `--prune`
-deletes it from NetBox — but only if it carries the `gitops` managed tag.
-Manually created objects are never touched.
+## Still missing
 
-**How it works:**
-- Every object reconciled through `client.Apply` is recorded as "seen" (by ID,
-  keyed by `app/endpoint`).
-- After all phases run, `Prune` lists each managed endpoint filtered by
-  `tag=gitops`, and deletes every returned object whose ID was not seen — i.e.
-  it is still managed but no longer declared in YAML.
-- Endpoints are pruned in reverse dependency order — device children (IP
-  addresses → front ports → interfaces → rear ports → modules) → devices →
-  device/module types → prefixes → VLANs → VLAN groups → VRFs → racks → roles
-  → sites → tags — to satisfy NetBox FK constraints. The managed `gitops` tag
-  itself is protected via `KeepSlugs`.
-- Only endpoints whose phase actually ran are pruned, so `--only` keeps prune
-  in scope. `--prune` is rejected together with `--site`/`--device`, since a
-  filtered run would delete the out-of-scope objects the filter excluded.
-- **Safety guard:** if reconciliation skipped a declared object at an endpoint
-  (e.g. a VLAN or rack whose site could not be resolved), that endpoint is
-  marked incomplete and pruning skips it entirely — a declared object that
-  merely failed to reconcile would otherwise be indistinguishable from an
-  orphan and wrongly deleted.
-- `--dry-run --prune` records the planned deletions (visible in the plan
-  summary and `--output json`) without issuing any destructive request.
+### Config-driven settings
+Only `NETBOX_URL`, `NETBOX_TOKEN`, `IGNORE_SSL_ERRORS` (env) today. Desired: an
+optional YAML config for managed tag slug, page size, retry counts, HTTP
+timeout, default data dir.
 
-**Cables and manufacturers are excluded.** Cables are not pruned: the tool
-does not tag them, so the managed-tag query never returns them, and NetBox
-already cascade-deletes a port's cables when the port or device is removed.
-Auto-created manufacturers are likewise left untouched (they are shared,
-not declared per-definition).
+### Extended IPAM coverage
+VRFs, VLAN groups, VLANs and prefixes only. Missing object types: aggregates,
+RIRs, IP ranges, route targets, ASNs, services — each a simple "ensure" loop,
+low effort once a generic reconciler helper exists.
 
-Note that because pruning is scoped to the `gitops` tag, a device child only
-gets pruned once the tool has managed it at least once (which adds the tag).
-Interfaces auto-instantiated from a device type but never declared in YAML stay
-untagged and are therefore protected.
+### Daemon / watch mode & webhooks
+Run-once CLI only. Desired (long-term): a `--watch` interval mode and/or an HTTP
+endpoint for NetBox webhooks. Only worth building now that pruning and plan
+output exist (a daemon without deletion can't converge state).
 
-## 2. Plan summary & machine-readable output
+### Observability
+Human-oriented console logging only. Desired: `--log-format json`,
+`--quiet`/`--verbose` levels, and end-of-run metrics (objects changed, API
+calls, duration), optionally Prometheus-exposed in daemon mode.
 
-**Status:** ✅ Implemented. A `ChangeRecorder` (`pkg/client/recorder.go`)
-collects every create/update/delete/no-op the client performs (in dry-run:
-would perform). Each run ends with a `Plan: N to create, M to update, J to
-delete, K unchanged` summary, and `--output json` emits the changes as
-structured data on stdout (logs move to stderr).
+### Release & packaging
+No versioned releases, Dockerfile or Makefile, and CI exists only for GitLab
+though the repo is on GitHub. Desired: a `Makefile`, multi-stage `Dockerfile` +
+image publishing, goreleaser with semver tags and a `--version` flag, and a
+GitHub Actions workflow mirroring `.gitlab-ci.yml`.
 
-## 3. Drift detection via exit code
+### Idempotency integration test
+Unit tests use fakes/`httptest`, not a real NetBox. Missing: spin up NetBox in
+Docker in CI, sync the `example/` data twice, and assert the second run is a
+no-op.
 
-**Status:** ✅ Implemented. `--dry-run --detailed-exitcode` (terraform
-convention): exit 0 = in sync, exit 2 = changes pending. A scheduled CI
-pipeline then becomes a drift monitor with zero extra infrastructure.
+## Suggested order
 
-## 4. Selective sync
-
-**Status:** ✅ Implemented.
-- `--only <phase>` with values `foundation`, `network`, `device-types`,
-  `devices` (comma-separated or repeated)
-- `--site <slug>` restricts device reconciliation to one site
-- `--device <name>` for targeted single-device runs (debugging, hotfixes)
-
-Skipped phases are not validated: `--only devices` requires the referenced
-sites, roles and device types to already exist in NetBox.
-
-## 5. Config-driven settings
-
-**Status:** Only `NETBOX_URL`, `NETBOX_TOKEN`, `IGNORE_SSL_ERRORS` via env.
-
-**Desired:** Optional config file (YAML) for: managed tag slug, page size,
-retry counts, HTTP timeout, default data dir. Cobra/Viper are already in use
-or recommended, so wiring is cheap.
-
-## 6. Virtualization support
-
-**Status:** ✅ Implemented (see `docs/PLAN_VIRTUALIZATION.md`). A new
-`virtualization` phase reconciles cluster types, cluster groups, clusters,
-virtual machines and VM interfaces (with the same VLAN/IP/primary-IP semantics
-as physical devices). Platforms (`dcim/platforms`) and tenants/tenant groups
-(`tenancy`) are managed in the foundation phase, since devices and VMs both
-reference them. VMs may belong to a cluster and/or a site. Pruning and the
-`--vm` filter are supported. Reconcilers live in
-`pkg/reconciler/virtualization.go` and the platform/tenant methods in
-`pkg/reconciler/foundation.go`.
-
-## 7. Extended IPAM coverage
-
-**Status:** VRFs, VLAN groups, VLANs, prefixes only.
-
-**Missing object types:** aggregates, RIRs, IP ranges, route targets, ASNs,
-services. Each is a simple "ensure" loop like the existing
-foundation/network reconcilers — low effort once a generic reconciler helper
-exists.
-
-## 8. Daemon / watch mode & webhooks
-
-**Status:** Run-once CLI only.
-
-**Desired (long-term):** `--watch` mode reconciling on an interval, and/or a
-small HTTP endpoint receiving NetBox webhooks to react to manual changes.
-Only worth building after pruning (1) and plan output (2) exist, since a
-daemon without deletion support cannot actually converge state.
-
-## 9. Observability
-
-**Status:** Colorful human-oriented console logging only.
-
-**Desired:**
-- `--log-format json` for machine ingestion
-- `--quiet` / `--verbose` levels
-- Run metrics (objects scanned/changed, API calls, duration) printed at the
-  end and optionally exposed for Prometheus in daemon mode.
-
-## 10. Release & packaging
-
-**Status:** No versioned releases, no Dockerfile, no Makefile; CI exists only
-for GitLab although the repository is hosted on GitHub.
-
-**Desired:**
-- `Makefile` (build/test/lint targets)
-- Multi-stage `Dockerfile` + image publishing
-- goreleaser config with semantic version tags and a `--version` flag
-- GitHub Actions workflow mirroring `.gitlab-ci.yml` (test, lint, build)
-
-## 11. Test infrastructure (enabler, not user-facing)
-
-**Status:** Partially done.
-
-- ✅ Unit tests now exist for `foundation.go`, `network.go`, `device_types.go`
-  (`*_reconcile_test.go`), alongside the existing device/cable/prune tests, all
-  driven by the in-process fake NetBox (`pkg/reconciler/fakenetbox_test.go`).
-  Pagination has a dedicated regression test (`pkg/client/pagination_test.go`).
-- ❌ **Still missing:** an idempotency *integration* test — NetBox in Docker,
-  sync the `example/` data twice, assert the second run is a no-op. Current
-  tests use fakes/`httptest`, not a real NetBox.
-
-The unit-test safety net required before refactoring the working device/cable
-logic now exists; the integration test remains the last gap.
-
----
-
-## Suggested implementation order
-
-Everything through orphan pruning is now shipped, including the bug fixes that
-were prerequisites (pagination, retries, validation — all done, see
-`docs/BUGFIX_PLAN.md`). Remaining work is the bottom half of the table.
-
-| Order | Feature | Effort | Status |
-|-------|---------|--------|--------|
-| 1 | Plan summary (#2) | S | ✅ done |
-| 2 | Drift exit code (#3) | XS | ✅ done |
-| 3 | Orphan pruning (#1) | M | ✅ done |
-| 4 | Selective sync (#4) | S | ✅ done |
-| 5 | Test infrastructure (#11) | M | 🟡 unit tests done; integration test open |
-| 6 | Config file (#5) | S | ❌ not started |
-| 7 | Extended IPAM (#7) | S–M | ❌ not started |
-| 8 | Virtualization (#6) | M | ✅ done |
-| 9 | Release/packaging (#10) | S | ❌ not started |
-| 10 | Observability (#9) | M | ❌ not started |
-| 11 | Daemon/webhooks (#8) | L | ❌ not started (prereqs #1, #2 now met) |
+| Order | Feature | Effort |
+|-------|---------|--------|
+| 1 | Idempotency integration test | M |
+| 2 | Config file | S |
+| 3 | Extended IPAM | S–M |
+| 4 | Release / packaging | S |
+| 5 | Observability | M |
+| 6 | Daemon / webhooks | L |

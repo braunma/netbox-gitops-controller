@@ -1,0 +1,9 @@
+# Example Patch Panel Device Type
+# Front/rear ports are defined per instance in
+# inventory/hardware/passive/patchpanels.yaml
+manufacturer: "Example Vendor"
+model: "Example Patch Panel 24"
+slug: "patch-panel"
+u_height: 1
+is_full_depth: false
+comments: "Example copper patch panel for testing"
