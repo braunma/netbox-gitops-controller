@@ -141,7 +141,8 @@ state/<name>`). No state in git.
 - Emits a single Terraform variable `vms` (tfvars.json) keyed by VM name with
   `vmid`, sizing, template (from `platform`), cluster/site, and NICs (name +
   `vlan` + static `ip` + `dns_name` + `primary`). MAC is intentionally absent.
-- Errors if any VM lacks a positive `vmid`, or on duplicate VM names.
+- Skips VMs without a `vmid` (NetBox-only, not provisioned); errors when a VM
+  with a `vmid` lacks a `node`, or on duplicate VM names.
 - Run: `go run ./cmd/tfgen --data-dir <dir> --out terraform/generated.tfvars.json`
   (`--out -` writes to stdout).
 
@@ -160,19 +161,22 @@ state/<name>`). No state in git.
 
 ---
 
-## 6. Open questions to resolve before implementation
+## 6. Open questions (resolved)
 
-1. **Template strategy:** how do `platform` slugs map to Proxmox templates — by
-   convention (template name == slug), or an explicit map in a definitions file?
-2. **Node placement:** does `cluster` pick a Proxmox *cluster* (provider targets
-   the cluster, Proxmox schedules the node) or do we need a node hint per VM?
+1. **Template strategy:** ✅ resolved — by convention (Proxmox template name ==
+   `platform` slug); templates are discovered by tag (`var.template_tags`) and
+   matched by name to a numeric id at plan time.
+2. **Node placement:** ✅ resolved — explicit `node:` per VM (a pool is
+   organizational, not a scheduler). Required by tfgen for provisioned VMs.
 3. **VMID custom field:** ✅ resolved — managed declaratively from
-   `definitions/custom_fields/`. Caveat: depends on NetBox 4.x `object_types`
-   (older releases use `content_types`); verify against the target instance.
-4. **Secrets:** Proxmox API token + NetBox token as masked GitLab CI variables
-   (`PROXMOX_*`, existing `NETBOX_*`). Confirm the runner can reach Proxmox.
-5. **Disk model:** YAML `disk` is a single size today; multi-disk VMs would need
-   a richer schema (out of scope for v1, matches the NetBox plan's stance).
+   `definitions/custom_fields/`, using NetBox 4.x `object_types` (target instance
+   confirmed on v4).
+4. **Secrets:** ✅ resolved — Proxmox API token + NetBox token as masked GitLab
+   CI variables (`TF_VAR_proxmox_*`, existing `NETBOX_*`); the Proxmox jobs are
+   opt-in via `ENABLE_PROXMOX`. Confirm the runner can reach Proxmox.
+5. **Disk model:** YAML `disk` is a single size today (omit = inherit the
+   template's disk); multi-disk VMs would need a richer schema (out of scope for
+   v1, matches the NetBox plan's stance).
 
 ---
 

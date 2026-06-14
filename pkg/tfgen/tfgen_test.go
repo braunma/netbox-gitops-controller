@@ -64,11 +64,23 @@ func TestBuildMapsFields(t *testing.T) {
 	}
 }
 
-func TestBuildRequiresVMID(t *testing.T) {
-	vm := clusteredVM()
-	vm.VMID = 0
-	if _, err := Build([]*models.VMConfig{vm}); err == nil {
-		t.Fatal("expected error when vmid is missing")
+func TestBuildSkipsVMsWithoutVMID(t *testing.T) {
+	// A VM without a vmid is NetBox-only: skipped, not an error, and the
+	// provisioned VMs alongside it are still emitted.
+	netboxOnly := clusteredVM()
+	netboxOnly.Name = "doc-only"
+	netboxOnly.VMID = 0
+	provisioned := clusteredVM()
+
+	doc, err := Build([]*models.VMConfig{netboxOnly, provisioned})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if _, ok := doc.VMs["doc-only"]; ok {
+		t.Error("VM without vmid should be skipped, but it was emitted")
+	}
+	if _, ok := doc.VMs["web-01"]; !ok {
+		t.Error("VM with vmid should be emitted")
 	}
 }
 

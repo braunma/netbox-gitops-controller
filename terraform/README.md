@@ -20,6 +20,10 @@ Never edit `generated.tfvars.json` by hand — change the YAML and regenerate:
 go run ./cmd/tfgen --data-dir . --out terraform/generated.tfvars.json
 ```
 
+Only VMs that declare a `vmid` are provisioned here; VMs without one are
+NetBox-only and are skipped by `tfgen` (it reports how many). A VM that declares
+a `vmid` must also declare a `node`.
+
 ## Field mapping (YAML → Proxmox)
 
 | YAML            | Proxmox (bpg)                         |

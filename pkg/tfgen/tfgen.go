@@ -44,15 +44,18 @@ type Interface struct {
 	Primary bool   `json:"primary,omitempty"`
 }
 
-// Build converts loaded VM models into a tfvars Document. Every VM must declare
-// a positive vmid (Proxmox needs a deterministic identifier and we never let it
-// auto-assign), and VM names must be unique since they key the Terraform map.
+// Build converts loaded VM models into a tfvars Document. Only VMs that opt into
+// Proxmox provisioning by declaring a positive vmid are included; VMs without a
+// vmid are NetBox-only and skipped, so the two consumers stay independent. A VM
+// that declares a vmid must also name its target node, and VM names must be
+// unique since they key the Terraform map.
 func Build(vms []*models.VMConfig) (*Document, error) {
 	doc := &Document{VMs: make(map[string]VM, len(vms))}
 
 	for _, vm := range vms {
 		if vm.VMID <= 0 {
-			return nil, fmt.Errorf("VM %q: vmid is required for Proxmox provisioning (set a positive integer)", vm.Name)
+			// NetBox-only VM (no Proxmox identity) — not provisioned here.
+			continue
 		}
 		if vm.Node == "" {
 			return nil, fmt.Errorf("VM %q: node is required for Proxmox provisioning (name the target Proxmox node)", vm.Name)

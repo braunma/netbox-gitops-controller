@@ -30,6 +30,7 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 │   ├── platforms/       # OS / firmware families
 │   ├── tenant_groups/   # Tenant Groups (tenancy)
 │   ├── tenants/         # Tenants (tenancy)
+│   ├── custom_fields/   # Custom field definitions (e.g. vmid)
 │   ├── virtualization/  # cluster_types/, cluster_groups/, clusters/
 │   └── ...              # Other NetBox object types
 ├── inventory/           # Your Private Inventory (gitignored)
@@ -40,14 +41,18 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 ├── example/             # Public Example Data for Tests
 │   ├── definitions/     # Example definitions (for learning/testing)
 │   └── inventory/       # Example inventory (for learning/testing)
+├── terraform/           # Optional Proxmox provisioning (bpg/proxmox)
 ├── pkg/                 # Go Implementation (Core Logic)
 │   ├── client/          # NetBox API Client
 │   ├── loader/          # YAML Data Loader
 │   ├── models/          # Data Models
 │   ├── reconciler/      # Synchronization Logic
+│   ├── tfgen/           # VM YAML → Terraform vars (Proxmox)
 │   └── utils/           # Utilities
-└── cmd/                 # Command-Line Interface
-    └── netbox-gitops/   # Main Entry Point
+└── cmd/                 # Command-Line Interfaces
+    ├── netbox-gitops/   # Main Entry Point (NetBox sync)
+    ├── tfgen/           # Generate Terraform vars from VM YAML
+    └── yamlcheck/       # YAML syntax + model validation
 ```
 
 ### 🔒 Private Data vs. Public Examples

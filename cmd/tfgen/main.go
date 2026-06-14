@@ -57,15 +57,26 @@ func main() {
 		os.Exit(1)
 	}
 
+	// VMs without a vmid are NetBox-only and intentionally not provisioned;
+	// report the count so a forgotten vmid is visible rather than silent.
+	skipped := len(vms) - len(doc.VMs)
+
 	if *out == "-" {
 		os.Stdout.Write(data)
+		if skipped > 0 {
+			fmt.Fprintf(os.Stderr, "ℹ️  Skipped %d NetBox-only VM(s) without a vmid\n", skipped)
+		}
 		return
 	}
 	if err := os.WriteFile(*out, data, 0o644); err != nil {
 		fmt.Fprintf(os.Stderr, "❌ failed to write %s: %v\n", *out, err)
 		os.Exit(1)
 	}
-	fmt.Printf("✅ Wrote %d VM(s) to %s\n", len(doc.VMs), *out)
+	fmt.Printf("✅ Wrote %d VM(s) to %s", len(doc.VMs), *out)
+	if skipped > 0 {
+		fmt.Printf(" (skipped %d NetBox-only VM(s) without a vmid)", skipped)
+	}
+	fmt.Println()
 }
 
 // resolveDataDir mirrors the controller's auto-detection: use the given

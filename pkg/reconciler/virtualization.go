@@ -149,7 +149,7 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 		}
 		// The VMID is stored in NetBox as a custom field (the VM model has no
 		// native slot). The `vmid` custom field must be declared in the
-		// foundation phase; see definitions/extras/custom_fields.
+		// foundation phase; see definitions/custom_fields.
 		if vm.VMID > 0 {
 			payload["custom_fields"] = map[string]interface{}{"vmid": vm.VMID}
 		}
