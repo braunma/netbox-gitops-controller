@@ -437,6 +437,17 @@ func (dr *DeviceReconciler) setPrimaryIP(deviceID, ipID int) error {
 		field = "primary_ip6"
 	}
 
+	// Skip the PATCH if the device already points at this IP. A direct Update
+	// records an "update" unconditionally, so re-setting an unchanged primary
+	// IP inflates the change count on every run.
+	device, err := dr.client.Get("dcim", "devices", deviceID)
+	if err != nil {
+		return fmt.Errorf("failed to get device: %w", err)
+	}
+	if utils.GetIDFromObject(device[field]) == ipID {
+		return nil
+	}
+
 	// Update device
 	err = dr.client.Update("dcim", "devices", deviceID, map[string]interface{}{
 		field: ipID,
@@ -531,18 +542,17 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 func (dr *DeviceReconciler) installDeviceIntoBay(deviceID, deviceBayID int, device *models.DeviceConfig) error {
 	dr.logger.Debug("  Installing device into bay...")
 
-	// Get current device state to check if already installed
-	currentDevice, err := dr.client.Get("dcim", "devices", deviceID)
+	// Check if the bay already holds this device. The device serializer has no
+	// "device_bay" field (the relationship is exposed as the bay's
+	// "installed_device"), so reading it off the device never matched and the
+	// detach/install pair re-ran on every sync, inflating the change count.
+	currentBay, err := dr.client.Get("dcim", "device-bays", deviceBayID)
 	if err != nil {
-		return fmt.Errorf("failed to get current device state: %w", err)
+		return fmt.Errorf("failed to get current device bay state: %w", err)
 	}
-
-	// Check if already installed in the correct bay
-	if deviceBay, ok := currentDevice["device_bay"].(map[string]interface{}); ok {
-		if bayID, ok := deviceBay["id"].(float64); ok && int(bayID) == deviceBayID {
-			dr.logger.Debug("  ✓ Already installed in correct device bay")
-			return nil
-		}
+	if utils.GetIDFromObject(currentBay["installed_device"]) == deviceID {
+		dr.logger.Debug("  ✓ Already installed in correct device bay")
+		return nil
 	}
 
 	if dr.client.IsDryRun() {

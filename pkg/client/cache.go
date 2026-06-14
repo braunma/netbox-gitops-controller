@@ -191,6 +191,31 @@ func (cm *CacheManager) Register(resource string, id int, identifiers ...string)
 	}
 }
 
+// RegisterSite records a site-scoped object under the composite keys
+// "site-{siteID}:{identifier}" that GetSiteID resolves, mirroring how
+// loadResource indexes site-specific resources. The network reconcilers call it
+// right after they Apply a VLAN (or site-scoped VLAN group) so that later steps
+// in the same phase — VLANs resolving their group, prefixes resolving their
+// VLAN — find objects created earlier in the run. Without it those references
+// would only become resolvable once LoadSite runs in a later phase. Callers
+// must pass a real (non-zero) id; a dry-run create returns id 0, and seeding
+// that would make dependent objects diff against a bogus "0" reference.
+func (cm *CacheManager) RegisterSite(resource string, siteID, id int, identifiers ...string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.cache[resource] == nil {
+		cm.cache[resource] = make(map[string]int)
+	}
+	for _, identifier := range identifiers {
+		if identifier == "" {
+			continue
+		}
+		compositeKey := fmt.Sprintf("site-%d:%s", siteID, identifier)
+		cm.cache[resource][compositeKey] = id
+	}
+}
+
 // GetGlobalID retrieves an ID for a global resource (not site-specific)
 // Use this for: device_types, module_types, roles, manufacturers, sites, vrfs
 func (cm *CacheManager) GetGlobalID(resource, identifier string) (int, bool) {

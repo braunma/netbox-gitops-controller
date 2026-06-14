@@ -2,7 +2,6 @@ package reconciler
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
@@ -202,16 +201,14 @@ func TestReconcileVMsFullFlow(t *testing.T) {
 		t.Errorf("VM primary_ip4 = %v, expected IP ID %d", vm["primary_ip4"], utils.GetIDFromObject(ips[0]))
 	}
 
-	// Second run: everything diffs to a no-op except setVMPrimaryIP, which
-	// PATCHes the VM unconditionally (same behavior as the device reconciler).
+	// Second run: everything diffs to a no-op. setVMPrimaryIP now skips the
+	// PATCH when the VM already points at the IP, so an unchanged inventory
+	// produces zero mutations (same behavior as the device reconciler).
 	f.resetMutations()
 	if err := vr.ReconcileVMs(vms); err != nil {
 		t.Fatalf("ReconcileVMs() second run error = %v", err)
 	}
-	muts := f.requireMutationCount(t, 1)
-	if muts[0].method != "PATCH" || !strings.Contains(muts[0].path, "/api/virtualization/virtual-machines/") {
-		t.Errorf("second-run mutation = %s %s, expected only the primary-IP VM PATCH", muts[0].method, muts[0].path)
-	}
+	f.requireMutationCount(t, 0)
 }
 
 func TestReconcileVMsTaggedVLANsIdempotent(t *testing.T) {
