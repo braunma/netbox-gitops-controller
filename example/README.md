@@ -14,20 +14,26 @@ The example data serves two purposes:
 ```
 example/
 ├── definitions/          # NetBox object definitions
-│   ├── extras/          # Tags and custom fields
-│   ├── roles/           # Device and VM roles
-│   ├── sites/           # Data center locations
-│   ├── racks/           # Rack definitions
-│   ├── vrfs/            # Virtual Routing and Forwarding instances
-│   ├── vlan_groups/     # VLAN groupings
-│   ├── vlans/           # VLAN definitions
-│   ├── prefixes/        # IP prefixes
-│   ├── device_types/    # Device type templates
-│   └── module_types/    # Module type templates
-└── inventory/           # Hardware inventory
-    └── hardware/
-        ├── active/      # Active devices (servers, switches, etc.)
-        └── passive/     # Passive devices (patch panels, PDUs, etc.)
+│   ├── extras/           # Tags
+│   ├── custom_fields/    # Custom field definitions (e.g. vmid)
+│   ├── roles/            # Device and VM roles
+│   ├── platforms/        # Platforms / operating systems
+│   ├── tenant_groups/    # Tenant groupings
+│   ├── tenants/          # Tenants
+│   ├── sites/            # Data center locations
+│   ├── racks/            # Rack definitions
+│   ├── vrfs/             # Virtual Routing and Forwarding instances
+│   ├── vlan_groups/      # VLAN groupings
+│   ├── vlans/            # VLAN definitions
+│   ├── prefixes/         # IP prefixes
+│   ├── device_types/     # Device type templates
+│   ├── module_types/     # Module type templates
+│   └── virtualization/   # Cluster types, cluster groups, and clusters
+└── inventory/            # Hardware and VM inventory
+    ├── hardware/
+    │   ├── active/       # Active devices (servers, switches, etc.)
+    │   └── passive/      # Passive devices (patch panels, PDUs, etc.)
+    └── virtual/          # Virtual machines (vms.yaml)
 ```
 
 ## Using Your Own Data

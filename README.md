@@ -10,7 +10,8 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
       * **Opt-in Pruning (`--prune`):** Objects removed from YAML are deleted only when you pass `--prune`, and only if they carry the `gitops` tag — manually created objects are never touched. Combine with `--dry-run` to preview. See the Pruning section below.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
-  * **Coverage:** Manages DCIM (sites, racks, device types, devices, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
+  * **Coverage:** Manages DCIM (sites, racks, device types, devices, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
+  * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. `cmd/tfgen` renders `inventory/virtual/*.yaml` to Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them — a second, independent consumer of one source of truth. See [`docs/PLAN_YAML_VM_PIPELINE.md`](docs/PLAN_YAML_VM_PIPELINE.md) and [`terraform/README.md`](terraform/README.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -29,6 +30,7 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 │   ├── platforms/       # OS / firmware families
 │   ├── tenant_groups/   # Tenant Groups (tenancy)
 │   ├── tenants/         # Tenants (tenancy)
+│   ├── custom_fields/   # Custom field definitions (e.g. vmid)
 │   ├── virtualization/  # cluster_types/, cluster_groups/, clusters/
 │   └── ...              # Other NetBox object types
 ├── inventory/           # Your Private Inventory (gitignored)
@@ -39,14 +41,18 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 ├── example/             # Public Example Data for Tests
 │   ├── definitions/     # Example definitions (for learning/testing)
 │   └── inventory/       # Example inventory (for learning/testing)
+├── terraform/           # Optional Proxmox provisioning (bpg/proxmox)
 ├── pkg/                 # Go Implementation (Core Logic)
 │   ├── client/          # NetBox API Client
 │   ├── loader/          # YAML Data Loader
 │   ├── models/          # Data Models
 │   ├── reconciler/      # Synchronization Logic
+│   ├── tfgen/           # VM YAML → Terraform vars (Proxmox)
 │   └── utils/           # Utilities
-└── cmd/                 # Command-Line Interface
-    └── netbox-gitops/   # Main Entry Point
+└── cmd/                 # Command-Line Interfaces
+    ├── netbox-gitops/   # Main Entry Point (NetBox sync)
+    ├── tfgen/           # Generate Terraform vars from VM YAML
+    └── yamlcheck/       # YAML syntax + model validation
 ```
 
 ### 🔒 Private Data vs. Public Examples

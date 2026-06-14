@@ -534,3 +534,29 @@ func TestVMConfigValidate(t *testing.T) {
 		})
 	}
 }
+
+func TestCustomFieldValidate(t *testing.T) {
+	tests := []struct {
+		name     string
+		cf       CustomField
+		wantErrs []string
+	}{
+		{
+			"valid",
+			CustomField{Name: "vmid", Type: "integer", ObjectTypes: []string{"virtualization.virtualmachine"}},
+			nil,
+		},
+		{"missing name", CustomField{Type: "integer", ObjectTypes: []string{"virtualization.virtualmachine"}}, []string{"name is required"}},
+		{"missing type", CustomField{Name: "vmid", ObjectTypes: []string{"virtualization.virtualmachine"}}, []string{"type is required"}},
+		{
+			"missing object_types",
+			CustomField{Name: "vmid", Type: "integer"},
+			[]string{`custom field "vmid"`, "object_types must list at least one content type"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			checkValidation(t, tt.cf.Validate(), tt.wantErrs)
+		})
+	}
+}

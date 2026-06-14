@@ -1,0 +1,15 @@
+# Custom field definitions (extras app).
+#
+# The `vmid` field stores each VM's Proxmox VMID. NetBox's virtual-machine
+# model has no native VMID slot, so it is modelled as an integer custom field
+# on the virtualization.virtualmachine content type. The per-VM value is set
+# from `vmid:` in inventory/virtual/*.yaml.
+#
+# NetBox 4.x uses `object_types` for the content types a field applies to.
+
+- name: "vmid"
+  type: "integer"
+  label: "Proxmox VMID"
+  description: "Proxmox VE numeric VM identifier (source of truth: GitOps YAML)"
+  object_types:
+    - "virtualization.virtualmachine"

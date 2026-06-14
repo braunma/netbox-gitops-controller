@@ -260,6 +260,18 @@ func runFoundation(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger
 		return err
 	}
 
+	// Custom fields must exist before any object sets a value into one (e.g. the
+	// `vmid` field consumed by virtual machines in the virtualization phase).
+	customFields, err := dataLoader.LoadCustomFields("definitions/custom_fields")
+	if err != nil {
+		logger.Error("Failed to load custom fields", err)
+		return err
+	}
+	if err := foundationReconciler.ReconcileCustomFields(customFields); err != nil {
+		logger.Error("Failed to reconcile custom fields", err)
+		return err
+	}
+
 	platforms, err := dataLoader.LoadPlatforms("definitions/platforms")
 	if err != nil {
 		logger.Error("Failed to load platforms", err)

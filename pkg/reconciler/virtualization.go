@@ -147,6 +147,12 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 		if vm.Disk > 0 {
 			payload["disk"] = vm.Disk
 		}
+		// The VMID is stored in NetBox as a custom field (the VM model has no
+		// native slot). The `vmid` custom field must be declared in the
+		// foundation phase; see definitions/custom_fields.
+		if vm.VMID > 0 {
+			payload["custom_fields"] = map[string]interface{}{"vmid": vm.VMID}
+		}
 
 		// Resolve cluster and/or site. The effective site (used for VLAN
 		// lookups on interfaces) is the VM's own site, or its cluster's site.

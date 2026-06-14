@@ -199,9 +199,11 @@ together; **virtual machines** then live on a cluster (or directly on a site):
 
 # inventory/virtual/vms.yaml
 - name: "web-01"
+  vmid: 101                        # Proxmox VMID (also stored in NetBox)
+  node: "pve-01"                   # Proxmox target node (provisioning only)
   cluster: "berlin-prod-cluster"   # clustered VM; site inherited from cluster
   role_slug: "vm"                  # role must have vm_role: true in NetBox
-  platform: "ubuntu-22-04"
+  platform: "ubuntu-22-04"         # matches the Proxmox template name
   vcpus: 4
   memory: 8192                     # MB
   interfaces:
@@ -216,6 +218,10 @@ together; **virtual machines** then live on a cluster (or directly on a site):
 VM interfaces reuse the device interface semantics (VLANs, IPs, primary IP) but
 are not cabled. **Platforms** and **tenants** are managed in the foundation
 phase and referenced here by slug.
+
+The `vmid`/`node`/`platform` fields are only needed if you also provision these
+VMs in Proxmox from the same YAML — NetBox itself ignores `node`. See
+[`terraform/README.md`](terraform/README.md) for that optional pipeline.
 
 ## 🚀 Using the Examples
 

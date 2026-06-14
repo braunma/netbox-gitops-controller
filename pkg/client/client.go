@@ -305,8 +305,11 @@ func (c *NetBoxClient) Delete(app, endpoint string, id int) error {
 
 // Apply creates or updates an object (idempotent)
 func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]interface{}) (Object, error) {
-	// Inject managed tag
-	payload = c.tagManager.InjectTag(payload, c.managedTagID)
+	// Inject managed tag, except on endpoints whose objects are not taggable
+	// (NetBox would reject an unknown `tags` field).
+	if !constants.UntaggableEndpoints[endpoint] {
+		payload = c.tagManager.InjectTag(payload, c.managedTagID)
+	}
 
 	c.logger.Debug("  → Applying %s with lookup: %v", endpoint, lookup)
 
