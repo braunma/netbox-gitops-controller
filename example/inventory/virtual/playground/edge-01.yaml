@@ -1,0 +1,17 @@
+# A documentation-only, site-only VM: tracked in NetBox, never touched by
+# Terraform (no provision flag). It may still carry a vmid for reference. Lives
+# in the playground environment folder; it is still documented in NetBox because
+# the controller scans inventory/virtual/ recursively across all environments.
+
+- name: "edge-01"
+  vmid: 201
+  site_slug: "test-lab"
+  role_slug: "vm"                  # role must have vm_role: true
+  platform: "debian-12"
+  status: "active"
+  vcpus: 2
+  memory: 4096
+  tags: ["gitops", "development"]
+  interfaces:
+    - name: "eth0"
+      enabled: true

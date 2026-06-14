@@ -40,6 +40,7 @@ ci_ssh_keys = [
   "ssh-ed25519 AAAA...replace-with-your-public-key... user@host",
 ]
 
-# NOTE: the `vms` variable is NOT set here — it is generated from
-# inventory/virtual/*.yaml into generated.tfvars.json and passed with
-# `terraform plan -var-file=generated.tfvars.json`.
+# NOTE: the `vms` variable is NOT set here — it is generated per environment from
+# inventory/virtual/<env>/*.yaml into generated.<env>.tfvars.json and passed with
+# e.g. `terraform plan -var-file=generated.prod.tfvars.json`. Each environment
+# uses its own state (proxmox-<env>); see README.md.

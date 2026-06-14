@@ -1,9 +1,9 @@
 # -----------------------------------------------------------------------------
 # VM inventory (generated)
 # -----------------------------------------------------------------------------
-# This is populated by `cmd/tfgen` (terraform/generated.tfvars.json) from the
-# same YAML the NetBox controller consumes. Do not edit generated.tfvars.json by
-# hand — change inventory/virtual/*.yaml and regenerate.
+# This is populated by `cmd/tfgen` (terraform/generated.<env>.tfvars.json) from
+# the same YAML the NetBox controller consumes. Do not edit the generated files
+# by hand — change inventory/virtual/<env>/*.yaml and regenerate.
 #
 # Optional attributes use defaults so VMs that omit a field (tfgen drops empty
 # values) still decode cleanly.

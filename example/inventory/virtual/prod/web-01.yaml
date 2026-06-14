@@ -1,9 +1,6 @@
-# Example Virtual Machines
-# Demonstrates the two modes the pipeline supports:
-#   1. A provisioned VM (provision: true) — documented in NetBox AND created in
-#      Proxmox by Terraform, cloned from the template at vm_template_id.
-#   2. A documentation-only VM (provision unset) — reconciled into NetBox only,
-#      and skipped by tfgen even though it carries a vmid for reference.
+# A provisioned production VM: documented in NetBox AND created in Proxmox by
+# Terraform (cloned from the template at vm_template_id), using the per-env
+# "proxmox-prod" Terraform state. One file per VM.
 
 - name: "web-01"
   provision: true                  # create this VM in Proxmox via Terraform
@@ -29,18 +26,3 @@
         address: "10.0.100.21/24"
         dns_name: "web-01.berlin.example.com"
       address_role: "primary"      # promotes this IP to the VM's primary_ip4
-
-# A documentation-only, site-only VM: tracked in NetBox, never touched by
-# Terraform (no provision flag). It may still carry a vmid for reference.
-- name: "edge-01"
-  vmid: 201
-  site_slug: "test-lab"
-  role_slug: "vm"                  # role must have vm_role: true
-  platform: "debian-12"
-  status: "active"
-  vcpus: 2
-  memory: 4096
-  tags: ["gitops", "development"]
-  interfaces:
-    - name: "eth0"
-      enabled: true
