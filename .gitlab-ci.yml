@@ -312,7 +312,7 @@ tf_generate:
     - cd terraform
     - export TF_STATE_NAME="proxmox-${ENV}"
     - export TF_ADDRESS="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
-    - terraform init
+    - terraform init -input=false
       -backend-config="address=${TF_ADDRESS}"
       -backend-config="lock_address=${TF_ADDRESS}/lock"
       -backend-config="unlock_address=${TF_ADDRESS}/lock"
@@ -331,7 +331,7 @@ tf_validate:
     - tf_generate
   before_script:
     - cd terraform
-    - terraform init -backend=false
+    - terraform init -input=false -backend=false
   script:
     - terraform fmt -check -recursive
     - terraform validate
@@ -341,7 +341,11 @@ tf_validate:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
-# One plan per environment, each against its own state.
+# One plan per environment, each against its own state. The plan is saved to a
+# binary file (tfplan.<env>) that tf_apply consumes verbatim — so what gets
+# applied is exactly what was planned and reviewed, never a fresh re-plan. This
+# runs on MRs (preview) and on the default branch (so the apply pipeline has a
+# fresh, reviewable plan to apply).
 tf_plan:
   extends: .terraform_env
   stage: plan
@@ -351,28 +355,41 @@ tf_plan:
     matrix:
       - ENV: *proxmox_envs
   script:
-    - terraform plan -var-file="generated.${ENV}.tfvars.json" -out="tfplan.${ENV}" | tee "tf-plan-${ENV}.txt"
+    - terraform plan -input=false -lock-timeout=120s -var-file="generated.${ENV}.tfvars.json" -out="tfplan.${ENV}" | tee "tf-plan-${ENV}.txt"
   artifacts:
     paths:
       - terraform/tfplan.*
       - terraform/tf-plan-*.txt
+      # Pass the resolved dependency lock to tf_apply so its `terraform init`
+      # selects the exact provider version this plan was built against. Without
+      # it, a patch released within `~> 0.109.0` between the two jobs would make
+      # `terraform apply <planfile>` reject the saved plan. (If a committed
+      # terraform/.terraform.lock.hcl exists, it takes precedence and this is a
+      # harmless no-op.)
+      - terraform/.terraform.lock.hcl
     expire_in: 1 week
   rules:
     - if: $ENABLE_PROXMOX != "true"
       when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
 
-# One apply per environment (manual gate), each against its own state.
+# One apply per environment (manual gate), each against its own state. It applies
+# the saved plan file from tf_plan rather than re-planning, so the operator
+# approves and applies exactly the reviewed change set (no -auto-approve of an
+# unseen plan). If the state has drifted since the plan, Terraform rejects the
+# stale plan and the job fails safely instead of applying something different —
+# re-run the pipeline to get a fresh plan.
 tf_apply:
   extends: .terraform_env
   stage: apply
   needs:
-    - tf_generate
+    - tf_plan
   parallel:
     matrix:
       - ENV: *proxmox_envs
   script:
-    - terraform apply -auto-approve -var-file="generated.${ENV}.tfvars.json"
+    - terraform apply -input=false -lock-timeout=120s "tfplan.${ENV}"
   rules:
     - if: $ENABLE_PROXMOX != "true"
       when: never
