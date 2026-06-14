@@ -1,4 +1,4 @@
-# Proxmox provisioning (Terraform)
+# Proxmox provisioning (OpenTofu)
 
 This module provisions the VMs declared in `inventory/virtual/<env>/*.yaml` onto
 Proxmox VE, using the [`bpg/proxmox`](https://registry.terraform.io/providers/bpg/proxmox)
@@ -11,11 +11,11 @@ first being the NetBox controller. The two run independently (see
 ```
 inventory/virtual/<env>/*.yaml          (one file per VM; env = prod|stage|playground)
    └─ cmd/tfgen --group <env> ──▶ terraform/generated.<env>.tfvars.json   (var "vms")
-                                     └─ terraform plan/apply ──▶ Proxmox   (state proxmox-<env>)
+                                     └─ tofu plan/apply ──▶ Proxmox   (state proxmox-<env>)
 ```
 
 Each **environment** is a subfolder of `inventory/virtual/` and is provisioned
-into its **own GitLab-managed Terraform state** (`proxmox-<env>`), so a change in
+into its **own GitLab-managed OpenTofu state** (`proxmox-<env>`), so a change in
 `playground` can never touch `prod`. Put **one YAML file per VM** inside the env
 folder. The NetBox controller scans `inventory/virtual/` recursively, so every VM
 in every environment is still documented in NetBox from the same files.
@@ -32,7 +32,7 @@ NetBox-only and is skipped by `tfgen` (it reports how many) — even one that
 carries a `vmid`/`vm_template_id` for documentation. A provisioned VM must also
 declare a `node`, a `vmid` (the Proxmox VMID to create) and a `vm_template_id`
 (the template VMID to clone) — `tfgen` rejects the input otherwise, so the error
-surfaces before Terraform runs.
+surfaces before OpenTofu runs.
 
 ## Field mapping (YAML → Proxmox)
 
@@ -61,7 +61,7 @@ both NetBox and Proxmox.
 The module is the desired state, so editing the YAML and re-running the pipeline
 reconciles existing VMs — not just first-time creation:
 
-- **More CPU/RAM/disk:** change `vcpus`/`memory`/`disk`; Terraform updates the
+- **More CPU/RAM/disk:** change `vcpus`/`memory`/`disk`; OpenTofu updates the
   running VM in place. Omitting `disk` (or `0`) inherits the template's disk; a
   larger value grows the volume — Proxmox can't shrink a disk, so lowering it is
   rejected, not a rebuild.
@@ -91,7 +91,7 @@ Proxmox/cloud-init behaviour.
 
 ### Configuration via GitLab CI/CD variables (no tfvars file needed)
 
-You do **not** maintain a `terraform.tfvars` file for CI. Terraform automatically
+You do **not** maintain a `terraform.tfvars` file for CI. OpenTofu automatically
 reads any pipeline variable named `TF_VAR_<name>` as the input variable `<name>`,
 and the jobs only pass `-var-file=generated.tfvars.json` (the `vms` list — no
 secrets). So set everything in **GitLab → Settings → CI/CD → Variables**:
@@ -140,7 +140,7 @@ secrets). So set everything in **GitLab → Settings → CI/CD → Variables**:
 The pipeline provisions one **environment per folder**, each into its own
 GitLab-managed state:
 
-| Folder                          | Terraform state    | CI `environment` |
+| Folder                          | OpenTofu state     | CI `environment` |
 |---------------------------------|--------------------|------------------|
 | `inventory/virtual/prod/`       | `proxmox-prod`     | `proxmox-prod`   |
 | `inventory/virtual/stage/`      | `proxmox-stage`    | `proxmox-stage`  |
@@ -150,14 +150,14 @@ GitLab-managed state:
 `.gitlab-ci.yml`); `tf_apply` is a manual gate per env. `tf_plan` writes a saved
 plan file (`tfplan.<env>`) and `tf_apply` applies **that exact file** rather than
 re-planning, so an operator approves and applies precisely the reviewed change
-set — and Terraform rejects the plan if the state has drifted since, so the job
+set — and OpenTofu rejects the plan if the state has drifted since, so the job
 fails safely instead of applying something unreviewed. The same Proxmox
 credentials (`TF_VAR_*`) are shared across all environments.
 
 **Why per-env, not per-VM state:** environments are a small fixed set, so the
 blast radius that matters (prod vs. the rest) is isolated with a 3-line matrix.
 A single VM can still be changed in isolation within its env state with
-`terraform apply -target='proxmox_virtual_environment_vm.this["web-01"]'`.
+`tofu apply -target='proxmox_virtual_environment_vm.this["web-01"]'`.
 
 **Add an environment:** create `inventory/virtual/<env>/`, then add `<env>` to
 the single `.proxmox_envs` anchor in `.gitlab-ci.yml` — it drives the
@@ -167,12 +167,12 @@ the single `.proxmox_envs` anchor in `.gitlab-ci.yml` — it drives the
 
 Because this is a GitOps module, the YAML is the desired state: **removing a VM
 from `inventory/virtual/<env>/` (or making a change Proxmox can only satisfy by
-recreating the VM) makes Terraform destroy a real, running VM.** That is
+recreating the VM) makes OpenTofu destroy a real, running VM.** That is
 irreversible, so the pipeline defends against it in layers:
 
 1. **Saved plan, not blind apply.** `tf_apply` applies the exact `tfplan.<env>`
    produced and reviewed in `tf_plan` — never a fresh re-plan. If the state has
-   drifted since the plan, Terraform rejects the stale plan and the job fails
+   drifted since the plan, OpenTofu rejects the stale plan and the job fails
    safely.
 2. **Manual gate.** `tf_apply` is `when: manual` on the default branch, one
    button per environment.
@@ -196,8 +196,8 @@ platforms:
 
 ```sh
 cd terraform
-terraform init
-terraform providers lock -platform=linux_amd64 -platform=darwin_arm64
+tofu init
+tofu providers lock -platform=linux_amd64 -platform=darwin_arm64
 git add .terraform.lock.hcl
 ```
 
@@ -208,5 +208,5 @@ pipeline stays self-consistent — but a committed lock file is the durable fix.
 ## Status
 
 Scaffold — written to be correct against bpg/proxmox ~0.109 but **not yet run
-against a live Proxmox**. Validate with `terraform validate` and a `plan`
+against a live Proxmox**. Validate with `tofu validate` and a `plan`
 against your environment before applying.
