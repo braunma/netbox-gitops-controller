@@ -43,21 +43,28 @@ const (
 	WaitAfterModuleDelete = 200
 )
 
-// Template endpoints (don't support tags)
-var TemplateEndpoints = []string{
-	"interface_templates",
-	"front_port_templates",
-	"rear_port_templates",
-	"device_bay_templates",
-	"module_bay_templates",
-}
-
 // UntaggableEndpoints are NetBox endpoints whose objects are not taggable, so
-// the managed-tag must not be injected into their payloads (NetBox rejects an
-// unknown `tags` field). These objects are therefore also not prunable by tag
-// and are intentionally excluded from pruneTargets.
+// the managed tag must not be injected into their payloads. These fall into two
+// groups:
+//
+//   - Objects NetBox rejects an unknown `tags` field on (e.g. custom-fields).
+//   - Component templates and the tag objects themselves, which silently accept
+//     but never store/return a `tags` field. Injecting one there makes every
+//     reconcile see a phantom diff — the fetched object never reports the tag
+//     back, so `tags` looks changed and the object is re-PATCHed on every run
+//     (the change is invisible in the diff output because `tags` is hidden).
+//
+// Endpoint keys use the hyphenated form passed to Apply (e.g. "rear-port-templates").
+// These objects are also not prunable by tag and are intentionally excluded
+// from pruneTargets.
 var UntaggableEndpoints = map[string]bool{
-	"custom-fields": true,
+	"custom-fields":        true,
+	"tags":                 true,
+	"interface-templates":  true,
+	"front-port-templates": true,
+	"rear-port-templates":  true,
+	"device-bay-templates": true,
+	"module-bay-templates": true,
 }
 
 // Field transforms for API calls

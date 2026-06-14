@@ -484,6 +484,21 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 			continue
 		}
 
+		// Map-valued desired fields (currently only custom_fields) are plain
+		// dictionaries of scalar values, not related-object references. NetBox
+		// returns the full set of defined custom fields, so we compare the
+		// desired entries as a subset: the field is changed only when a declared
+		// value differs from what NetBox reports. Without this, the generic
+		// nested-object handling below reduced the existing map to a scalar (0),
+		// which never matched the desired map and re-PATCHed it on every run.
+		if desiredMap, ok := desiredValue.(map[string]interface{}); ok {
+			existingMap, _ := existingValue.(map[string]interface{})
+			if !mapSubsetEqual(existingMap, desiredMap) {
+				changes[key] = desiredValue
+			}
+			continue
+		}
+
 		// Handle nested objects. NetBox renders two different things as nested
 		// objects in API responses:
 		//   - related objects (site, role, device_type, ...): {"id": N, ...}
@@ -574,6 +589,22 @@ func scalarFromNetBoxObject(m map[string]interface{}) interface{} {
 		return v
 	}
 	return utils.GetIDFromObject(m)
+}
+
+// mapSubsetEqual reports whether every entry in desired is present in existing
+// with an equal value. It is used for dictionary-valued fields such as
+// custom_fields, where NetBox returns every defined field but the desired
+// payload only declares the subset the controller manages. A declared field
+// that is absent from existing (e.g. a custom field defined after the object was
+// created) counts as a difference so the value gets written.
+func mapSubsetEqual(existing, desired map[string]interface{}) bool {
+	for key, desiredValue := range desired {
+		existingValue, ok := existing[key]
+		if !ok || !valuesEqual(existingValue, desiredValue) {
+			return false
+		}
+	}
+	return true
 }
 
 // valuesEqual compares two values for equality
