@@ -16,7 +16,7 @@ changed where it was wrong.
 | 2 | **Retry/backoff** for transient failures — network errors, 429 and 5xx retried with exponential backoff (1s/2s/4s, ≤3 retries); 4xx (except 429) never retried, and POST never retried on a server response (no duplicate creates). | ✅ done | `pkg/client/client.go` (`doWithRetry`, `isRetryableStatus`) |
 | 3 | **Post-unmarshal model validation** — every model has `Validate()`; the loader calls it after unmarshal and reports all errors before any API call (e.g. `device_bay` ↔ `parent_device` pairing, required slugs). | ✅ done (one gap) | `pkg/loader/loader.go`, `pkg/models/validate.go`, `validate_test.go` |
 | 4 | **Cache API migration** — all reconcilers use explicit `GetGlobalID()`/`GetSiteID()`; the legacy collision-prone `CacheManager.GetID()` was removed. (`TagManager.GetID(slug)` is an unrelated tag-by-slug lookup.) | ✅ done | reconcilers, `pkg/client/cache.go` |
-| 5 | **Pruning** — the README's "safe pruning" claim is now backed by an actual implementation (opt-in `--prune`, gitops-tagged orphans only). | ✅ done | `pkg/client/prune.go`, see `MISSING_FEATURES.md` §1 |
+| 5 | **Pruning** — the README's "safe pruning" claim is now backed by an actual implementation (opt-in `--prune`, gitops-tagged orphans only). | ✅ done | `pkg/client/prune.go`, see `MISSING_FEATURES.md` |
 
 **Remaining gap (fix #3):** wiring the same `Validate()` checks into the
 `cmd/yamlcheck` CLI — `yamlcheck` currently checks YAML syntax, not model

@@ -150,7 +150,7 @@ File: `inventory/hardware/active/switches.yaml`
 **Error: "400 Bad Request: {'type': ['This field may not be blank.']}"**
 
   * **Cause:** A device interface or template is missing the `type` definition in the YAML.
-  * **Solution:** Ensure every interface in `definitions/device_types.yaml` has a valid type (e.g., `1000base-t`, `virtual`, `lag`).
+  * **Solution:** Ensure every interface in your `definitions/device_types/` files has a valid type (e.g., `1000base-t`, `virtual`, `lag`).
 
 **Cables are "flapping" (Deleting... Creating... on every run)**
 

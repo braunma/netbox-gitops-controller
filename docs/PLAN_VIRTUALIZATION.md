@@ -5,7 +5,7 @@ declaratively — cluster types, cluster groups, clusters, virtual machines and 
 interfaces (with IP/VLAN/primary-IP assignment) — mirroring the DCIM device
 flow. Platforms (`dcim/platforms`) and tenants/tenant groups (`tenancy`) are
 managed in the **foundation phase** since both devices and VMs reference them.
-Tracked as feature #6 in `docs/MISSING_FEATURES.md`.
+Tracked in `docs/MISSING_FEATURES.md`.
 
 Implementation: `pkg/reconciler/virtualization.go` (clusters/VMs/VM interfaces),
 the platform/tenant methods in `pkg/reconciler/foundation.go`, the
