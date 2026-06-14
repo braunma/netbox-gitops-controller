@@ -22,6 +22,7 @@ import (
 func main() {
 	dataDir := flag.String("data-dir", ".", "Base directory containing inventory/ (falls back to example/ when not found)")
 	out := flag.String("out", "terraform/generated.tfvars.json", "Output tfvars.json path (use '-' for stdout)")
+	group := flag.String("group", "", "Inventory subfolder under inventory/virtual to load, e.g. an environment like 'prod' (empty = every environment)")
 	flag.Parse()
 
 	// When emitting to stdout, reserve it for the tfvars JSON and route all
@@ -38,8 +39,16 @@ func main() {
 		os.Exit(1)
 	}
 
+	// Each environment (prod/stage/playground) lives in its own subfolder under
+	// inventory/virtual and is provisioned into its own Terraform state. With no
+	// --group, load every environment (back-compat / NetBox-style full scan).
+	folder := "inventory/virtual"
+	if *group != "" {
+		folder = filepath.Join("inventory/virtual", *group)
+	}
+
 	dl := loader.NewDataLoader(dir, logger)
-	vms, err := dl.LoadVMs("inventory/virtual")
+	vms, err := dl.LoadVMs(folder)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "❌ failed to load VMs: %v\n", err)
 		os.Exit(1)
@@ -57,14 +66,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// VMs without a vmid are NetBox-only and intentionally not provisioned;
-	// report the count so a forgotten vmid is visible rather than silent.
+	// VMs without `provision: true` are NetBox-only and intentionally not
+	// provisioned; report the count so a forgotten flag is visible, not silent.
 	skipped := len(vms) - len(doc.VMs)
 
 	if *out == "-" {
 		os.Stdout.Write(data)
 		if skipped > 0 {
-			fmt.Fprintf(os.Stderr, "ℹ️  Skipped %d NetBox-only VM(s) without a vmid\n", skipped)
+			fmt.Fprintf(os.Stderr, "ℹ️  Skipped %d NetBox-only VM(s) (provision not set)\n", skipped)
 		}
 		return
 	}
@@ -74,7 +83,7 @@ func main() {
 	}
 	fmt.Printf("✅ Wrote %d VM(s) to %s", len(doc.VMs), *out)
 	if skipped > 0 {
-		fmt.Printf(" (skipped %d NetBox-only VM(s) without a vmid)", skipped)
+		fmt.Printf(" (skipped %d NetBox-only VM(s); provision not set)", skipped)
 	}
 	fmt.Println()
 }

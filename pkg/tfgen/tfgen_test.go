@@ -10,15 +10,17 @@ import (
 
 func clusteredVM() *models.VMConfig {
 	return &models.VMConfig{
-		Name:     "web-01",
-		VMID:     101,
-		Node:     "pve-01",
-		Cluster:  "berlin-prod-cluster",
-		Platform: "ubuntu-22-04",
-		VCPUs:    4,
-		Memory:   8192,
-		Disk:     100,
-		Tags:     []string{"gitops", "production"},
+		Name:         "web-01",
+		Provision:    true,
+		VMID:         101,
+		VMTemplateID: 800,
+		Node:         "pve-01",
+		Cluster:      "berlin-prod-cluster",
+		Platform:     "ubuntu-22-04",
+		VCPUs:        4,
+		Memory:       8192,
+		Disk:         100,
+		Tags:         []string{"gitops", "production"},
 		Interfaces: []models.VMInterfaceConfig{
 			{
 				Name:         "eth0",
@@ -43,7 +45,7 @@ func TestBuildMapsFields(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected VM keyed by name, got keys %v", doc.VMs)
 	}
-	if vm.VMID != 101 || vm.Node != "pve-01" || vm.Cluster != "berlin-prod-cluster" || vm.Platform != "ubuntu-22-04" {
+	if vm.VMID != 101 || vm.VMTemplateID != 800 || vm.Node != "pve-01" || vm.Cluster != "berlin-prod-cluster" || vm.Platform != "ubuntu-22-04" {
 		t.Errorf("unexpected VM scalar fields: %+v", vm)
 	}
 	if vm.VCPUs != 4 || vm.Memory != 8192 || vm.Disk != 100 {
@@ -93,12 +95,12 @@ func TestBuildPreservesInterfaceOrderAndPrimary(t *testing.T) {
 	}
 }
 
-func TestBuildSkipsVMsWithoutVMID(t *testing.T) {
-	// A VM without a vmid is NetBox-only: skipped, not an error, and the
-	// provisioned VMs alongside it are still emitted.
+func TestBuildSkipsVMsWithoutProvision(t *testing.T) {
+	// A VM without provision: true is NetBox-only: skipped, not an error, and the
+	// provisioned VMs alongside it are still emitted — even if it carries a vmid.
 	netboxOnly := clusteredVM()
 	netboxOnly.Name = "doc-only"
-	netboxOnly.VMID = 0
+	netboxOnly.Provision = false
 	provisioned := clusteredVM()
 
 	doc, err := Build([]*models.VMConfig{netboxOnly, provisioned})
@@ -106,10 +108,10 @@ func TestBuildSkipsVMsWithoutVMID(t *testing.T) {
 		t.Fatalf("Build returned error: %v", err)
 	}
 	if _, ok := doc.VMs["doc-only"]; ok {
-		t.Error("VM without vmid should be skipped, but it was emitted")
+		t.Error("VM without provision should be skipped, but it was emitted")
 	}
 	if _, ok := doc.VMs["web-01"]; !ok {
-		t.Error("VM with vmid should be emitted")
+		t.Error("VM with provision should be emitted")
 	}
 }
 
@@ -154,13 +156,22 @@ func TestBuildRequiresNode(t *testing.T) {
 	}
 }
 
-func TestBuildRequiresPlatform(t *testing.T) {
-	// A provisioned VM clones from a template named by its platform, so a vmid
-	// without a platform is an error rather than an opaque Terraform failure.
+func TestBuildRequiresTemplateID(t *testing.T) {
+	// A provisioned VM clones from vm_template_id, so its absence is an error
+	// rather than an opaque Terraform failure.
 	vm := clusteredVM()
-	vm.Platform = ""
+	vm.VMTemplateID = 0
 	if _, err := Build([]*models.VMConfig{vm}); err == nil {
-		t.Fatal("expected error when platform is missing")
+		t.Fatal("expected error when vm_template_id is missing")
+	}
+}
+
+func TestBuildRequiresVMID(t *testing.T) {
+	// A provisioned VM must declare the VMID to create.
+	vm := clusteredVM()
+	vm.VMID = 0
+	if _, err := Build([]*models.VMConfig{vm}); err == nil {
+		t.Fatal("expected error when vmid is missing")
 	}
 }
 
@@ -175,11 +186,13 @@ func TestBuildRejectsDuplicateNames(t *testing.T) {
 
 func TestBuildSiteOnlyVMNoMAC(t *testing.T) {
 	vm := &models.VMConfig{
-		Name:     "edge-01",
-		VMID:     201,
-		Node:     "pve-06",
-		Platform: "debian-12",
-		SiteSlug: "test-lab",
+		Name:         "edge-01",
+		Provision:    true,
+		VMID:         201,
+		VMTemplateID: 801,
+		Node:         "pve-06",
+		Platform:     "debian-12",
+		SiteSlug:     "test-lab",
 		Interfaces: []models.VMInterfaceConfig{
 			{Name: "eth0", MACAddress: "de:ad:be:ef:00:01"},
 		},

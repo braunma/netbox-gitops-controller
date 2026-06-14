@@ -147,11 +147,20 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 		if vm.Disk > 0 {
 			payload["disk"] = vm.Disk
 		}
-		// The VMID is stored in NetBox as a custom field (the VM model has no
-		// native slot). The `vmid` custom field must be declared in the
-		// foundation phase; see definitions/custom_fields.
+		// The VMID and the clone template id are stored in NetBox as custom
+		// fields (the VM model has no native slot). Both `vmid` and
+		// `vm_template_id` custom fields must be declared in the foundation
+		// phase; see definitions/custom_fields. These are documentation only —
+		// Terraform reads them from the YAML, not from NetBox.
+		customFields := map[string]interface{}{}
 		if vm.VMID > 0 {
-			payload["custom_fields"] = map[string]interface{}{"vmid": vm.VMID}
+			customFields["vmid"] = vm.VMID
+		}
+		if vm.VMTemplateID > 0 {
+			customFields["vm_template_id"] = vm.VMTemplateID
+		}
+		if len(customFields) > 0 {
+			payload["custom_fields"] = customFields
 		}
 
 		// Resolve cluster and/or site. The effective site (used for VLAN

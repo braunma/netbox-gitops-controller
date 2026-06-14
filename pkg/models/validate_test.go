@@ -527,6 +527,21 @@ func TestVMConfigValidate(t *testing.T) {
 				Interfaces: []VMInterfaceConfig{{Name: "eth0", IP: &IPConfig{Address: "10.0.0.10/24"}}}},
 			nil,
 		},
+		{
+			"provision without vmid/template/node",
+			VMConfig{Name: "web-01", Cluster: "prod-cluster", Provision: true},
+			[]string{
+				"vmid is required when provision is true",
+				"vm_template_id is required when provision is true",
+				"node is required when provision is true",
+			},
+		},
+		{
+			"valid provisioned vm",
+			VMConfig{Name: "web-01", Cluster: "prod-cluster", Provision: true,
+				VMID: 101, VMTemplateID: 800, Node: "pve-01"},
+			nil,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

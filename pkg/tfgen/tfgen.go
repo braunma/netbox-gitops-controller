@@ -21,17 +21,20 @@ type Document struct {
 // VM is the Terraform-facing view of a virtual machine: the declared facts a
 // Proxmox provider needs, derived only from YAML (no observed/runtime state).
 type VM struct {
-	Name       string      `json:"name"`
-	VMID       int         `json:"vmid"`
-	Node       string      `json:"node"`
-	Cluster    string      `json:"cluster,omitempty"`
-	Site       string      `json:"site,omitempty"`
-	Platform   string      `json:"platform,omitempty"`
-	VCPUs      int         `json:"vcpus,omitempty"`
-	Memory     int         `json:"memory,omitempty"`
-	Disk       int         `json:"disk,omitempty"`
-	Tags       []string    `json:"tags,omitempty"`
-	Interfaces []Interface `json:"interfaces"`
+	Name string `json:"name"`
+	VMID int    `json:"vmid"`
+	// VMTemplateID is the Proxmox VMID of the template to clone from. It is the
+	// only template selector Terraform uses.
+	VMTemplateID int         `json:"vm_template_id"`
+	Node         string      `json:"node"`
+	Cluster      string      `json:"cluster,omitempty"`
+	Site         string      `json:"site,omitempty"`
+	Platform     string      `json:"platform,omitempty"` // documentation only; not used to clone
+	VCPUs        int         `json:"vcpus,omitempty"`
+	Memory       int         `json:"memory,omitempty"`
+	Disk         int         `json:"disk,omitempty"`
+	Tags         []string    `json:"tags,omitempty"`
+	Interfaces   []Interface `json:"interfaces"`
 }
 
 // Interface is the Terraform-facing view of a VM NIC. The MAC is deliberately
@@ -45,39 +48,44 @@ type Interface struct {
 }
 
 // Build converts loaded VM models into a tfvars Document. Only VMs that opt into
-// Proxmox provisioning by declaring a positive vmid are included; VMs without a
-// vmid are NetBox-only and skipped, so the two consumers stay independent. A VM
-// that declares a vmid must also name its target node and a platform (the clone
-// template), and VM names must be unique since they key the Terraform map.
+// Proxmox provisioning by setting `provision: true` are included; every other VM
+// is NetBox-only and skipped, so the two consumers stay independent. A
+// provisioned VM must declare its target node, a vmid (the Proxmox VMID to
+// create) and a vm_template_id (the template to clone); VM names must be unique
+// since they key the Terraform map.
 func Build(vms []*models.VMConfig) (*Document, error) {
 	doc := &Document{VMs: make(map[string]VM, len(vms))}
 
 	for _, vm := range vms {
-		if vm.VMID <= 0 {
-			// NetBox-only VM (no Proxmox identity) — not provisioned here.
+		if !vm.Provision {
+			// NetBox-only VM (not opted into provisioning) — skipped here.
 			continue
+		}
+		if vm.VMID <= 0 {
+			return nil, fmt.Errorf("VM %q: vmid is required for Proxmox provisioning (the VMID to create)", vm.Name)
+		}
+		if vm.VMTemplateID <= 0 {
+			return nil, fmt.Errorf("VM %q: vm_template_id is required for Proxmox provisioning (the template VMID to clone, e.g. 800)", vm.Name)
 		}
 		if vm.Node == "" {
 			return nil, fmt.Errorf("VM %q: node is required for Proxmox provisioning (name the target Proxmox node)", vm.Name)
-		}
-		if vm.Platform == "" {
-			return nil, fmt.Errorf("VM %q: platform is required for Proxmox provisioning (it selects the clone template)", vm.Name)
 		}
 		if _, dup := doc.VMs[vm.Name]; dup {
 			return nil, fmt.Errorf("duplicate VM name %q: names must be unique to key the Terraform map", vm.Name)
 		}
 
 		out := VM{
-			Name:     vm.Name,
-			VMID:     vm.VMID,
-			Node:     vm.Node,
-			Cluster:  vm.Cluster,
-			Site:     vm.SiteSlug,
-			Platform: vm.Platform,
-			VCPUs:    vm.VCPUs,
-			Memory:   vm.Memory,
-			Disk:     vm.Disk,
-			Tags:     withManagedTag(vm.Tags),
+			Name:         vm.Name,
+			VMID:         vm.VMID,
+			VMTemplateID: vm.VMTemplateID,
+			Node:         vm.Node,
+			Cluster:      vm.Cluster,
+			Site:         vm.SiteSlug,
+			Platform:     vm.Platform,
+			VCPUs:        vm.VCPUs,
+			Memory:       vm.Memory,
+			Disk:         vm.Disk,
+			Tags:         withManagedTag(vm.Tags),
 		}
 
 		out.Interfaces = make([]Interface, 0, len(vm.Interfaces))
