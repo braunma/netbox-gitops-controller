@@ -237,6 +237,18 @@ func (g *TenantGroup) Validate() error {
 	return wrap("tenant group", g.Name, errs)
 }
 
+// Validate checks required fields of a CustomField.
+func (c *CustomField) Validate() error {
+	errs := requireFields(map[string]string{
+		"name": c.Name,
+		"type": c.Type,
+	})
+	if len(c.ObjectTypes) == 0 {
+		errs = append(errs, errors.New("object_types must list at least one content type (e.g. virtualization.virtualmachine)"))
+	}
+	return wrap("custom field", c.Name, errs)
+}
+
 // Validate checks required fields of a Tenant.
 func (t *Tenant) Validate() error {
 	errs := requireFields(map[string]string{

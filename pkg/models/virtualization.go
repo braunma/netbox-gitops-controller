@@ -53,6 +53,7 @@ type VMInterfaceConfig struct {
 // cluster or a site (NetBox allows non-clustered, site-scoped VMs).
 type VMConfig struct {
 	Name       string              `yaml:"name" json:"name" validate:"required"`
+	VMID       int                 `yaml:"vmid,omitempty" json:"vmid,omitempty"`
 	Cluster    string              `yaml:"cluster,omitempty" json:"cluster,omitempty"`
 	SiteSlug   string              `yaml:"site_slug,omitempty" json:"site_slug,omitempty"`
 	RoleSlug   string              `yaml:"role_slug,omitempty" json:"role_slug,omitempty"`

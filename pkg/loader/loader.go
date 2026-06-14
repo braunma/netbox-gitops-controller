@@ -148,6 +148,17 @@ func (dl *DataLoader) LoadDevices(folder string) ([]*models.DeviceConfig, error)
 	return devices, nil
 }
 
+// LoadCustomFields loads custom field definitions from a folder
+func (dl *DataLoader) LoadCustomFields(folder string) ([]*models.CustomField, error) {
+	var fields []*models.CustomField
+	err := dl.loadFromFolder(folder, &fields)
+	if err != nil {
+		return nil, err
+	}
+	dl.logger.Debug("Loaded %d custom fields from %s", len(fields), folder)
+	return fields, nil
+}
+
 // LoadPlatforms loads platform definitions from a folder
 func (dl *DataLoader) LoadPlatforms(folder string) ([]*models.Platform, error) {
 	var platforms []*models.Platform
@@ -401,6 +412,16 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		data, _ := yaml.Marshal(items)
 		if err := yaml.Unmarshal(data, &newItems); err != nil {
 			return fmt.Errorf("failed to unmarshal devices: %w", err)
+		}
+		if err := validateItems(path, newItems); err != nil {
+			return err
+		}
+		*t = append(*t, newItems...)
+	case *[]*models.CustomField:
+		var newItems []*models.CustomField
+		data, _ := yaml.Marshal(items)
+		if err := yaml.Unmarshal(data, &newItems); err != nil {
+			return fmt.Errorf("failed to unmarshal custom fields: %w", err)
 		}
 		if err := validateItems(path, newItems); err != nil {
 			return err

@@ -5,8 +5,10 @@ source of truth to **both** (a) describe VMs in NetBox and (b) provision those
 VMs in Proxmox via Terraform — all driven by one GitLab pipeline, one runner,
 one repository.
 
-**Status:** 📐 Design. No code yet. Records the architecture and the decisions
-made on 2026-06-13/14.
+**Status:** 🚧 In progress. Architecture + decisions recorded 2026-06-13/14.
+Implemented so far: VMID model field, declarative `vmid` custom field
+(foundation phase), VM-payload wiring, and `cmd/tfgen` (YAML → tfvars.json)
+with tests. Remaining: the `terraform/` module and `.gitlab-ci.yml` wiring.
 
 ---
 
@@ -64,12 +66,16 @@ The YAML carries everything both consumers need:
 MAC is intentionally absent from both columns: Proxmox auto-generates it and
 NetBox doesn't track it.
 
-> **Requires one new model field.** `VMConfig` has no `vmid` today (see
-> `pkg/models/virtualization.go`). Add `VMID int yaml:"vmid"`, validate it, map
-> it to Terraform `vm_id`, and store it in NetBox as a **custom field** (NetBox's
-> VM model has no native VMID slot — define a `vmid` custom field, e.g. via a
-> new `definitions/extras/custom_fields.yaml`). The VMID custom field is the only
-> NetBox-side addition needed.
+> **New model field + declarative custom field (implemented).** `VMConfig` now
+> has `VMID int yaml:"vmid"`. It maps to Terraform `vm_id` (via `cmd/tfgen`) and
+> is stored in NetBox as a **custom field** (the VM model has no native VMID
+> slot). The `vmid` custom field is itself declared in YAML and reconciled in
+> the **foundation phase** from `definitions/custom_fields/` — note: *not* under
+> `definitions/extras/`, because the loader scans folders recursively and
+> `LoadTags("definitions/extras")` would otherwise mis-parse the custom field as
+> a tag. Custom-field objects are not taggable, so `Apply` skips managed-tag
+> injection for the `custom-fields` endpoint (`constants.UntaggableEndpoints`)
+> and they are intentionally excluded from pruning.
 
 ---
 
@@ -121,25 +127,29 @@ state/<name>`). No state in git.
 
 ## 5. New components to build
 
-### 5a. `cmd/tfgen` — YAML → Terraform vars
-- Reuse `pkg/loader.LoadVMs` + `LoadClusters` so tfgen and the NetBox reconciler
+### 5a. `cmd/tfgen` — YAML → Terraform vars (implemented)
+- Logic lives in `pkg/tfgen` (pure, deterministic, unit-tested); `cmd/tfgen` is
+  a thin CLI. Reuses `pkg/loader.LoadVMs` so tfgen and the NetBox reconciler
   parse the **same** structs — no second YAML schema.
-- Emit `terraform/generated.tfvars.json`: a map keyed by VM name with `vmid`,
-  sizing, template (from `platform`), node/cluster, NICs (name + bridge + VLAN),
-  and the **static IP/gateway** for cloud-init `ip_config`.
-- Pure, deterministic, unit-testable; no network calls.
+- Emits a single Terraform variable `vms` (tfvars.json) keyed by VM name with
+  `vmid`, sizing, template (from `platform`), cluster/site, and NICs (name +
+  `vlan` + static `ip` + `dns_name` + `primary`). MAC is intentionally absent.
+- Errors if any VM lacks a positive `vmid`, or on duplicate VM names.
+- Run: `go run ./cmd/tfgen --data-dir <dir> --out terraform/generated.tfvars.json`
+  (`--out -` writes to stdout).
 
 ### 5b. `terraform/` — Proxmox provisioning
 - `for_each` over the generated VM map → `proxmox_virtual_environment_vm`.
 - `vm_id` from YAML `vmid`; `initialization.ip_config` carries the static IP.
 - No sync-back component exists — Proxmox is a leaf consumer.
 
-### 5c. NetBox side — VMID custom field
-- Add `VMID` to `VMConfig` and map it onto a NetBox `vmid` custom field in the
-  VM payload (`pkg/reconciler/virtualization.go`).
-- Manage the custom-field definition declaratively (new
-  `definitions/extras/custom_fields.yaml` + a small reconciler), or create it
-  once in NetBox by hand if you prefer to keep scope tight for v1.
+### 5c. NetBox side — VMID custom field (implemented, declarative)
+- `VMID` added to `VMConfig`; the VM payload sets
+  `custom_fields: {vmid: <n>}` (`pkg/reconciler/virtualization.go`).
+- `CustomField` model + `FoundationReconciler.ReconcileCustomFields`, loaded
+  from `definitions/custom_fields/` and reconciled in the foundation phase
+  before VMs. The field definition ships in
+  `example/definitions/custom_fields/custom_fields.yaml`.
 
 ---
 
@@ -149,8 +159,9 @@ state/<name>`). No state in git.
    convention (template name == slug), or an explicit map in a definitions file?
 2. **Node placement:** does `cluster` pick a Proxmox *cluster* (provider targets
    the cluster, Proxmox schedules the node) or do we need a node hint per VM?
-3. **VMID custom field:** manage it declaratively (build a small custom-field
-   reconciler) or create it once by hand in NetBox? Affects scope of step 0.
+3. **VMID custom field:** ✅ resolved — managed declaratively from
+   `definitions/custom_fields/`. Caveat: depends on NetBox 4.x `object_types`
+   (older releases use `content_types`); verify against the target instance.
 4. **Secrets:** Proxmox API token + NetBox token as masked GitLab CI variables
    (`PROXMOX_*`, existing `NETBOX_*`). Confirm the runner can reach Proxmox.
 5. **Disk model:** YAML `disk` is a single size today; multi-disk VMs would need
@@ -160,14 +171,14 @@ state/<name>`). No state in git.
 
 ## 7. Suggested build order (independently shippable)
 
-0. **Model:** add `VMID` to `VMConfig` (+ validation, loader), map it to the
-   NetBox `vmid` custom field, and define that custom field (declaratively or by
-   hand — see open question 3).
-1. `cmd/tfgen` + unit tests (YAML → tfvars.json), no Proxmox needed.
-2. `terraform/` skeleton (provider, one `for_each` VM) + `terraform validate`
+0. ✅ **Model + custom field:** `VMID` on `VMConfig` (+ validation, loader),
+   mapped to the NetBox `vmid` custom field, with the field declared
+   declaratively (`CustomField` model + foundation reconciler).
+1. ✅ `cmd/tfgen` / `pkg/tfgen` + unit tests (YAML → tfvars.json), no Proxmox.
+2. ⬜ `terraform/` skeleton (provider, one `for_each` VM) + `terraform validate`
    in the `validate` stage.
-3. Wire `terraform_plan` (MR) and `terraform_apply` (main, manual) into
+3. ⬜ Wire `terraform_plan` (MR) and `terraform_apply` (main, manual) into
    `.gitlab-ci.yml` with the GitLab http state backend.
-4. Docs: update `README.md` and `EXAMPLES.md` with the end-to-end flow.
+4. ⬜ Docs: update `README.md` and `EXAMPLES.md` with the end-to-end flow.
 
 No sync-back / reconcile phase is built — the MAC decision (§2) removed it.

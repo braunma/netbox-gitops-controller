@@ -3,6 +3,7 @@
 # site-only VM (no cluster), both of which NetBox supports.
 
 - name: "web-01"
+  vmid: 101                        # Proxmox VMID; stored in NetBox `vmid` custom field
   cluster: "berlin-prod-cluster"   # clustered VM; inherits the cluster's site
   role_slug: "vm"                  # role must have vm_role: true
   platform: "ubuntu-22-04"
@@ -25,6 +26,7 @@
 
 # A site-only VM has no cluster — only a site.
 - name: "edge-01"
+  vmid: 201
   site_slug: "test-lab"
   role_slug: "vm"                  # role must have vm_role: true
   platform: "debian-12"

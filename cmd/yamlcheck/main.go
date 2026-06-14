@@ -104,6 +104,7 @@ func validateModels(base string) error {
 
 	checks := []func() error{
 		func() error { _, err := dl.LoadTags("definitions/extras"); return err },
+		func() error { _, err := dl.LoadCustomFields("definitions/custom_fields"); return err },
 		func() error { _, err := dl.LoadRoles("definitions/roles"); return err },
 		func() error { _, err := dl.LoadSites("definitions/sites"); return err },
 		func() error { _, err := dl.LoadRacks("definitions/racks"); return err },
