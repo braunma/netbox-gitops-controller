@@ -47,10 +47,14 @@ func (fr *FoundationReconciler) ReconcileSites(sites []*models.Site) error {
 		}
 
 		lookup := map[string]interface{}{"slug": site.Slug}
-		_, err := fr.client.Apply("dcim", "sites", lookup, payload)
+		siteObj, err := fr.client.Apply("dcim", "sites", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile site %s: %w", site.Name, err)
 		}
+		// Register so later phases (racks, VLANs, devices) can resolve a site
+		// created in this same run, including in --dry-run where it is not
+		// written to NetBox.
+		fr.client.Cache().Register("sites", utils.GetIDFromObject(siteObj), site.Slug, site.Name)
 	}
 
 	return nil
@@ -130,10 +134,13 @@ func (fr *FoundationReconciler) ReconcileRoles(roles []*models.Role) error {
 		}
 
 		lookup := map[string]interface{}{"slug": role.Slug}
-		_, err := fr.client.Apply("dcim", "device-roles", lookup, payload)
+		roleObj, err := fr.client.Apply("dcim", "device-roles", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile role %s: %w", role.Name, err)
 		}
+		// Register so the device phase can resolve a role created this run
+		// (the cache otherwise reflects only roles that already existed).
+		fr.client.Cache().Register("roles", utils.GetIDFromObject(roleObj), role.Slug, role.Name)
 	}
 
 	return nil
@@ -167,6 +174,7 @@ func (fr *FoundationReconciler) ReconcilePlatforms(platforms []*models.Platform)
 					return fmt.Errorf("failed to create manufacturer %s: %w", platform.Manufacturer, err)
 				}
 				mfgID = utils.GetIDFromObject(mfgObj)
+				fr.client.Cache().Register("manufacturers", mfgID, utils.Slugify(platform.Manufacturer), platform.Manufacturer)
 			}
 			payload["manufacturer"] = mfgID
 		}

@@ -354,6 +354,44 @@ func TestReconcileVMsSkipsWhenNeitherClusterNorSiteResolves(t *testing.T) {
 	}
 }
 
+// TestReconcileVMsDryRunResolvesSameRunCluster reproduces a branch that adds a
+// new cluster type, cluster and a VM in that cluster together, validated with
+// --dry-run before merging. None exist in NetBox yet, so the VM used to be
+// silently skipped; it must now be planned (resolved against the same-run
+// cluster) while nothing is written to NetBox.
+func TestReconcileVMsDryRunResolvesSameRunCluster(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	c.SetDryRun(true)
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	vr := NewVirtualizationReconciler(c)
+	if err := vr.ReconcileClusterTypes([]*models.ClusterType{{Name: "Proxmox", Slug: "proxmox"}}); err != nil {
+		t.Fatalf("ReconcileClusterTypes() error = %v", err)
+	}
+	if err := vr.ReconcileClusters([]*models.Cluster{{Name: "prod-cluster", TypeSlug: "proxmox"}}); err != nil {
+		t.Fatalf("ReconcileClusters() error = %v", err)
+	}
+	if err := vr.ReconcileVMs([]*models.VMConfig{{Name: "web-01", Cluster: "prod-cluster", Status: "active"}}); err != nil {
+		t.Fatalf("ReconcileVMs() in dry-run = %v; a VM in a same-run cluster must validate, not be skipped silently", err)
+	}
+
+	// Dry-run plans the VM but writes nothing.
+	if muts := f.mutationLog(); len(muts) != 0 {
+		t.Errorf("dry-run sent %d mutating request(s), expected 0: %+v", len(muts), muts)
+	}
+	create := 0
+	for _, ch := range c.Recorder().Changes() {
+		if ch.Endpoint == "virtual-machines" && ch.Action == client.ActionCreate {
+			create++
+		}
+	}
+	if create != 1 {
+		t.Errorf("expected the VM to be planned as 1 create, got %d", create)
+	}
+}
+
 func TestReconcileClustersToleratesMissingOptionalRefs(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	vr := NewVirtualizationReconciler(c)

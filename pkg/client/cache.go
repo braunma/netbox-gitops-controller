@@ -164,6 +164,33 @@ func (cm *CacheManager) loadResource(resource, path string, filters map[string]i
 	return nil
 }
 
+// Register records that an object of the given resource is available under
+// each non-empty identifier (slug, name, model, ...). The reconcilers call it
+// right after they Apply an object, so that later phases resolving references
+// through the global cache can find objects created earlier in the same run —
+// the cache is otherwise loaded once, up front, from live NetBox only.
+//
+// This is what makes branch/merge-request validation work: in --dry-run the
+// object is never written to NetBox (its id is then 0), but registering the
+// key lets a dependent object — e.g. a device referencing a brand-new site,
+// role or device type added in the same commit — resolve and be planned
+// instead of aborting with "site X not found". A genuinely undeclared
+// reference is never registered, so missing-dependency errors are preserved.
+func (cm *CacheManager) Register(resource string, id int, identifiers ...string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.cache[resource] == nil {
+		cm.cache[resource] = make(map[string]int)
+	}
+	for _, identifier := range identifiers {
+		if identifier == "" {
+			continue
+		}
+		cm.cache[resource][identifier] = id
+	}
+}
+
 // GetGlobalID retrieves an ID for a global resource (not site-specific)
 // Use this for: device_types, module_types, roles, manufacturers, sites, vrfs
 func (cm *CacheManager) GetGlobalID(resource, identifier string) (int, bool) {

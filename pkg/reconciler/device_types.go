@@ -40,6 +40,9 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 				return fmt.Errorf("failed to create manufacturer %s: %w", mt.Manufacturer, err)
 			}
 			mfgID = utils.GetIDFromObject(mfgObj)
+			// Register so a manufacturer created here is reused (not re-created)
+			// by later types in this same run, including in --dry-run.
+			dtr.client.Cache().Register("manufacturers", mfgID, utils.Slugify(mt.Manufacturer), mt.Manufacturer)
 		}
 
 		payload := map[string]interface{}{
@@ -53,10 +56,12 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 		}
 
 		lookup := map[string]interface{}{"slug": mt.Slug}
-		_, err := dtr.client.Apply("dcim", "module-types", lookup, payload)
+		mtObj, err := dtr.client.Apply("dcim", "module-types", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile module type %s: %w", mt.Model, err)
 		}
+		// Register so the device phase can resolve a module type created this run.
+		dtr.client.Cache().Register("module_types", utils.GetIDFromObject(mtObj), mt.Slug, mt.Model)
 	}
 
 	return nil
@@ -80,6 +85,7 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 				return fmt.Errorf("failed to create manufacturer %s: %w", dt.Manufacturer, err)
 			}
 			mfgID = utils.GetIDFromObject(mfgObj)
+			dtr.client.Cache().Register("manufacturers", mfgID, utils.Slugify(dt.Manufacturer), dt.Manufacturer)
 		}
 
 		payload := map[string]interface{}{
@@ -101,6 +107,10 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 		}
 
 		dtID := utils.GetIDFromObject(dtObj)
+		// Register before the dry-run short-circuit below so the device phase can
+		// resolve a device type added in this same run (id is 0 in --dry-run; the
+		// key's presence is what lets a dependent device validate).
+		dtr.client.Cache().Register("device_types", dtID, dt.Slug, dt.Model)
 		if dtID == 0 {
 			continue
 		}

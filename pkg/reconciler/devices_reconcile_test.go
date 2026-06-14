@@ -165,6 +165,116 @@ func TestReconcileDevicesErrorsOnUnresolvedReferences(t *testing.T) {
 	}
 }
 
+// TestReconcileDeviceDryRunResolvesSameRunDependencies reproduces a feature
+// branch that adds a new site, role and device type *together with* a device
+// that references them, and validates it with --dry-run before merging. None
+// of the dependencies exist in NetBox yet, so this used to abort with
+// "site ... not found". They are declared in the same run, so the device must
+// validate (be planned) instead, while nothing is written to NetBox.
+func TestReconcileDeviceDryRunResolvesSameRunDependencies(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	c.SetDryRun(true)
+
+	// Empty NetBox, exactly as a branch pipeline sees it before the apply.
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	fr := NewFoundationReconciler(c)
+	if err := fr.ReconcileSites([]*models.Site{{Name: "Berlin DC", Slug: "berlin-dc", Status: "active"}}); err != nil {
+		t.Fatalf("ReconcileSites() error = %v", err)
+	}
+	if err := fr.ReconcileRoles([]*models.Role{{Name: "Switch", Slug: "switch"}}); err != nil {
+		t.Fatalf("ReconcileRoles() error = %v", err)
+	}
+	dtr := NewDeviceTypeReconciler(c)
+	if err := dtr.ReconcileDeviceTypes([]*models.DeviceType{{Model: "C9300", Slug: "c9300", Manufacturer: "Cisco"}}); err != nil {
+		t.Fatalf("ReconcileDeviceTypes() error = %v", err)
+	}
+
+	device := &models.DeviceConfig{
+		Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
+	}
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{device}); err != nil {
+		t.Fatalf("ReconcileDevices() in dry-run = %v; a device referencing a same-run site/role/device-type must validate, not abort", err)
+	}
+
+	// Dry-run must not have written anything to NetBox.
+	if got := len(f.objects("dcim", "devices")); got != 0 {
+		t.Errorf("dry-run wrote %d device(s), expected 0", got)
+	}
+	if muts := f.mutationLog(); len(muts) != 0 {
+		t.Errorf("dry-run sent %d mutating request(s), expected 0: %+v", len(muts), muts)
+	}
+}
+
+// TestReconcileDeviceDryRunSkipsUnresolvedParentInBay covers a branch that
+// adds a parent chassis and a child device installed into its bay in one go.
+// In dry-run the parent is never created, so the child's parent/bay cannot be
+// resolved; this must be skipped with a warning rather than aborting the run.
+// TestDryRunFullOrderingResolvesNewSite mirrors main.go's runSync ordering:
+// the foundation phase reconciles a brand-new site, then the devices phase
+// calls Cache().LoadSite() (which itself hard-fails with "site not found")
+// before reconciling the device. Both steps must succeed in dry-run against an
+// empty NetBox, proving the orchestration path — not just the reconciler — is
+// covered for a branch that adds a site and a device in it together.
+func TestDryRunFullOrderingResolvesNewSite(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	c.SetDryRun(true)
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	// Phase 1 (foundation): declare the site, role and device type.
+	fr := NewFoundationReconciler(c)
+	if err := fr.ReconcileSites([]*models.Site{{Name: "Berlin DC", Slug: "berlin-dc", Status: "active"}}); err != nil {
+		t.Fatalf("ReconcileSites() error = %v", err)
+	}
+	if err := fr.ReconcileRoles([]*models.Role{{Name: "Switch", Slug: "switch"}}); err != nil {
+		t.Fatalf("ReconcileRoles() error = %v", err)
+	}
+	if err := NewDeviceTypeReconciler(c).ReconcileDeviceTypes([]*models.DeviceType{{Model: "C9300", Slug: "c9300", Manufacturer: "Cisco"}}); err != nil {
+		t.Fatalf("ReconcileDeviceTypes() error = %v", err)
+	}
+
+	// Phase 3 (devices) prologue: main.go warms the site cache here. This used
+	// to abort with "site berlin-dc not found" for a not-yet-applied site.
+	if err := c.Cache().LoadSite("berlin-dc"); err != nil {
+		t.Fatalf("LoadSite() in dry-run = %v; a site declared this run must not abort the devices phase", err)
+	}
+
+	device := &models.DeviceConfig{Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch"}
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{device}); err != nil {
+		t.Fatalf("ReconcileDevices() in dry-run = %v", err)
+	}
+	if muts := f.mutationLog(); len(muts) != 0 {
+		t.Errorf("dry-run sent %d mutating request(s), expected 0: %+v", len(muts), muts)
+	}
+}
+
+func TestReconcileDeviceDryRunSkipsUnresolvedParentInBay(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	siteID, roleID, deviceTypeID := seedDeviceFoundation(t, f, c)
+	_, _, _ = siteID, roleID, deviceTypeID
+	c.SetDryRun(true)
+
+	devices := []*models.DeviceConfig{
+		// New parent chassis: in dry-run it is planned but not created.
+		{Name: "chassis-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch"},
+		// Child placed into the not-yet-created parent's bay.
+		{
+			Name: "node-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
+			ParentDevice: "chassis-01", DeviceBay: "bay-1",
+		},
+	}
+	if err := NewDeviceReconciler(c).ReconcileDevices(devices); err != nil {
+		t.Fatalf("ReconcileDevices() in dry-run = %v; an unresolved same-run parent must be skipped, not abort", err)
+	}
+	if muts := f.mutationLog(); len(muts) != 0 {
+		t.Errorf("dry-run sent %d mutating request(s), expected 0: %+v", len(muts), muts)
+	}
+}
+
 func TestReconcileDevicesInstallsChildIntoBay(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	siteID, roleID, deviceTypeID := seedDeviceFoundation(t, f, c)
