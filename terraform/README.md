@@ -76,19 +76,37 @@ Proxmox/cloud-init behaviour.
    them with `var.vlan_tags`, e.g. `{ "Management" = 100 }`. Unmapped names are
    left untagged.
 
-### Credentials (set as masked GitLab CI variables)
+### Configuration via GitLab CI/CD variables (no tfvars file needed)
 
-| CI variable                  | Purpose                                                  |
-|------------------------------|----------------------------------------------------------|
-| `TF_VAR_proxmox_endpoint`    | API URL, e.g. `https://pve.example.com:8006/api2/json`   |
-| `TF_VAR_proxmox_api_token`   | full token `user@realm!tokenid=secret`; mark **masked**  |
-| `TF_VAR_ci_ssh_keys`         | SSH public key(s) injected via cloud-init                |
+You do **not** maintain a `terraform.tfvars` file for CI. Terraform automatically
+reads any pipeline variable named `TF_VAR_<name>` as the input variable `<name>`,
+and the jobs only pass `-var-file=generated.tfvars.json` (the `vms` list — no
+secrets). So set everything in **GitLab → Settings → CI/CD → Variables**:
 
-The API token is the single combined `user@realm!tokenid=secret` string the bpg
-provider expects (the token id is `user@realm!tokenid`; append `=` and the secret
-UUID). For a self-signed Proxmox cert set `TF_VAR_proxmox_insecure=true`. Optional:
-`TF_VAR_default_gateway`, `TF_VAR_vlan_tags`, `TF_VAR_dns_servers`,
-`TF_VAR_ci_username`, `TF_VAR_cpu_type`, `TF_VAR_vm_on_boot`.
+| CI/CD variable             | Required | Example value                                   |
+|----------------------------|----------|-------------------------------------------------|
+| `ENABLE_PROXMOX`           | ✅       | `true` (turns the tf_* jobs on)                 |
+| `TF_VAR_proxmox_endpoint`  | ✅       | `https://pve.example.com:8006/api2/json`        |
+| `TF_VAR_proxmox_api_token` | ✅ 🔒   | `user@realm!tokenid=secret` (mark **Masked**)   |
+| `TF_VAR_proxmox_insecure`  | –        | `true` (for a self-signed cert)                 |
+| `TF_VAR_ci_username`       | –        | `cloud-user`                                 |
+| `TF_VAR_ci_ssh_keys`       | –        | `["ssh-ed25519 AAAA... user@host"]`             |
+| `TF_VAR_default_gateway`   | –        | `192.168.1.1`                                   |
+| `TF_VAR_dns_servers`       | –        | `["192.168.1.53"]`                               |
+| `TF_VAR_vlan_tags`         | –        | `{"Management":100}`                            |
+| `TF_VAR_network_bridge`    | –        | `vmbr0`                                      |
+| `TF_VAR_datastore_id`      | –        | `local-lvm`                                     |
+| `TF_VAR_cpu_type`          | –        | `x86-64-v2-AES`                                 |
+| `TF_VAR_vm_on_boot`        | –        | `true`                                          |
+
+> **⚠️ Typing gotcha.** `string`/`bool`/`number` variables take a plain value,
+> but **list and map** variables (`ci_ssh_keys`, `dns_servers`, `vlan_tags`) must
+> be set as **JSON**: `["a","b"]` / `{"Management":100}`. A bare string there will
+> fail the plan. Set the variable **Type** to *Variable* (not *File*).
+
+> The `terraform.tfvars.example` in this folder is only a reference for the same
+> values if you ever run the module locally; it is never used by CI, and a real
+> `terraform.tfvars` is gitignored so secrets can't be committed.
 
 > **No SSH needed.** A full clone + cloud-init on the same node runs entirely
 > over the API, so the provider has no `ssh{}` block and the CI runner needs no
