@@ -35,11 +35,11 @@ vlan_tags = {
   # "Management" = 100
 }
 
-default_gateway = "10.57.196.1"
-dns_servers     = ["10.57.196.4"]
+default_gateway = "192.168.1.1"
+dns_servers     = ["192.168.1.53"]
 
 # --- Cloud-init credentials (optional) ---
-ci_username = "denbi-service"
+ci_username = "cloud-user"
 ci_ssh_keys = [
   "ssh-ed25519 AAAA...replace-with-your-public-key... user@host",
 ]

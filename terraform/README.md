@@ -102,12 +102,12 @@ secrets). So set everything in **GitLab → Settings → CI/CD → Variables**:
 | `TF_VAR_proxmox_endpoint`  | ✅       | `https://pve.example.com:8006/api2/json`        |
 | `TF_VAR_proxmox_api_token` | ✅ 🔒   | `user@realm!tokenid=secret` (mark **Masked**)   |
 | `TF_VAR_proxmox_insecure`  | –        | `true` (for a self-signed cert)                 |
-| `TF_VAR_ci_username`       | –        | `denbi-service`                                 |
+| `TF_VAR_ci_username`       | –        | `cloud-user`                                    |
 | `TF_VAR_ci_ssh_keys`       | –        | `["ssh-ed25519 AAAA... user@host"]`             |
-| `TF_VAR_default_gateway`   | –        | `10.57.196.1`                                   |
-| `TF_VAR_dns_servers`       | –        | `["10.57.196.4"]`                               |
+| `TF_VAR_default_gateway`   | –        | `192.168.1.1`                                   |
+| `TF_VAR_dns_servers`       | –        | `["192.168.1.53"]`                              |
 | `TF_VAR_vlan_tags`         | –        | `{"Management":100}`                            |
-| `TF_VAR_network_bridge`    | –        | `vmbr1480`                                      |
+| `TF_VAR_network_bridge`    | –        | `vmbr0`                                         |
 | `TF_VAR_datastore_id`      | –        | `local-lvm`                                     |
 | `TF_VAR_cpu_type`          | –        | `x86-64-v2-AES`                                 |
 | `TF_VAR_vm_on_boot`        | –        | `true`                                          |
