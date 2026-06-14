@@ -52,6 +52,14 @@ var TemplateEndpoints = []string{
 	"module_bay_templates",
 }
 
+// UntaggableEndpoints are NetBox endpoints whose objects are not taggable, so
+// the managed-tag must not be injected into their payloads (NetBox rejects an
+// unknown `tags` field). These objects are therefore also not prunable by tag
+// and are intentionally excluded from pruneTargets.
+var UntaggableEndpoints = map[string]bool{
+	"custom-fields": true,
+}
+
 // Field transforms for API calls
 var FieldTransforms = map[string]string{
 	"device_type_id": "device_type",

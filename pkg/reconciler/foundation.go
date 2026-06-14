@@ -258,6 +258,36 @@ func (fr *FoundationReconciler) lookupTenantGroupID(slug string) (int, bool) {
 	return id, id != 0
 }
 
+// ReconcileCustomFields reconciles custom field definitions. Custom fields are
+// not taggable, so Apply skips managed-tag injection for this endpoint (see
+// constants.UntaggableEndpoints); they are consequently not pruned either.
+// The field is looked up by its unique name.
+func (fr *FoundationReconciler) ReconcileCustomFields(fields []*models.CustomField) error {
+	fr.logger.Info("Reconciling %d custom fields...", len(fields))
+
+	for _, cf := range fields {
+		payload := map[string]interface{}{
+			"name":         cf.Name,
+			"type":         cf.Type,
+			"object_types": cf.ObjectTypes,
+			"required":     cf.Required,
+		}
+		if cf.Label != "" {
+			payload["label"] = cf.Label
+		}
+		if cf.Description != "" {
+			payload["description"] = cf.Description
+		}
+
+		lookup := map[string]interface{}{"name": cf.Name}
+		if _, err := fr.client.Apply("extras", "custom-fields", lookup, payload); err != nil {
+			return fmt.Errorf("failed to reconcile custom field %s: %w", cf.Name, err)
+		}
+	}
+
+	return nil
+}
+
 // ReconcileTags reconciles tag definitions
 func (fr *FoundationReconciler) ReconcileTags(tags []*models.Tag) error {
 	fr.logger.Info("Reconciling %d tags...", len(tags))

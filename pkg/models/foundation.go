@@ -68,6 +68,22 @@ type TenantGroup struct {
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
+// CustomField represents a NetBox custom field definition (extras app). It is
+// declared once and attached to one or more object types (e.g. the
+// `vmid` field on `virtualization.virtualmachine`); the per-object value is
+// then set from the owning object's YAML (e.g. VMConfig.VMID).
+//
+// NetBox 4.x names the applicable content types `object_types` (older
+// releases used `content_types`). This model targets the current name.
+type CustomField struct {
+	Name        string   `yaml:"name" json:"name" validate:"required"`
+	Type        string   `yaml:"type" json:"type" validate:"required"`
+	ObjectTypes []string `yaml:"object_types" json:"object_types" validate:"required"`
+	Label       string   `yaml:"label,omitempty" json:"label,omitempty"`
+	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Required    bool     `yaml:"required,omitempty" json:"required,omitempty"`
+}
+
 // Tenant represents a NetBox tenant (tenancy app). Referenced by slug from
 // clusters, VMs and devices.
 type Tenant struct {

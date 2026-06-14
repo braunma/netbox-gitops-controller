@@ -59,6 +59,31 @@ Applies changes to production:
 🔒 go_apply (manual) → Click to deploy to production
 ```
 
+## 🖥️ Proxmox Provisioning (optional)
+
+The same VM inventory that syncs to NetBox can also be provisioned in Proxmox via
+Terraform (see [`terraform/README.md`](terraform/README.md)). These jobs run
+alongside the `go_*` jobs and are **opt-in**: they only execute when the pipeline
+variable `ENABLE_PROXMOX` is `"true"`.
+
+| Job | Stage | Runs | Purpose |
+|-----|-------|------|---------|
+| `tf_generate` | validate | always (MR + branches) | Renders the VM YAML to `terraform/generated.tfvars.json` via `cmd/tfgen`; pure Go, so it guards against tfgen regressions even when Proxmox is disabled. |
+| `tf_validate` | validate | `ENABLE_PROXMOX=="true"` | `terraform fmt -check` + `terraform validate`. |
+| `tf_plan` | plan | `ENABLE_PROXMOX=="true"`, MRs | `terraform plan` against Proxmox; saves `tfplan` + `tf-plan-output.txt`. |
+| `tf_apply` | apply | `ENABLE_PROXMOX=="true"`, main (manual) | `terraform apply` to provision/update VMs. |
+
+State is stored in GitLab's managed Terraform HTTP backend (`TF_STATE_NAME`,
+default `proxmox`), initialised with the `CI_JOB_TOKEN`.
+
+### Required variables (only when `ENABLE_PROXMOX="true"`)
+```bash
+ENABLE_PROXMOX=true
+TF_VAR_proxmox_endpoint=https://pve.example.com:8006/
+TF_VAR_proxmox_api_token=user@realm!tokenid=secret   # masked
+# Optional: TF_VAR_default_gateway, TF_VAR_vlan_tags, TF_VAR_ci_ssh_keys, …
+```
+
 ## 📦 Artifacts
 
 ### Go Binary (`go_build`)
