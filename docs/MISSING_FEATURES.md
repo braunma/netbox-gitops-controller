@@ -66,9 +66,10 @@ pipeline then becomes a drift monitor with zero extra infrastructure.
 
 **Status:** ✅ Implemented.
 - `--only <phase>` with values `foundation`, `network`, `device-types`,
-  `devices` (comma-separated or repeated)
-- `--site <slug>` restricts device reconciliation to one site
-- `--device <name>` for targeted single-device runs (debugging, hotfixes)
+  `devices`, `virtualization` (comma-separated or repeated)
+- `--site <slug>` restricts device/VM reconciliation to one site
+- `--device <name>` / `--vm <name>` for targeted single-object runs (debugging,
+  hotfixes)
 
 Skipped phases are not validated: `--only devices` requires the referenced
 sites, roles and device types to already exist in NetBox.

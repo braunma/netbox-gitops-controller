@@ -62,7 +62,7 @@ modules:
 ```
 
 **Features:**
-- Modules are automatically tagged with `gitops:managed`
+- Modules are automatically tagged with the managed `gitops` tag
 - Serial field defaults to empty string if not provided (matches NetBox requirements)
 - Module bays are auto-created from device type templates
 
@@ -112,7 +112,7 @@ To test these features:
 3. Verify in NetBox:
    - Check device bays are auto-created
    - Check blade servers are installed in chassis
-   - Check modules have the `gitops:managed` tag
+   - Check modules have the `gitops` tag
 
 ## Behavioral Compatibility
 

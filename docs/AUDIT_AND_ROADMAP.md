@@ -90,7 +90,7 @@ canonical list in `docs/MISSING_FEATURES.md`.
 
 ## 4. Refactoring Candidates
 
-1. **Split `pkg/reconciler/devices.go` (927 lines).** `reconcileDevice()`
+1. **Split `pkg/reconciler/devices.go` (~940 lines).** `reconcileDevice()`
    mixes device creation, bay installation, port/interface/IP reconciliation,
    and cable queueing. Extract into focused files/methods
    (`device_create.go`, `device_ports.go`, `device_modules.go`, …) — this is
@@ -152,7 +152,7 @@ canonical list in `docs/MISSING_FEATURES.md`.
 | 2 | Retry/backoff in client (§2.2) | ✅ done |
 | 3 | Orphan pruning (§3.1) | ✅ done (implemented, not just README fix) |
 | 4 | Model validation (§2.4) | ✅ done (⚠️ `yamlcheck` wiring open) |
-| 5 | Split devices.go + reconciler tests (§4.1, §5) | 🟡 reconciler tests done; **devices.go split still pending** (936 lines) |
+| 5 | Split devices.go + reconciler tests (§4.1, §5) | 🟡 reconciler tests done; **devices.go split still pending** (~940 lines) |
 | 6 | Plan summary + drift exit code (§3.2, §3.4) | ✅ done |
 | 7 | Selective sync (§3.3) | ✅ done |
 | 8 | Generic reconciler, constants, typed objects (§4.2/4/5) | 🟡 constants done; generic reconciler + typed accessors pending |
