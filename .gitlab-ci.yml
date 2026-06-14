@@ -56,7 +56,9 @@ variables:
 
   # Container image registry paths (override in GitLab Variables for private registries)
   GOLANG_IMAGE: "golang:1.24"
-  TERRAFORM_IMAGE: "hashicorp/terraform:1.9"
+  # OpenTofu (drop-in Terraform replacement). The tf_* jobs invoke the `tofu`
+  # CLI from this image; override to pin a version or use a private mirror.
+  OPENTOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.9"
 
   # PROXMOX PROVISIONING (opt-in)
   # The Terraform jobs that provision VMs in Proxmox are disabled by default so
@@ -257,7 +259,7 @@ debug_environment:
   allow_failure: true
 
 # =============================================================================
-# PROXMOX PROVISIONING (Terraform) — second consumer of the VM YAML
+# PROXMOX PROVISIONING (OpenTofu) — second consumer of the VM YAML
 # =============================================================================
 # These jobs provision the VMs declared in inventory/virtual/*.yaml onto
 # Proxmox, in parallel with the NetBox sync (they have no dependency on the
@@ -304,15 +306,17 @@ tf_generate:
 # Per-environment Terraform: same module, one GitLab-managed state per env
 # (proxmox-<env>). The state name and backend address are derived from the
 # matrix's $ENV in the shell so there's no fragile nested CI-variable expansion.
-.terraform_env:
+.opentofu_env:
   image:
-    name: ${TERRAFORM_IMAGE}
+    name: ${OPENTOFU_IMAGE}
     entrypoint: [""]
   before_script:
     - cd terraform
     - export TF_STATE_NAME="proxmox-${ENV}"
+    # GitLab's managed state backend endpoint is named ".../terraform/state/..."
+    # for both Terraform and OpenTofu — this is a GitLab API path, not a CLI name.
     - export TF_ADDRESS="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
-    - terraform init -input=false
+    - tofu init -input=false
       -backend-config="address=${TF_ADDRESS}"
       -backend-config="lock_address=${TF_ADDRESS}/lock"
       -backend-config="unlock_address=${TF_ADDRESS}/lock"
@@ -324,17 +328,17 @@ tf_generate:
 # Validate the module once — env-agnostic, so no backend/state is needed.
 tf_validate:
   image:
-    name: ${TERRAFORM_IMAGE}
+    name: ${OPENTOFU_IMAGE}
     entrypoint: [""]
   stage: validate
   needs:
     - tf_generate
   before_script:
     - cd terraform
-    - terraform init -input=false -backend=false
+    - tofu init -input=false -backend=false
   script:
-    - terraform fmt -check -recursive
-    - terraform validate
+    - tofu fmt -check -recursive
+    - tofu validate
   rules:
     - if: $ENABLE_PROXMOX != "true"
       when: never
@@ -347,7 +351,7 @@ tf_validate:
 # runs on MRs (preview) and on the default branch (so the apply pipeline has a
 # fresh, reviewable plan to apply).
 tf_plan:
-  extends: .terraform_env
+  extends: .opentofu_env
   stage: plan
   needs:
     - tf_generate
@@ -357,15 +361,15 @@ tf_plan:
   script:
     # -no-color keeps the saved human plan free of ANSI escapes so tf_apply's
     # destroy-detection grep below matches reliably.
-    - terraform plan -input=false -no-color -lock-timeout=120s -var-file="generated.${ENV}.tfvars.json" -out="tfplan.${ENV}" | tee "tf-plan-${ENV}.txt"
+    - tofu plan -input=false -no-color -lock-timeout=120s -var-file="generated.${ENV}.tfvars.json" -out="tfplan.${ENV}" | tee "tf-plan-${ENV}.txt"
   artifacts:
     paths:
       - terraform/tfplan.*
       - terraform/tf-plan-*.txt
-      # Pass the resolved dependency lock to tf_apply so its `terraform init`
-      # selects the exact provider version this plan was built against. Without
-      # it, a patch released within `~> 0.109.0` between the two jobs would make
-      # `terraform apply <planfile>` reject the saved plan. (If a committed
+      # Pass the resolved dependency lock to tf_apply so its `tofu init` selects
+      # the exact provider version this plan was built against. Without it, a
+      # patch released within `~> 0.109.0` between the two jobs would make
+      # `tofu apply <planfile>` reject the saved plan. (If a committed
       # terraform/.terraform.lock.hcl exists, it takes precedence and this is a
       # harmless no-op.)
       - terraform/.terraform.lock.hcl
@@ -388,7 +392,7 @@ tf_plan:
 # default branch can never apply to the same proxmox-<env> state concurrently.
 # This is defence-in-depth on top of the backend's own state lock.
 tf_apply:
-  extends: .terraform_env
+  extends: .opentofu_env
   stage: apply
   needs:
     - tf_plan
@@ -424,7 +428,7 @@ tf_apply:
             exit 1 ;;
         esac
       fi
-    - terraform apply -input=false -lock-timeout=120s "tfplan.${ENV}"
+    - tofu apply -input=false -lock-timeout=120s "tfplan.${ENV}"
   rules:
     - if: $ENABLE_PROXMOX != "true"
       when: never

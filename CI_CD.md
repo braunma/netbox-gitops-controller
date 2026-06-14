@@ -1,7 +1,7 @@
 # CI/CD Pipeline
 
 The GitLab pipeline (`.gitlab-ci.yml`) tests, builds and deploys the Go
-controller, and optionally provisions the VMs in Proxmox via Terraform.
+controller, and optionally provisions the VMs in Proxmox via OpenTofu.
 
 ## Stages & jobs
 
@@ -44,12 +44,12 @@ caches via the `cache:` block.
 
 ## Proxmox provisioning (optional)
 
-The same VM inventory can also be provisioned in Proxmox via Terraform (see
-[`terraform/README.md`](terraform/README.md)). These jobs run alongside the
+The same VM inventory can also be provisioned in Proxmox via OpenTofu (the
+`tofu` CLI; see [`terraform/README.md`](terraform/README.md)). These jobs run alongside the
 `go_*` jobs and are **opt-in** — they only execute when `ENABLE_PROXMOX="true"`.
 
 Each environment (`prod`, `stage`, `playground`) has its own VM folder
-(`inventory/virtual/<env>/`) and its own Terraform state, and is generated,
+(`inventory/virtual/<env>/`) and its own OpenTofu state, and is generated,
 planned and applied independently. The environment list lives in exactly one
 place — the `.proxmox_envs` YAML anchor in `.gitlab-ci.yml` — which every job's
 `parallel:matrix` references, so there is no list to keep in sync.
@@ -57,13 +57,13 @@ place — the `.proxmox_envs` YAML anchor in `.gitlab-ci.yml` — which every jo
 | Job | Stage | Runs | Purpose |
 |-----|-------|------|---------|
 | `tf_generate` | validate | always (MR + branches) | One matrix job per env: renders that env's VM YAML to `terraform/generated.<env>.tfvars.json` via `cmd/tfgen`; pure Go, so it guards against tfgen regressions even when Proxmox is disabled. A mistyped env fails the job (tfgen errors on a missing folder) rather than emitting an empty, destroy-everything tfvars file. |
-| `tf_validate` | validate | `ENABLE_PROXMOX=="true"` | `terraform fmt -check -recursive` + `terraform validate` (env-agnostic, no backend). |
+| `tf_validate` | validate | `ENABLE_PROXMOX=="true"` | `tofu fmt -check -recursive` + `tofu validate` (env-agnostic, no backend). |
 | `tf_plan` | plan | `ENABLE_PROXMOX=="true"`, MRs **and** default branch | One plan per env against its own state; saves the binary `tfplan.<env>` (consumed by `tf_apply`) + a human-readable `tf-plan-<env>.txt`. |
 | `tf_apply` | apply | `ENABLE_PROXMOX=="true"`, default branch (manual) | One manual gate per env. Applies the **saved `tfplan.<env>` from `tf_plan`** — so it applies exactly the reviewed change set, never a fresh re-plan. A plan that has gone stale (state drifted) is rejected and the job fails safely. **Destroy-safe:** if the plan would destroy/replace any VM the job refuses unless re-run with `TF_ALLOW_DESTROY=<env>`; `resource_group` also serialises applies per env. See [`terraform/README.md` → Safety](terraform/README.md#safety). |
 
-State is stored in GitLab's managed Terraform HTTP backend, one state per env
-(`proxmox-<env>`, derived from the matrix `$ENV`), initialised with the
-`CI_JOB_TOKEN`.
+State is stored in GitLab's managed HTTP state backend (the `terraform/state`
+API, used by both OpenTofu and Terraform), one state per env (`proxmox-<env>`,
+derived from the matrix `$ENV`), initialised with the `CI_JOB_TOKEN`.
 
 Required variables when enabled (Proxmox token masked):
 
