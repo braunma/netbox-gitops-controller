@@ -140,7 +140,11 @@ GitLab-managed state:
 | `inventory/virtual/playground/` | `proxmox-playground` | `proxmox-playground` |
 
 `tf_plan`/`tf_apply` run as a GitLab `parallel:matrix` over these envs (see
-`.gitlab-ci.yml`); `tf_apply` is a manual gate per env. The same Proxmox
+`.gitlab-ci.yml`); `tf_apply` is a manual gate per env. `tf_plan` writes a saved
+plan file (`tfplan.<env>`) and `tf_apply` applies **that exact file** rather than
+re-planning, so an operator approves and applies precisely the reviewed change
+set — and Terraform rejects the plan if the state has drifted since, so the job
+fails safely instead of applying something unreviewed. The same Proxmox
 credentials (`TF_VAR_*`) are shared across all environments.
 
 **Why per-env, not per-VM state:** environments are a small fixed set, so the
@@ -149,7 +153,8 @@ A single VM can still be changed in isolation within its env state with
 `terraform apply -target='proxmox_virtual_environment_vm.this["web-01"]'`.
 
 **Add an environment:** create `inventory/virtual/<env>/`, then add `<env>` to
-`PROXMOX_ENVS` and to the `parallel:matrix` lists in `.gitlab-ci.yml`.
+the single `.proxmox_envs` anchor in `.gitlab-ci.yml` — it drives the
+`tf_generate`/`tf_plan`/`tf_apply` matrices, so there is no second list to edit.
 
 ## Status
 
