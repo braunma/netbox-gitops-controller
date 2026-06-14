@@ -22,7 +22,8 @@ go run ./cmd/tfgen --data-dir . --out terraform/generated.tfvars.json
 
 Only VMs that declare a `vmid` are provisioned here; VMs without one are
 NetBox-only and are skipped by `tfgen` (it reports how many). A VM that declares
-a `vmid` must also declare a `node`.
+a `vmid` must also declare a `node` and a `platform` (the clone template) —
+`tfgen` rejects the input otherwise, so the error surfaces before Terraform runs.
 
 ## Field mapping (YAML → Proxmox)
 
@@ -37,6 +38,7 @@ a `vmid` must also declare a `node`.
 | `disk`          | `disk.size` on `scsi0` (omit = inherit template) |
 | `interfaces[].ip`   | cloud-init static `ip_config`     |
 | `interfaces[].vlan` | NIC `vlan_id` via `var.vlan_tags` |
+| `interfaces[].primary` | interface that carries `var.default_gateway` |
 | `tags`          | `tags` (always includes `gitops`)     |
 
 tfgen always stamps the `gitops` tag (same `ManagedTagSlug` the NetBox

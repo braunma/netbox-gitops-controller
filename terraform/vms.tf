@@ -9,6 +9,17 @@ locals {
   template_ids = {
     for v in data.proxmox_virtual_environment_vms.templates.vms : v.name => v.vm_id
   }
+
+  # A VM has a single default route, so the gateway is applied to exactly one
+  # NIC: the interface flagged primary, else the first with a static IP. -1
+  # means no eligible interface, in which case no gateway is set at all.
+  gateway_iface = {
+    for k, vm in var.vms : k => try(
+      index(vm.interfaces[*].primary, true),
+      index([for i in vm.interfaces : i.ip != ""], true),
+      -1
+    )
+  }
 }
 
 resource "proxmox_virtual_environment_vm" "this" {
@@ -59,12 +70,14 @@ resource "proxmox_virtual_environment_vm" "this" {
 
     # One cloud-init ip_config per interface, in network_device order
     # (ipconfig0, ipconfig1…): the declared static IP, or DHCP when none is set.
+    # The gateway is attached only to the primary interface (local.gateway_iface)
+    # so a multi-NIC VM gets a single default route.
     dynamic "ip_config" {
       for_each = each.value.interfaces
       content {
         ipv4 {
           address = ip_config.value.ip != "" ? ip_config.value.ip : "dhcp"
-          gateway = ip_config.value.ip != "" && var.default_gateway != "" ? var.default_gateway : null
+          gateway = (ip_config.value.ip != "" && var.default_gateway != "" && ip_config.key == local.gateway_iface[each.key]) ? var.default_gateway : null
         }
       }
     }
@@ -87,5 +100,14 @@ resource "proxmox_virtual_environment_vm" "this" {
 
   agent {
     enabled = true
+  }
+
+  # Fail with a clear message (rather than a cryptic map-index error) when a
+  # VM's platform doesn't match any template discovered via var.template_tags.
+  lifecycle {
+    precondition {
+      condition     = contains(keys(local.template_ids), each.value.platform)
+      error_message = "VM ${each.value.name}: no Proxmox template named '${each.value.platform}' found among templates tagged ${join(", ", var.template_tags)}."
+    }
   }
 }
