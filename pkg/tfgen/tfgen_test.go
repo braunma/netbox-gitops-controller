@@ -64,6 +64,35 @@ func TestBuildMapsFields(t *testing.T) {
 	}
 }
 
+func TestBuildPreservesInterfaceOrderAndPrimary(t *testing.T) {
+	// Terraform attaches the default gateway to the primary interface and emits
+	// ip_config blocks in NIC order, so tfgen must preserve interface order and
+	// flag exactly the interface whose address_role is "primary".
+	vm := clusteredVM()
+	vm.Interfaces = []models.VMInterfaceConfig{
+		{Name: "eth0", IP: &models.IPConfig{Address: "10.0.0.10/24"}},
+		{Name: "eth1", AddressRole: "primary", IP: &models.IPConfig{Address: "10.0.1.10/24"}},
+	}
+
+	doc, err := Build([]*models.VMConfig{vm})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	got := doc.VMs["web-01"].Interfaces
+	if len(got) != 2 {
+		t.Fatalf("expected 2 interfaces, got %d", len(got))
+	}
+	if got[0].Name != "eth0" || got[1].Name != "eth1" {
+		t.Errorf("interface order not preserved: %+v", got)
+	}
+	if got[0].Primary {
+		t.Error("eth0 should not be primary")
+	}
+	if !got[1].Primary {
+		t.Error("eth1 (address_role primary) should be flagged primary")
+	}
+}
+
 func TestBuildSkipsVMsWithoutVMID(t *testing.T) {
 	// A VM without a vmid is NetBox-only: skipped, not an error, and the
 	// provisioned VMs alongside it are still emitted.
@@ -125,6 +154,16 @@ func TestBuildRequiresNode(t *testing.T) {
 	}
 }
 
+func TestBuildRequiresPlatform(t *testing.T) {
+	// A provisioned VM clones from a template named by its platform, so a vmid
+	// without a platform is an error rather than an opaque Terraform failure.
+	vm := clusteredVM()
+	vm.Platform = ""
+	if _, err := Build([]*models.VMConfig{vm}); err == nil {
+		t.Fatal("expected error when platform is missing")
+	}
+}
+
 func TestBuildRejectsDuplicateNames(t *testing.T) {
 	a := clusteredVM()
 	b := clusteredVM()
@@ -139,6 +178,7 @@ func TestBuildSiteOnlyVMNoMAC(t *testing.T) {
 		Name:     "edge-01",
 		VMID:     201,
 		Node:     "pve-06",
+		Platform: "debian-12",
 		SiteSlug: "test-lab",
 		Interfaces: []models.VMInterfaceConfig{
 			{Name: "eth0", MACAddress: "de:ad:be:ef:00:01"},
