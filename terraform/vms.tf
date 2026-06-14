@@ -1,15 +1,4 @@
-# Resolve clone templates: tfgen gives us the template *name* (the platform
-# slug); the bpg provider clones by numeric id, so build a name => id map from
-# the templates Proxmox reports. Tag your templates with var.template_tags.
-data "proxmox_virtual_environment_vms" "templates" {
-  tags = var.template_tags
-}
-
 locals {
-  template_ids = {
-    for v in data.proxmox_virtual_environment_vms.templates.vms : v.name => v.vm_id
-  }
-
   # A VM has a single default route, so the gateway is applied to exactly one
   # NIC: the interface flagged primary, else the first with a static IP. -1
   # means no eligible interface, in which case no gateway is set at all.
@@ -32,7 +21,7 @@ resource "proxmox_virtual_environment_vm" "this" {
   tags      = each.value.tags
 
   clone {
-    vm_id = local.template_ids[each.value.platform]
+    vm_id = each.value.vm_template_id
     full  = true
   }
 
@@ -102,12 +91,13 @@ resource "proxmox_virtual_environment_vm" "this" {
     enabled = true
   }
 
-  # Fail with a clear message (rather than a cryptic map-index error) when a
-  # VM's platform doesn't match any template discovered via var.template_tags.
+  # Fail with a clear message (rather than a cryptic provider error) when a VM
+  # is missing its clone template id. tfgen already enforces this, so this only
+  # trips for hand-edited tfvars.
   lifecycle {
     precondition {
-      condition     = contains(keys(local.template_ids), each.value.platform)
-      error_message = "VM ${each.value.name}: no Proxmox template named '${each.value.platform}' found among templates tagged ${join(", ", var.template_tags)}."
+      condition     = each.value.vm_template_id > 0
+      error_message = "VM ${each.value.name}: vm_template_id is required (the Proxmox VMID of the template to clone, e.g. 800)."
     }
   }
 }

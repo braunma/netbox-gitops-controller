@@ -20,19 +20,23 @@ Never edit `generated.tfvars.json` by hand — change the YAML and regenerate:
 go run ./cmd/tfgen --data-dir . --out terraform/generated.tfvars.json
 ```
 
-Only VMs that declare a `vmid` are provisioned here; VMs without one are
-NetBox-only and are skipped by `tfgen` (it reports how many). A VM that declares
-a `vmid` must also declare a `node` and a `platform` (the clone template) —
-`tfgen` rejects the input otherwise, so the error surfaces before Terraform runs.
+Only VMs that set `provision: true` are provisioned here; every other VM is
+NetBox-only and is skipped by `tfgen` (it reports how many) — even one that
+carries a `vmid`/`vm_template_id` for documentation. A provisioned VM must also
+declare a `node`, a `vmid` (the Proxmox VMID to create) and a `vm_template_id`
+(the template VMID to clone) — `tfgen` rejects the input otherwise, so the error
+surfaces before Terraform runs.
 
 ## Field mapping (YAML → Proxmox)
 
 | YAML            | Proxmox (bpg)                         |
 |-----------------|---------------------------------------|
+| `provision`     | (gate) only `true` VMs are emitted   |
 | `vmid`          | `vm_id` (no auto-assign)              |
+| `vm_template_id`| `clone.vm_id` (template to clone)     |
 | `node`          | `node_name` (which of your nodes)     |
 | `cluster`       | `pool_id` (organizational pool)       |
-| `platform`      | clone source template (by name → id)  |
+| `platform`      | documentation only (not used to clone) |
 | `vcpus`         | `cpu.cores`                           |
 | `memory`        | `memory.dedicated`                    |
 | `disk`          | `disk.size` on `scsi0` (omit = inherit template) |
@@ -64,20 +68,34 @@ Proxmox/cloud-init behaviour.
 
 ## Environment-specific setup
 
-Two mappings can't come from NetBox semantics and must be configured here:
-
-1. **Templates.** tfgen passes the `platform` slug as the template *name*; the
-   provider clones by numeric id. Templates are discovered from Proxmox by tag
-   (`var.template_tags`, default `["template"]`) and matched by name. Tag your
-   templates accordingly, and ensure each `platform` slug matches a template
-   name exactly.
+1. **Templates.** Each provisioned VM names the template to clone directly via
+   `vm_template_id` (the template's Proxmox VMID, e.g. `800`). No tag-based
+   discovery is involved — the id from the YAML is passed straight to
+   `clone.vm_id`. `platform` is kept only for NetBox documentation.
 2. **VLANs.** NetBox names VLANs; Proxmox NICs need a numeric 802.1q tag. Map
    them with `var.vlan_tags`, e.g. `{ "Management" = 100 }`. Unmapped names are
    left untagged.
 
-Connection + credentials come from CI variables (see `.gitlab-ci.yml`):
-`TF_VAR_proxmox_endpoint`, `TF_VAR_proxmox_api_token`, and optionally
-`TF_VAR_default_gateway`, `TF_VAR_vlan_tags`, `TF_VAR_ci_ssh_keys`.
+### Credentials (set as masked GitLab CI variables)
+
+| CI variable                        | Purpose                                        |
+|------------------------------------|------------------------------------------------|
+| `TF_VAR_proxmox_endpoint`          | API URL, e.g. `https://pve.example.com:8006/`  |
+| `TF_VAR_proxmox_api_token_id`      | token id, e.g. `gitops@pve!terraform`          |
+| `TF_VAR_proxmox_api_token_secret`  | token secret (the UUID); mark **masked**       |
+| `TF_VAR_ci_ssh_keys`               | SSH public key(s) injected via cloud-init      |
+
+The API token is supplied as two variables so the id and secret can be rotated
+independently; `providers.tf` joins them into the `id=secret` string the bpg
+provider expects. Optional: `TF_VAR_default_gateway`, `TF_VAR_vlan_tags`,
+`TF_VAR_dns_servers`, `TF_VAR_ci_username`.
+
+> **SSH access for clone/cloud-init.** The bpg provider performs the full clone
+> and cloud-init disk import over **SSH** to the target node (`providers.tf` uses
+> `ssh { agent = true }`). The CI runner must therefore reach an SSH agent or be
+> given `PROXMOX_VE_SSH_USERNAME` / `PROXMOX_VE_SSH_PASSWORD` (or a key) — the API
+> token alone is not enough. This is the most common reason a first live run
+> fails.
 
 ## Status
 

@@ -323,10 +323,10 @@ few objects of each supported type:
 
 - 2 sites, 5 device roles, 2 platforms, 1 tenant (+ group)
 - 2 VRFs, 2 VLAN groups, 3 VLANs, 3 prefixes, 3 racks
-- 6 device types, 2 module types, 1 `vmid` custom field
+- 6 device types, 2 module types, 2 VM custom fields (`vmid`, `vm_template_id`)
 - 7 hardware devices — including a blade chassis with two child blades, a GPU
   server, and a patch panel (front/rear ports)
-- 2 virtual machines on a Proxmox cluster (one clustered, one site-only)
+- 2 virtual machines (one provisioned in Proxmox, one NetBox documentation-only)
 
 See **[EXAMPLES.md](./EXAMPLES.md)** for the full breakdown, file layout, and the
 key concepts each file demonstrates.

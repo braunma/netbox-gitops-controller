@@ -295,6 +295,21 @@ func (v *VMConfig) Validate() error {
 		errs = append(errs, errors.New("one of cluster or site_slug is required"))
 	}
 
+	// When a VM opts into Proxmox provisioning, the facts Terraform needs must
+	// be present up front so the error surfaces in --dry-run/yamlcheck rather
+	// than mid-apply. Documentation-only VMs are free to omit all of these.
+	if v.Provision {
+		if v.VMID <= 0 {
+			errs = append(errs, errors.New("vmid is required when provision is true (the Proxmox VMID to create)"))
+		}
+		if v.VMTemplateID <= 0 {
+			errs = append(errs, errors.New("vm_template_id is required when provision is true (the template VMID to clone, e.g. 800)"))
+		}
+		if v.Node == "" {
+			errs = append(errs, errors.New("node is required when provision is true (the target Proxmox node)"))
+		}
+	}
+
 	for i, iface := range v.Interfaces {
 		if iface.Name == "" {
 			errs = append(errs, fmt.Errorf("interface %d: name is required", i+1))
