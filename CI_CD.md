@@ -119,7 +119,7 @@ GOCACHE=$CI_PROJECT_DIR/.cache/go-build
 #### `go_test`
 ```yaml
 Stage: test
-Image: golang:1.21
+Image: golang:1.24
 Command: go test ./pkg/... -v -cover -race
 Runs: Always (all branches and MRs)
 ```
@@ -127,7 +127,7 @@ Runs: Always (all branches and MRs)
 #### `go_build`
 ```yaml
 Stage: build
-Image: golang:1.21
+Image: golang:1.24
 Command: go build -v -o netbox-gitops ./cmd/netbox-gitops/
 Artifact: netbox-gitops binary
 Runs: Always (all branches and MRs)

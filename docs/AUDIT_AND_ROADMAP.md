@@ -9,10 +9,10 @@
 > where they differ.
 
 Audit of the Go implementation: what works, what is missing, what should be
-implemented next, and what should be refactored. Supersedes the stale findings
-in `docs/BUGS_FOUND.md` (the rack / prefix-VLAN / VLAN-group cache collisions
-listed there have since been fixed) and the historical Python-era
-`REFACTORING_ANALYSIS.md`.
+implemented next, and what should be refactored. The earlier rack / prefix-VLAN
+/ VLAN-group cache collisions have since been fixed (see §2), and the historical
+Python-migration and refactoring docs that this audit superseded have now been
+removed (see §4.8).
 
 ---
 
@@ -116,9 +116,14 @@ canonical list in `docs/MISSING_FEATURES.md`.
    exit).
 7. **`context.Context` propagation.** No cancellation/timeout support in the
    client or reconcilers.
-8. **Docs cleanup.** Remove or archive stale docs (`BUGS_FOUND.md` fixed
-   items, `MIGRATION_COMPLETE.md`, `GO_MIGRATION.md`, `REFACTORING_*.md`) —
-   they describe a state that no longer exists and mislead new contributors.
+8. **Docs cleanup.** ✅ Done — the stale historical docs (`BUGS_FOUND.md`,
+   `MIGRATION_COMPLETE.md`, `GO_MIGRATION.md`, `GO_INTERFACES.md`,
+   `REFACTORING_*.md`, `CACHE_REDESIGN.md`, `ENTERPRISE_CODE_REVIEW.md`,
+   `CABLE_RECONCILIATION_ENHANCEMENTS.md`, `TEST_COVERAGE_REPORT.md`) have been
+   removed; they described a state that no longer exists and misled new
+   contributors. The current docs are `README.md`, `EXAMPLES.md`, `CI_CD.md`,
+   `terraform/README.md`, the `example/` guides, and the `docs/` audit/roadmap/
+   plan set.
 
 ---
 
@@ -154,7 +159,7 @@ canonical list in `docs/MISSING_FEATURES.md`.
 
 **What's left from this audit:** split `devices.go` (§4.1), generic ensure-loop
 (§4.2), unify cable cleanup (§4.3), typed object accessors (§4.4), consistent
-error strategy (§4.6), `context.Context` propagation (§4.7), docs archival
-(§4.8), and the Docker idempotency integration test (§5). New-capability work
+error strategy (§4.6), `context.Context` propagation (§4.7), and the Docker
+idempotency integration test (§5). (Docs archival, §4.8, is now done.) New-capability work
 (virtualization, extended IPAM, daemon, observability, packaging) is tracked in
 `docs/MISSING_FEATURES.md`.
