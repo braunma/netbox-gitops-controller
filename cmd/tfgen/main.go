@@ -12,6 +12,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/loader"
 	"github.com/braunma/netbox-gitops-controller/pkg/tfgen"
@@ -22,6 +23,12 @@ func main() {
 	dataDir := flag.String("data-dir", ".", "Base directory containing inventory/ (falls back to example/ when not found)")
 	out := flag.String("out", "terraform/generated.tfvars.json", "Output tfvars.json path (use '-' for stdout)")
 	flag.Parse()
+
+	// When emitting to stdout, reserve it for the tfvars JSON and route all
+	// informational logging to stderr (mirrors the controller's --output json).
+	if *out == "-" {
+		utils.SetDefaultOutput(os.Stderr)
+	}
 
 	logger := utils.NewLogger(false)
 
@@ -64,10 +71,10 @@ func main() {
 // resolveDataDir mirrors the controller's auto-detection: use the given
 // directory if it has an inventory/ folder, otherwise fall back to example/.
 func resolveDataDir(dir string) (string, error) {
-	if _, err := os.Stat(dir + "/inventory"); err == nil {
+	if _, err := os.Stat(filepath.Join(dir, "inventory")); err == nil {
 		return dir, nil
 	}
-	if _, err := os.Stat("example/inventory"); err == nil {
+	if _, err := os.Stat(filepath.Join("example", "inventory")); err == nil {
 		return "example", nil
 	}
 	return "", fmt.Errorf("no inventory/ found in %q or example/", dir)

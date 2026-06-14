@@ -18,7 +18,7 @@ variable "vms" {
     platform = optional(string, "")
     vcpus    = optional(number, 1)
     memory   = optional(number, 1024)
-    disk     = optional(number, 10)
+    disk     = optional(number, 0) # 0 = inherit the template's disk size
     tags     = optional(list(string), [])
     interfaces = optional(list(object({
       name     = optional(string, "eth0")

@@ -30,7 +30,7 @@ go run ./cmd/tfgen --data-dir . --out terraform/generated.tfvars.json
 | `platform`      | clone source template (by name → id)  |
 | `vcpus`         | `cpu.cores`                           |
 | `memory`        | `memory.dedicated`                    |
-| `disk`          | `disk.size` on `scsi0`                |
+| `disk`          | `disk.size` on `scsi0` (omit = inherit template) |
 | `interfaces[].ip`   | cloud-init static `ip_config`     |
 | `interfaces[].vlan` | NIC `vlan_id` via `var.vlan_tags` |
 | `tags`          | `tags` (always includes `gitops`)     |
@@ -45,8 +45,9 @@ The module is the desired state, so editing the YAML and re-running the pipeline
 reconciles existing VMs — not just first-time creation:
 
 - **More CPU/RAM/disk:** change `vcpus`/`memory`/`disk`; Terraform updates the
-  running VM in place (a larger `disk` grows the volume — Proxmox can't shrink a
-  disk, so reducing the number is a no-op/error, not a rebuild).
+  running VM in place. Omitting `disk` (or `0`) inherits the template's disk; a
+  larger value grows the volume — Proxmox can't shrink a disk, so lowering it is
+  rejected, not a rebuild.
 - **Add a second NIC:** append an entry to `interfaces`; a new `network_device`
   (and matching cloud-init `ip_config`) is added to the VM.
 - **Re-IP / change VLAN:** edit the interface; cloud-init config updates.

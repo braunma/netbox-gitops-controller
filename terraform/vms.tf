@@ -33,10 +33,15 @@ resource "proxmox_virtual_environment_vm" "this" {
     dedicated = each.value.memory
   }
 
-  disk {
-    datastore_id = var.datastore_id
-    interface    = "scsi0"
-    size         = each.value.disk
+  # Only override the disk when a size is declared; otherwise the clone inherits
+  # the template's disk (Proxmox can grow a disk but never shrink it).
+  dynamic "disk" {
+    for_each = each.value.disk > 0 ? [each.value.disk] : []
+    content {
+      datastore_id = var.datastore_id
+      interface    = "scsi0"
+      size         = disk.value
+    }
   }
 
   # One Proxmox NIC per declared interface, in order. The VLAN name is mapped to
@@ -52,8 +57,8 @@ resource "proxmox_virtual_environment_vm" "this" {
   initialization {
     datastore_id = var.datastore_id
 
-    # Static IP via cloud-init for every interface that declares one. The order
-    # matches the network_device order above (cloud-init ipconfig0, ipconfig1…).
+    # One cloud-init ip_config per interface, in network_device order
+    # (ipconfig0, ipconfig1…): the declared static IP, or DHCP when none is set.
     dynamic "ip_config" {
       for_each = each.value.interfaces
       content {
