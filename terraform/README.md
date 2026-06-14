@@ -80,8 +80,14 @@ Proxmox/cloud-init behaviour.
    discovery is involved — the id from the YAML is passed straight to
    `clone.vm_id`. `platform` is kept only for NetBox documentation.
 2. **VLANs.** NetBox names VLANs; Proxmox NICs need a numeric 802.1q tag. Map
-   them with `var.vlan_tags`, e.g. `{ "Management" = 100 }`. Unmapped names are
-   left untagged.
+   every VLAN name used by an interface with `var.vlan_tags`, e.g.
+   `{ "Management" = 100 }`. An interface with an empty `vlan` is left untagged
+   (native VLAN); a **named** VLAN that is missing from the map **fails the
+   plan** rather than silently landing the NIC on the native VLAN.
+3. **Guest agent.** `var.agent_enabled` (default `true`) turns on the QEMU guest
+   agent integration. Keep it on **only if the cloned template runs
+   qemu-guest-agent** — otherwise every apply waits for the create timeout and
+   then fails. Set `TF_VAR_agent_enabled=false` for templates without it.
 
 ### Configuration via GitLab CI/CD variables (no tfvars file needed)
 
@@ -105,6 +111,7 @@ secrets). So set everything in **GitLab → Settings → CI/CD → Variables**:
 | `TF_VAR_datastore_id`      | –        | `local-lvm`                                     |
 | `TF_VAR_cpu_type`          | –        | `x86-64-v2-AES`                                 |
 | `TF_VAR_vm_on_boot`        | –        | `true`                                          |
+| `TF_VAR_agent_enabled`     | –        | `false` (template has no qemu-guest-agent)      |
 
 > **⚠️ Typing gotcha.** `string`/`bool`/`number` variables take a plain value,
 > but **list and map** variables (`ci_ssh_keys`, `dns_servers`, `vlan_tags`) must
@@ -155,6 +162,48 @@ A single VM can still be changed in isolation within its env state with
 **Add an environment:** create `inventory/virtual/<env>/`, then add `<env>` to
 the single `.proxmox_envs` anchor in `.gitlab-ci.yml` — it drives the
 `tf_generate`/`tf_plan`/`tf_apply` matrices, so there is no second list to edit.
+
+## Safety
+
+Because this is a GitOps module, the YAML is the desired state: **removing a VM
+from `inventory/virtual/<env>/` (or making a change Proxmox can only satisfy by
+recreating the VM) makes Terraform destroy a real, running VM.** That is
+irreversible, so the pipeline defends against it in layers:
+
+1. **Saved plan, not blind apply.** `tf_apply` applies the exact `tfplan.<env>`
+   produced and reviewed in `tf_plan` — never a fresh re-plan. If the state has
+   drifted since the plan, Terraform rejects the stale plan and the job fails
+   safely.
+2. **Manual gate.** `tf_apply` is `when: manual` on the default branch, one
+   button per environment.
+3. **Destroy confirmation (fail-closed).** Before applying, `tf_apply` counts
+   the resources the plan would **destroy or replace**. If that count is > 0 it
+   refuses to apply unless you re-run the job with the CI variable
+   `TF_ALLOW_DESTROY=<env>` (e.g. `TF_ALLOW_DESTROY=prod`). A bare `true` does
+   **not** match — you must name the exact environment, so confirming a
+   `playground` teardown can never authorise a `prod` one. A missing plan
+   artifact aborts rather than applying blind.
+4. **Serialised applies.** `resource_group: proxmox-<env>` ensures only one
+   apply per environment runs at a time across pipelines, on top of the
+   backend's state lock (`lock-timeout=120s`).
+
+### Recommended: commit the dependency lock file
+
+`terraform/.terraform.lock.hcl` is **not** committed yet. For supply-chain
+integrity and fully reproducible runs you should generate and commit it so every
+`init` verifies the provider against pinned checksums for all CI/runner
+platforms:
+
+```sh
+cd terraform
+terraform init
+terraform providers lock -platform=linux_amd64 -platform=darwin_arm64
+git add .terraform.lock.hcl
+```
+
+Until it is committed, CI bridges the gap by passing the lock file resolved in
+`tf_plan` to `tf_apply` as an artifact (see `.gitlab-ci.yml`), so a single
+pipeline stays self-consistent — but a committed lock file is the durable fix.
 
 ## Status
 

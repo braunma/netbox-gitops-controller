@@ -21,6 +21,10 @@ proxmox_insecure = true
 cpu_type   = "x86-64-v2-AES"
 vm_on_boot = true
 
+# Enable the QEMU guest agent ONLY if the cloned template runs qemu-guest-agent;
+# otherwise set false, or every apply waits for the create timeout and fails.
+agent_enabled = true
+
 # --- Infrastructure mapping (optional) ---
 datastore_id   = "local-lvm"
 network_bridge = "vmbr0"
