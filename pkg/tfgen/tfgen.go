@@ -47,8 +47,8 @@ type Interface struct {
 // Build converts loaded VM models into a tfvars Document. Only VMs that opt into
 // Proxmox provisioning by declaring a positive vmid are included; VMs without a
 // vmid are NetBox-only and skipped, so the two consumers stay independent. A VM
-// that declares a vmid must also name its target node, and VM names must be
-// unique since they key the Terraform map.
+// that declares a vmid must also name its target node and a platform (the clone
+// template), and VM names must be unique since they key the Terraform map.
 func Build(vms []*models.VMConfig) (*Document, error) {
 	doc := &Document{VMs: make(map[string]VM, len(vms))}
 
@@ -59,6 +59,9 @@ func Build(vms []*models.VMConfig) (*Document, error) {
 		}
 		if vm.Node == "" {
 			return nil, fmt.Errorf("VM %q: node is required for Proxmox provisioning (name the target Proxmox node)", vm.Name)
+		}
+		if vm.Platform == "" {
+			return nil, fmt.Errorf("VM %q: platform is required for Proxmox provisioning (it selects the clone template)", vm.Name)
 		}
 		if _, dup := doc.VMs[vm.Name]; dup {
 			return nil, fmt.Errorf("duplicate VM name %q: names must be unique to key the Terraform map", vm.Name)
