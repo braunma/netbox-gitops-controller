@@ -22,6 +22,7 @@ type Document struct {
 type VM struct {
 	Name       string      `json:"name"`
 	VMID       int         `json:"vmid"`
+	Node       string      `json:"node"`
 	Cluster    string      `json:"cluster,omitempty"`
 	Site       string      `json:"site,omitempty"`
 	Platform   string      `json:"platform,omitempty"`
@@ -52,6 +53,9 @@ func Build(vms []*models.VMConfig) (*Document, error) {
 		if vm.VMID <= 0 {
 			return nil, fmt.Errorf("VM %q: vmid is required for Proxmox provisioning (set a positive integer)", vm.Name)
 		}
+		if vm.Node == "" {
+			return nil, fmt.Errorf("VM %q: node is required for Proxmox provisioning (name the target Proxmox node)", vm.Name)
+		}
 		if _, dup := doc.VMs[vm.Name]; dup {
 			return nil, fmt.Errorf("duplicate VM name %q: names must be unique to key the Terraform map", vm.Name)
 		}
@@ -59,6 +63,7 @@ func Build(vms []*models.VMConfig) (*Document, error) {
 		out := VM{
 			Name:     vm.Name,
 			VMID:     vm.VMID,
+			Node:     vm.Node,
 			Cluster:  vm.Cluster,
 			Site:     vm.SiteSlug,
 			Platform: vm.Platform,

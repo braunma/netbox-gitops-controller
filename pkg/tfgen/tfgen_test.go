@@ -12,6 +12,7 @@ func clusteredVM() *models.VMConfig {
 	return &models.VMConfig{
 		Name:     "web-01",
 		VMID:     101,
+		Node:     "pve-01",
 		Cluster:  "berlin-prod-cluster",
 		Platform: "ubuntu-22-04",
 		VCPUs:    4,
@@ -42,7 +43,7 @@ func TestBuildMapsFields(t *testing.T) {
 	if !ok {
 		t.Fatalf("expected VM keyed by name, got keys %v", doc.VMs)
 	}
-	if vm.VMID != 101 || vm.Cluster != "berlin-prod-cluster" || vm.Platform != "ubuntu-22-04" {
+	if vm.VMID != 101 || vm.Node != "pve-01" || vm.Cluster != "berlin-prod-cluster" || vm.Platform != "ubuntu-22-04" {
 		t.Errorf("unexpected VM scalar fields: %+v", vm)
 	}
 	if vm.VCPUs != 4 || vm.Memory != 8192 || vm.Disk != 100 {
@@ -71,6 +72,14 @@ func TestBuildRequiresVMID(t *testing.T) {
 	}
 }
 
+func TestBuildRequiresNode(t *testing.T) {
+	vm := clusteredVM()
+	vm.Node = ""
+	if _, err := Build([]*models.VMConfig{vm}); err == nil {
+		t.Fatal("expected error when node is missing")
+	}
+}
+
 func TestBuildRejectsDuplicateNames(t *testing.T) {
 	a := clusteredVM()
 	b := clusteredVM()
@@ -84,6 +93,7 @@ func TestBuildSiteOnlyVMNoMAC(t *testing.T) {
 	vm := &models.VMConfig{
 		Name:     "edge-01",
 		VMID:     201,
+		Node:     "pve-06",
 		SiteSlug: "test-lab",
 		Interfaces: []models.VMInterfaceConfig{
 			{Name: "eth0", MACAddress: "de:ad:be:ef:00:01"},

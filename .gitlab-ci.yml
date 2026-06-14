@@ -56,6 +56,15 @@ variables:
 
   # Container image registry paths (override in GitLab Variables for private registries)
   GOLANG_IMAGE: "golang:1.24"
+  TERRAFORM_IMAGE: "hashicorp/terraform:1.9"
+
+  # PROXMOX PROVISIONING (opt-in)
+  # The Terraform jobs that provision VMs in Proxmox are disabled by default so
+  # the NetBox pipeline runs standalone. Set ENABLE_PROXMOX="true" (and the
+  # TF_VAR_proxmox_* variables) to turn on tf_validate/tf_plan/tf_apply.
+  ENABLE_PROXMOX: "false"
+  # Name of the GitLab-managed Terraform state for the Proxmox module.
+  TF_STATE_NAME: "proxmox"
 
   # ===========================================================================
   # PIPELINE CONTROL VARIABLES
@@ -248,3 +257,96 @@ debug_environment:
     - go_build
   when: manual
   allow_failure: true
+
+# =============================================================================
+# PROXMOX PROVISIONING (Terraform) — second consumer of the VM YAML
+# =============================================================================
+# These jobs provision the VMs declared in inventory/virtual/*.yaml onto
+# Proxmox, in parallel with the NetBox sync (they have no dependency on the
+# go_* jobs). See terraform/README.md and docs/PLAN_YAML_VM_PIPELINE.md.
+#
+# Required CI variables when ENABLE_PROXMOX="true":
+#   TF_VAR_proxmox_endpoint    e.g. https://pve.example.com:8006/
+#   TF_VAR_proxmox_api_token   user@realm!tokenid=secret   (masked)
+# Optional: TF_VAR_default_gateway, TF_VAR_vlan_tags, TF_VAR_ci_ssh_keys, …
+
+# tf_generate turns the VM YAML into terraform/generated.tfvars.json using the
+# same loader as the NetBox controller. Pure Go, no external deps, so it always
+# runs and guards against tfgen regressions even when Proxmox is disabled.
+tf_generate:
+  extends: .go_base
+  stage: validate
+  script:
+    - echo "🧩 Generating Terraform vars from VM YAML..."
+    - go run ./cmd/tfgen --data-dir . --out terraform/generated.tfvars.json
+    - cat terraform/generated.tfvars.json
+  artifacts:
+    paths:
+      - terraform/generated.tfvars.json
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
+
+.terraform_base:
+  image:
+    name: ${TERRAFORM_IMAGE}
+    entrypoint: [""]
+  variables:
+    TF_ADDRESS: "${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
+  before_script:
+    - cd terraform
+    - terraform init
+      -backend-config="address=${TF_ADDRESS}"
+      -backend-config="lock_address=${TF_ADDRESS}/lock"
+      -backend-config="unlock_address=${TF_ADDRESS}/lock"
+      -backend-config="username=gitlab-ci-token"
+      -backend-config="password=${CI_JOB_TOKEN}"
+      -backend-config="lock_method=POST"
+      -backend-config="unlock_method=DELETE"
+
+tf_validate:
+  extends: .terraform_base
+  stage: validate
+  needs:
+    - tf_generate
+  script:
+    - terraform fmt -check -recursive
+    - terraform validate
+  rules:
+    - if: $ENABLE_PROXMOX != "true"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
+
+tf_plan:
+  extends: .terraform_base
+  stage: plan
+  needs:
+    - tf_generate
+  script:
+    - terraform plan -var-file=generated.tfvars.json -out=tfplan | tee tf-plan-output.txt
+  artifacts:
+    paths:
+      - terraform/tfplan
+      - terraform/tf-plan-output.txt
+    expire_in: 1 week
+  rules:
+    - if: $ENABLE_PROXMOX != "true"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+
+tf_apply:
+  extends: .terraform_base
+  stage: apply
+  needs:
+    - tf_generate
+  script:
+    - terraform apply -auto-approve -var-file=generated.tfvars.json
+  rules:
+    - if: $ENABLE_PROXMOX != "true"
+      when: never
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+  environment:
+    name: proxmox

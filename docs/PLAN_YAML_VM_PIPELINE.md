@@ -5,10 +5,17 @@ source of truth to **both** (a) describe VMs in NetBox and (b) provision those
 VMs in Proxmox via Terraform — all driven by one GitLab pipeline, one runner,
 one repository.
 
-**Status:** 🚧 In progress. Architecture + decisions recorded 2026-06-13/14.
-Implemented so far: VMID model field, declarative `vmid` custom field
-(foundation phase), VM-payload wiring, and `cmd/tfgen` (YAML → tfvars.json)
-with tests. Remaining: the `terraform/` module and `.gitlab-ci.yml` wiring.
+**Status:** ✅ Implemented (scaffold). Architecture + decisions recorded
+2026-06-13/14. Done: VMID + `node` model fields, declarative `vmid` custom field
+(foundation phase), VM-payload wiring, `cmd/tfgen` (YAML → tfvars.json) with
+tests, the `terraform/` Proxmox module (`bpg/proxmox`), and opt-in
+`.gitlab-ci.yml` jobs (`tf_generate`/`tf_validate`/`tf_plan`/`tf_apply`). The
+Terraform module is authored but **not yet run against a live Proxmox** —
+validate with a real `plan` before applying.
+
+**Node placement decision (2026-06-14):** explicit `node:` per VM. A Proxmox
+pool is organizational, not a scheduling target, so `cluster → pool_id` does not
+choose a node; each VM names its target node via `node:` (required by tfgen).
 
 ---
 
@@ -175,10 +182,10 @@ state/<name>`). No state in git.
    mapped to the NetBox `vmid` custom field, with the field declared
    declaratively (`CustomField` model + foundation reconciler).
 1. ✅ `cmd/tfgen` / `pkg/tfgen` + unit tests (YAML → tfvars.json), no Proxmox.
-2. ⬜ `terraform/` skeleton (provider, one `for_each` VM) + `terraform validate`
-   in the `validate` stage.
-3. ⬜ Wire `terraform_plan` (MR) and `terraform_apply` (main, manual) into
-   `.gitlab-ci.yml` with the GitLab http state backend.
-4. ⬜ Docs: update `README.md` and `EXAMPLES.md` with the end-to-end flow.
+2. ✅ `terraform/` module (`bpg/proxmox`, `for_each` over `vms`, clone by
+   `platform`, `node_name`/`pool_id`, static cloud-init IP) + `tf_validate`.
+3. ✅ `tf_generate`/`tf_plan` (MR) and `tf_apply` (main, manual) in
+   `.gitlab-ci.yml` with the GitLab http state backend, gated on `ENABLE_PROXMOX`.
+4. ✅ Docs: `terraform/README.md` + README feature note (this plan kept current).
 
 No sync-back / reconcile phase is built — the MAC decision (§2) removed it.
