@@ -58,8 +58,8 @@ place — the `.proxmox_envs` YAML anchor in `.gitlab-ci.yml` — which every jo
 |-----|-------|------|---------|
 | `tf_generate` | validate | always (MR + branches) | One matrix job per env: renders that env's VM YAML to `terraform/generated.<env>.tfvars.json` via `cmd/tfgen`; pure Go, so it guards against tfgen regressions even when Proxmox is disabled. A mistyped env fails the job (tfgen errors on a missing folder) rather than emitting an empty, destroy-everything tfvars file. |
 | `tf_validate` | validate | `ENABLE_PROXMOX=="true"` | `terraform fmt -check -recursive` + `terraform validate` (env-agnostic, no backend). |
-| `tf_plan` | plan | `ENABLE_PROXMOX=="true"`, MRs | One plan per env against its own state; saves `tfplan.<env>` + `tf-plan-<env>.txt`. |
-| `tf_apply` | apply | `ENABLE_PROXMOX=="true"`, default branch (manual) | One `terraform apply` per env (each a separate manual gate). |
+| `tf_plan` | plan | `ENABLE_PROXMOX=="true"`, MRs **and** default branch | One plan per env against its own state; saves the binary `tfplan.<env>` (consumed by `tf_apply`) + a human-readable `tf-plan-<env>.txt`. |
+| `tf_apply` | apply | `ENABLE_PROXMOX=="true"`, default branch (manual) | One manual gate per env. Applies the **saved `tfplan.<env>` from `tf_plan`** — so it applies exactly the reviewed change set, never a fresh re-plan. A plan that has gone stale (state drifted) is rejected and the job fails safely. |
 
 State is stored in GitLab's managed Terraform HTTP backend, one state per env
 (`proxmox-<env>`, derived from the matrix `$ENV`), initialised with the
