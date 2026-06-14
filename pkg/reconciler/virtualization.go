@@ -38,9 +38,13 @@ func (vr *VirtualizationReconciler) ReconcileClusterTypes(types []*models.Cluste
 		}
 
 		lookup := map[string]interface{}{"slug": ct.Slug}
-		if _, err := vr.client.Apply("virtualization", "cluster-types", lookup, payload); err != nil {
+		ctObj, err := vr.client.Apply("virtualization", "cluster-types", lookup, payload)
+		if err != nil {
 			return fmt.Errorf("failed to reconcile cluster type %s: %w", ct.Name, err)
 		}
+		// Register so a cluster can resolve a type created in this same run,
+		// including in --dry-run where nothing is written to NetBox.
+		vr.client.Cache().Register("cluster_types", utils.GetIDFromObject(ctObj), ct.Slug, ct.Name)
 	}
 
 	return nil
@@ -60,9 +64,11 @@ func (vr *VirtualizationReconciler) ReconcileClusterGroups(groups []*models.Clus
 		}
 
 		lookup := map[string]interface{}{"slug": cg.Slug}
-		if _, err := vr.client.Apply("virtualization", "cluster-groups", lookup, payload); err != nil {
+		cgObj, err := vr.client.Apply("virtualization", "cluster-groups", lookup, payload)
+		if err != nil {
 			return fmt.Errorf("failed to reconcile cluster group %s: %w", cg.Name, err)
 		}
+		vr.client.Cache().Register("cluster_groups", utils.GetIDFromObject(cgObj), cg.Slug, cg.Name)
 	}
 
 	return nil
@@ -77,6 +83,11 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 
 	for _, cl := range clusters {
 		typeID, ok := vr.lookupID("virtualization", "cluster-types", cl.TypeSlug)
+		if !ok {
+			// Fall back to a type registered earlier in this same run: in dry-run
+			// the live lookup cannot see a type that was never written to NetBox.
+			typeID, ok = vr.client.Cache().GetGlobalID("cluster_types", cl.TypeSlug)
+		}
 		if !ok {
 			vr.logger.Warning("Cluster type %s not found for cluster %s, skipping", cl.TypeSlug, cl.Name)
 			vr.client.MarkReconcileIncomplete("virtualization", "clusters")
@@ -95,7 +106,11 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 		}
 
 		if cl.GroupSlug != "" {
-			if groupID, ok := vr.lookupID("virtualization", "cluster-groups", cl.GroupSlug); ok {
+			groupID, ok := vr.lookupID("virtualization", "cluster-groups", cl.GroupSlug)
+			if !ok {
+				groupID, ok = vr.client.Cache().GetGlobalID("cluster_groups", cl.GroupSlug)
+			}
+			if ok {
 				payload["group"] = groupID
 			} else {
 				vr.logger.Warning("Cluster group %s not found for cluster %s, leaving unset", cl.GroupSlug, cl.Name)
@@ -117,9 +132,12 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 		}
 
 		lookup := map[string]interface{}{"name": cl.Name}
-		if _, err := vr.client.Apply("virtualization", "clusters", lookup, payload); err != nil {
+		clObj, err := vr.client.Apply("virtualization", "clusters", lookup, payload)
+		if err != nil {
 			return fmt.Errorf("failed to reconcile cluster %s: %w", cl.Name, err)
 		}
+		// Register so a VM can resolve a cluster created in this same run.
+		vr.client.Cache().Register("clusters", utils.GetIDFromObject(clObj), cl.Name)
 	}
 
 	return nil
@@ -405,13 +423,21 @@ func (vr *VirtualizationReconciler) setVMPrimaryIP(vmID, ipID int) error {
 // created in this same phase just before VMs.
 func (vr *VirtualizationReconciler) lookupCluster(name string) (id, siteID int, ok bool) {
 	clusters, err := vr.client.Filter("virtualization", "clusters", map[string]interface{}{"name": name})
-	if err != nil || len(clusters) == 0 {
-		return 0, 0, false
+	if err == nil && len(clusters) > 0 {
+		cl := clusters[0]
+		id = utils.GetIDFromObject(cl)
+		siteID = utils.GetIDFromObject(cl["site"])
+		return id, siteID, id != 0
 	}
-	cl := clusters[0]
-	id = utils.GetIDFromObject(cl)
-	siteID = utils.GetIDFromObject(cl["site"])
-	return id, siteID, id != 0
+	// Fall back to a cluster registered earlier in this same run: in --dry-run
+	// the cluster was planned but never written to NetBox, so the live lookup
+	// above misses. Its site id is unknown here (0), so VLAN resolution on the
+	// VM's interfaces degrades to a warning — acceptable for a dry-run preview,
+	// and the VM itself is still planned rather than silently skipped.
+	if cid, found := vr.client.Cache().GetGlobalID("clusters", name); found {
+		return cid, 0, true
+	}
+	return 0, 0, false
 }
 
 // lookupVMInterface resolves a VM interface by name on a given VM.
