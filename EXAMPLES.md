@@ -124,7 +124,7 @@ in the foundation phase and referenced here by slug.
 
 VMs are organised one file per VM under a per-environment folder
 (`inventory/virtual/{prod,stage,playground}/`); each environment is provisioned
-into its own Terraform state, while NetBox documents them all (the controller
+into its own OpenTofu state, while NetBox documents them all (the controller
 scans `inventory/virtual/` recursively).
 
 ```yaml
