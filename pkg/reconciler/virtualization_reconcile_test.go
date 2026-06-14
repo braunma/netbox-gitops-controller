@@ -84,8 +84,12 @@ func TestReconcileClustersResolvesReferences(t *testing.T) {
 	if got := utils.GetIDFromObject(cl["group"]); got != groupID {
 		t.Errorf("cluster group = %d, expected %d", got, groupID)
 	}
-	if got := utils.GetIDFromObject(cl["site"]); got != utils.GetIDFromObject(site) {
-		t.Errorf("cluster site = %d, expected %d", got, utils.GetIDFromObject(site))
+	// NetBox 4.2: the cluster site is carried in the generic scope.
+	if st, _ := cl["scope_type"].(string); st != "dcim.site" {
+		t.Errorf("cluster scope_type = %v, expected \"dcim.site\"", cl["scope_type"])
+	}
+	if got := utils.GetIDFromObject(cl["scope_id"]); got != utils.GetIDFromObject(site) {
+		t.Errorf("cluster scope_id = %d, expected %d", got, utils.GetIDFromObject(site))
 	}
 	if got := utils.GetIDFromObject(cl["tenant"]); got != utils.GetIDFromObject(tenant) {
 		t.Errorf("cluster tenant = %d, expected %d", got, utils.GetIDFromObject(tenant))
@@ -417,7 +421,7 @@ func TestReconcileClustersToleratesMissingOptionalRefs(t *testing.T) {
 	if len(stored) != 1 {
 		t.Fatalf("expected 1 cluster in store, got %d", len(stored))
 	}
-	for _, field := range []string{"group", "site", "tenant"} {
+	for _, field := range []string{"group", "scope_type", "scope_id", "tenant"} {
 		if _, set := stored[0][field]; set {
 			t.Errorf("cluster %s should be unset when the reference is unknown, got %v", field, stored[0][field])
 		}

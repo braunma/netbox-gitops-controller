@@ -62,18 +62,21 @@ func (nr *NetworkReconciler) ReconcileVLANGroups(groups []*models.VLANGroup) err
 		if group.SiteSlug != "" {
 			siteID, ok := nr.client.Cache().GetGlobalID("sites", group.SiteSlug)
 			if ok {
-				payload["site"] = siteID
+				setSiteScope(payload, siteID)
 			}
 		}
 
 		if group.Description != "" {
 			payload["description"] = group.Description
 		}
-		if group.MinVID > 0 {
-			payload["min_vid"] = group.MinVID
-		}
-		if group.MaxVID > 0 {
-			payload["max_vid"] = group.MaxVID
+		// NetBox 4.2 replaced the scalar min_vid/max_vid fields with vid_ranges,
+		// a list of [min, max] pairs. Sending the old fields is silently dropped
+		// and re-PATCHed every run; emit a single range covering the configured
+		// bounds instead.
+		if group.MinVID > 0 && group.MaxVID > 0 {
+			payload["vid_ranges"] = []interface{}{
+				[]interface{}{group.MinVID, group.MaxVID},
+			}
 		}
 
 		lookup := map[string]interface{}{"slug": group.Slug}
@@ -164,15 +167,15 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 
 	for _, prefix := range prefixes {
 		payload := map[string]interface{}{
-			"prefix": prefix.Prefix,
-			"status": prefix.Status,
+			"prefix":  prefix.Prefix,
+			"status":  prefix.Status,
 			"is_pool": prefix.IsPool,
 		}
 
 		if prefix.SiteSlug != "" {
 			siteID, ok := nr.client.Cache().GetGlobalID("sites", prefix.SiteSlug)
 			if ok {
-				payload["site"] = siteID
+				setSiteScope(payload, siteID)
 			}
 		}
 

@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"sync"
 	"time"
 
@@ -472,6 +473,19 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 			continue
 		}
 
+		// vid_ranges (NetBox 4.2 VLAN-group VID bounds) is a list of [min, max]
+		// pairs, not a list of object references, so the ID-set comparison below
+		// can't see it (every pair extracts to no ID and the field would look
+		// permanently equal). Compare it as a canonical set of integer ranges,
+		// tolerant of the array and "min-max" string representations NetBox may
+		// return.
+		if key == "vid_ranges" {
+			if !vidRangesEqual(existingValue, desiredValue) {
+				changes[key] = desiredValue
+			}
+			continue
+		}
+
 		// Slice-valued fields (e.g. tags, tagged_vlans) are compared as an
 		// order-insensitive set of referenced IDs. NetBox returns them as
 		// nested objects ([{id, ...}]) while we send plain []int, so a direct
@@ -479,6 +493,21 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 		// every run. Treating them as ID sets keeps list fields idempotent.
 		if isListField(desiredValue) || isListField(existingValue) {
 			if !c.idSetEqual(existingValue, desiredValue) {
+				changes[key] = desiredValue
+			}
+			continue
+		}
+
+		// Map-valued desired fields (currently only custom_fields) are plain
+		// dictionaries of scalar values, not related-object references. NetBox
+		// returns the full set of defined custom fields, so we compare the
+		// desired entries as a subset: the field is changed only when a declared
+		// value differs from what NetBox reports. Without this, the generic
+		// nested-object handling below reduced the existing map to a scalar (0),
+		// which never matched the desired map and re-PATCHed it on every run.
+		if desiredMap, ok := desiredValue.(map[string]interface{}); ok {
+			existingMap, _ := existingValue.(map[string]interface{})
+			if !mapSubsetEqual(existingMap, desiredMap) {
 				changes[key] = desiredValue
 			}
 			continue
@@ -574,6 +603,75 @@ func scalarFromNetBoxObject(m map[string]interface{}) interface{} {
 		return v
 	}
 	return utils.GetIDFromObject(m)
+}
+
+// mapSubsetEqual reports whether every entry in desired is present in existing
+// with an equal value. It is used for dictionary-valued fields such as
+// custom_fields, where NetBox returns every defined field but the desired
+// payload only declares the subset the controller manages. A declared field
+// that is absent from existing (e.g. a custom field defined after the object was
+// created) counts as a difference so the value gets written.
+func mapSubsetEqual(existing, desired map[string]interface{}) bool {
+	for key, desiredValue := range desired {
+		existingValue, ok := existing[key]
+		if !ok || !valuesEqual(existingValue, desiredValue) {
+			return false
+		}
+	}
+	return true
+}
+
+// vidRangesEqual reports whether two vid_ranges values describe the same set of
+// VID ranges, independent of order and representation. NetBox 4.2 may serialize
+// a range either as a two-element array ([1, 4094]) or as a "min-max" string
+// ("1-4094"); both reduce to the same canonical pairs here.
+func vidRangesEqual(existing, desired interface{}) bool {
+	a := canonicalVIDRanges(existing)
+	b := canonicalVIDRanges(desired)
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// canonicalVIDRanges normalizes a vid_ranges value into a sorted slice of
+// [min, max] pairs. Unrecognized shapes yield an empty slice.
+func canonicalVIDRanges(v interface{}) [][2]int {
+	list, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+
+	ranges := make([][2]int, 0, len(list))
+	for _, item := range list {
+		switch r := item.(type) {
+		case []interface{}:
+			if len(r) == 2 {
+				ranges = append(ranges, [2]int{utils.GetIDFromObject(r[0]), utils.GetIDFromObject(r[1])})
+			}
+		case string:
+			var lo, hi int
+			if _, err := fmt.Sscanf(r, "%d-%d", &lo, &hi); err == nil {
+				ranges = append(ranges, [2]int{lo, hi})
+			}
+		case map[string]interface{}:
+			// Some serializers render a range as {"start": N, "end": M}.
+			ranges = append(ranges, [2]int{utils.GetIDFromObject(r["start"]), utils.GetIDFromObject(r["end"])})
+		}
+	}
+
+	sort.Slice(ranges, func(i, j int) bool {
+		if ranges[i][0] != ranges[j][0] {
+			return ranges[i][0] < ranges[j][0]
+		}
+		return ranges[i][1] < ranges[j][1]
+	})
+	return ranges
 }
 
 // valuesEqual compares two values for equality

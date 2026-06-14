@@ -118,7 +118,7 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 		}
 		if cl.SiteSlug != "" {
 			if siteID, ok := vr.lookupSiteID(cl.SiteSlug); ok {
-				payload["site"] = siteID
+				setSiteScope(payload, siteID)
 			} else {
 				vr.logger.Warning("Site %s not found for cluster %s, leaving unset", cl.SiteSlug, cl.Name)
 			}
@@ -426,7 +426,9 @@ func (vr *VirtualizationReconciler) lookupCluster(name string) (id, siteID int, 
 	if err == nil && len(clusters) > 0 {
 		cl := clusters[0]
 		id = utils.GetIDFromObject(cl)
-		siteID = utils.GetIDFromObject(cl["site"])
+		// NetBox 4.2 reports a cluster's site via the generic scope, not a
+		// `site` field; siteIDFromScope handles both representations.
+		siteID = siteIDFromScope(cl)
 		return id, siteID, id != 0
 	}
 	// Fall back to a cluster registered earlier in this same run: in --dry-run
