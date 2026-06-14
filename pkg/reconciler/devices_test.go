@@ -9,11 +9,11 @@ import (
 // TestRackFaceLogic tests that face and position are only set when rack is present
 func TestRackFaceLogic(t *testing.T) {
 	tests := []struct {
-		name            string
-		device          *models.DeviceConfig
-		expectRack      bool
-		expectPosition  bool
-		expectFace      bool
+		name           string
+		device         *models.DeviceConfig
+		expectRack     bool
+		expectPosition bool
+		expectFace     bool
 	}{
 		{
 			name: "device with rack should have position and face",
@@ -53,7 +53,7 @@ func TestRackFaceLogic(t *testing.T) {
 				DeviceTypeSlug: "blade-type",
 				ParentDevice:   "chassis1",
 				DeviceBay:      "Bay-1",
-				Position:       10, // Should be ignored
+				Position:       10,      // Should be ignored
 				Face:           "front", // Should be ignored
 			},
 			expectRack:     false,
@@ -255,9 +255,9 @@ func TestDeviceTypeSubdeviceRole(t *testing.T) {
 // TestModuleManagedTag tests that modules should be tagged
 func TestModuleManagedTag(t *testing.T) {
 	tests := []struct {
-		name          string
-		managedTagID  int
-		expectTagged  bool
+		name         string
+		managedTagID int
+		expectTagged bool
 	}{
 		{
 			name:         "with managed tag ID",
@@ -291,10 +291,10 @@ func TestModuleManagedTag(t *testing.T) {
 // TestDeviceBayTemplateCreation tests device bay auto-creation logic
 func TestDeviceBayTemplateCreation(t *testing.T) {
 	tests := []struct {
-		name             string
-		templates        []map[string]interface{}
-		existingBays     []string
-		expectedCreates  []string
+		name            string
+		templates       []map[string]interface{}
+		existingBays    []string
+		expectedCreates []string
 	}{
 		{
 			name: "create missing bays",

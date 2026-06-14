@@ -39,7 +39,7 @@ const (
 
 // Wait durations (milliseconds)
 const (
-	WaitAfterCableDelete = 100
+	WaitAfterCableDelete  = 100
 	WaitAfterModuleDelete = 200
 )
 
@@ -94,12 +94,12 @@ var CacheResourceTypes = []string{
 
 // Cable color map
 var CableColorMap = map[string]string{
-	"cat6":   "f44336",
-	"cat6a":  "ffeb3b",
-	"cat7":   "ff9800",
-	"dac":    "000000",
-	"fiber":  "00bcd4",
-	"om3":    "00bcd4",
-	"om4":    "2196f3",
-	"os2":    "9c27b0",
+	"cat6":  "f44336",
+	"cat6a": "ffeb3b",
+	"cat7":  "ff9800",
+	"dac":   "000000",
+	"fiber": "00bcd4",
+	"om3":   "00bcd4",
+	"om4":   "2196f3",
+	"os2":   "9c27b0",
 }

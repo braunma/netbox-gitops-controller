@@ -8,6 +8,20 @@ import (
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
+// singleVIDRange extracts a lone [min, max] pair from a stored vid_ranges value
+// (a list of two-element arrays, JSON-decoded to float64 by the fake server).
+func singleVIDRange(v interface{}) (lo, hi int, ok bool) {
+	list, isList := v.([]interface{})
+	if !isList || len(list) != 1 {
+		return 0, 0, false
+	}
+	pair, isPair := list[0].([]interface{})
+	if !isPair || len(pair) != 2 {
+		return 0, 0, false
+	}
+	return utils.GetIDFromObject(pair[0]), utils.GetIDFromObject(pair[1]), true
+}
+
 func TestReconcileVRFsCreateThenIdempotent(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	nr := NewNetworkReconciler(c)
@@ -55,12 +69,24 @@ func TestReconcileVLANGroupsResolvesSiteFromCache(t *testing.T) {
 	if len(stored) != 1 {
 		t.Fatalf("expected 1 VLAN group in store, got %d", len(stored))
 	}
-	if got := utils.GetIDFromObject(stored[0]["site"]); got != utils.GetIDFromObject(site) {
-		t.Errorf("VLAN group site = %d, expected cached site ID %d", got, utils.GetIDFromObject(site))
+	// NetBox 4.2: the site is carried in the generic scope, not a `site` field.
+	if st, _ := stored[0]["scope_type"].(string); st != "dcim.site" {
+		t.Errorf("VLAN group scope_type = %v, expected \"dcim.site\"", stored[0]["scope_type"])
 	}
-	if got := utils.GetIDFromObject(stored[0]["min_vid"]); got != 100 {
-		t.Errorf("VLAN group min_vid = %v, expected 100", stored[0]["min_vid"])
+	if got := utils.GetIDFromObject(stored[0]["scope_id"]); got != utils.GetIDFromObject(site) {
+		t.Errorf("VLAN group scope_id = %d, expected cached site ID %d", got, utils.GetIDFromObject(site))
 	}
+	if lo, hi, ok := singleVIDRange(stored[0]["vid_ranges"]); !ok || lo != 100 || hi != 199 {
+		t.Errorf("VLAN group vid_ranges = %v, expected single range [100, 199]", stored[0]["vid_ranges"])
+	}
+
+	// Idempotency: a second run against the just-written object must change
+	// nothing — the scope and vid_ranges must round-trip cleanly.
+	f.resetMutations()
+	if err := nr.ReconcileVLANGroups(groups); err != nil {
+		t.Fatalf("ReconcileVLANGroups() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
 }
 
 func TestReconcileVLANsResolvesSiteAndGroup(t *testing.T) {
@@ -152,8 +178,12 @@ func TestReconcilePrefixesResolvesReferences(t *testing.T) {
 	if len(stored) != 1 {
 		t.Fatalf("expected 1 prefix in store, got %d", len(stored))
 	}
-	if got := utils.GetIDFromObject(stored[0]["site"]); got != siteID {
-		t.Errorf("prefix site = %d, expected %d", got, siteID)
+	// NetBox 4.2: the prefix site is carried in the generic scope.
+	if st, _ := stored[0]["scope_type"].(string); st != "dcim.site" {
+		t.Errorf("prefix scope_type = %v, expected \"dcim.site\"", stored[0]["scope_type"])
+	}
+	if got := utils.GetIDFromObject(stored[0]["scope_id"]); got != siteID {
+		t.Errorf("prefix scope_id = %d, expected %d", got, siteID)
 	}
 	if got := utils.GetIDFromObject(stored[0]["vrf"]); got != utils.GetIDFromObject(vrf) {
 		t.Errorf("prefix vrf = %d, expected %d", got, utils.GetIDFromObject(vrf))
