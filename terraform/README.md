@@ -80,8 +80,14 @@ Proxmox/cloud-init behaviour.
    discovery is involved — the id from the YAML is passed straight to
    `clone.vm_id`. `platform` is kept only for NetBox documentation.
 2. **VLANs.** NetBox names VLANs; Proxmox NICs need a numeric 802.1q tag. Map
-   them with `var.vlan_tags`, e.g. `{ "Management" = 100 }`. Unmapped names are
-   left untagged.
+   every VLAN name used by an interface with `var.vlan_tags`, e.g.
+   `{ "Management" = 100 }`. An interface with an empty `vlan` is left untagged
+   (native VLAN); a **named** VLAN that is missing from the map **fails the
+   plan** rather than silently landing the NIC on the native VLAN.
+3. **Guest agent.** `var.agent_enabled` (default `true`) turns on the QEMU guest
+   agent integration. Keep it on **only if the cloned template runs
+   qemu-guest-agent** — otherwise every apply waits for the create timeout and
+   then fails. Set `TF_VAR_agent_enabled=false` for templates without it.
 
 ### Configuration via GitLab CI/CD variables (no tfvars file needed)
 
@@ -105,6 +111,7 @@ secrets). So set everything in **GitLab → Settings → CI/CD → Variables**:
 | `TF_VAR_datastore_id`      | –        | `local-lvm`                                     |
 | `TF_VAR_cpu_type`          | –        | `x86-64-v2-AES`                                 |
 | `TF_VAR_vm_on_boot`        | –        | `true`                                          |
+| `TF_VAR_agent_enabled`     | –        | `false` (template has no qemu-guest-agent)      |
 
 > **⚠️ Typing gotcha.** `string`/`bool`/`number` variables take a plain value,
 > but **list and map** variables (`ci_ssh_keys`, `dns_servers`, `vlan_tags`) must

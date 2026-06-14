@@ -71,6 +71,14 @@ variable "vm_on_boot" {
   default     = true
 }
 
+# Only enable when the cloned template runs qemu-guest-agent. If it does not,
+# leaving this true makes every apply wait for the create timeout and then fail.
+variable "agent_enabled" {
+  description = "Enable the QEMU guest agent integration (template must run qemu-guest-agent)."
+  type        = bool
+  default     = true
+}
+
 # -----------------------------------------------------------------------------
 # Infrastructure mapping (environment-specific)
 # -----------------------------------------------------------------------------
@@ -86,11 +94,13 @@ variable "network_bridge" {
   default     = "vmbr0"
 }
 
-# NetBox models VLANs by name; Proxmox NICs need a numeric 802.1q tag. Map the
-# VLAN names used in the YAML to their tags here. Names absent from the map are
-# left untagged (native VLAN of the bridge).
+# NetBox models VLANs by name; Proxmox NICs need a numeric 802.1q tag. Map every
+# VLAN name used in the YAML to its tag here. An interface with an empty vlan is
+# left untagged (native VLAN of the bridge); a *named* vlan that is missing from
+# this map fails the plan (see the precondition in vms.tf) rather than silently
+# landing the NIC on the native VLAN.
 variable "vlan_tags" {
-  description = "VLAN name => 802.1q tag id."
+  description = "VLAN name => 802.1q tag id. Every named VLAN used by an interface must appear here."
   type        = map(number)
   default     = {}
 }

@@ -48,11 +48,17 @@ resource "proxmox_virtual_environment_vm" "this" {
   }
 
   # One Proxmox NIC per declared interface, in order. The VLAN name is mapped to
-  # an 802.1q tag via var.vlan_tags (unmapped names stay untagged).
+  # an 802.1q tag via var.vlan_tags. An interface with an empty vlan is left
+  # untagged (native VLAN); a *named* vlan must be present in var.vlan_tags — the
+  # precondition below rejects an unmapped name rather than silently landing the
+  # NIC on the native VLAN.
   dynamic "network_device" {
     for_each = each.value.interfaces
     content {
-      bridge  = var.network_bridge
+      bridge = var.network_bridge
+      # Total expression (never errors): an unmapped name yields null here, but
+      # the vlan precondition below fails the plan before that can be applied, so
+      # a typo'd VLAN can't silently end up untagged.
       vlan_id = lookup(var.vlan_tags, network_device.value.vlan, null)
     }
   }
@@ -90,17 +96,33 @@ resource "proxmox_virtual_environment_vm" "this" {
     }
   }
 
+  # The QEMU guest agent lets Proxmox/Terraform read the VM's IPs and shut it
+  # down cleanly. Keep it enabled ONLY if the cloned template actually runs
+  # qemu-guest-agent: with it enabled and the agent absent, every `terraform
+  # apply` blocks until the provider's create timeout and then fails. Toggle via
+  # var.agent_enabled for templates without the agent.
   agent {
-    enabled = true
+    enabled = var.agent_enabled
   }
 
-  # Fail with a clear message (rather than a cryptic provider error) when a VM
-  # is missing its clone template id. tfgen already enforces this, so this only
-  # trips for hand-edited tfvars.
   lifecycle {
+    # Fail with a clear message (rather than a cryptic provider error) when a VM
+    # is missing its clone template id. tfgen already enforces this, so this only
+    # trips for hand-edited tfvars.
     precondition {
       condition     = each.value.vm_template_id > 0
       error_message = "VM ${each.value.name}: vm_template_id is required (the Proxmox VMID of the template to clone, e.g. 800)."
+    }
+
+    # A named VLAN that isn't mapped in var.vlan_tags would otherwise be left
+    # untagged and silently place the NIC on the bridge's native VLAN — a
+    # security risk (wrong/often management network). Fail loudly instead; set
+    # the interface vlan to "" to intend untagged.
+    precondition {
+      condition = alltrue([
+        for i in each.value.interfaces : i.vlan == "" || contains(keys(var.vlan_tags), i.vlan)
+      ])
+      error_message = "VM ${each.value.name}: interface VLAN(s) not mapped in var.vlan_tags (have ${jsonencode(keys(var.vlan_tags))}). Add the VLAN name => 802.1q tag, or set the interface vlan to \"\" for untagged."
     }
   }
 }
