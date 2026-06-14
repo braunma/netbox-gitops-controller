@@ -57,14 +57,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// VMs without a vmid are NetBox-only and intentionally not provisioned;
-	// report the count so a forgotten vmid is visible rather than silent.
+	// VMs without `provision: true` are NetBox-only and intentionally not
+	// provisioned; report the count so a forgotten flag is visible, not silent.
 	skipped := len(vms) - len(doc.VMs)
 
 	if *out == "-" {
 		os.Stdout.Write(data)
 		if skipped > 0 {
-			fmt.Fprintf(os.Stderr, "ℹ️  Skipped %d NetBox-only VM(s) without a vmid\n", skipped)
+			fmt.Fprintf(os.Stderr, "ℹ️  Skipped %d NetBox-only VM(s) (provision not set)\n", skipped)
 		}
 		return
 	}
@@ -74,7 +74,7 @@ func main() {
 	}
 	fmt.Printf("✅ Wrote %d VM(s) to %s", len(doc.VMs), *out)
 	if skipped > 0 {
-		fmt.Printf(" (skipped %d NetBox-only VM(s) without a vmid)", skipped)
+		fmt.Printf(" (skipped %d NetBox-only VM(s); provision not set)", skipped)
 	}
 	fmt.Println()
 }

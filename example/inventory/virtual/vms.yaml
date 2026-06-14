@@ -1,13 +1,18 @@
 # Example Virtual Machines
-# Demonstrates a clustered VM (with an interface, VLAN and primary IP) and a
-# site-only VM (no cluster), both of which NetBox supports.
+# Demonstrates the two modes the pipeline supports:
+#   1. A provisioned VM (provision: true) — documented in NetBox AND created in
+#      Proxmox by Terraform, cloned from the template at vm_template_id.
+#   2. A documentation-only VM (provision unset) — reconciled into NetBox only,
+#      and skipped by tfgen even though it carries a vmid for reference.
 
 - name: "web-01"
-  vmid: 101                        # Proxmox VMID; stored in NetBox `vmid` custom field
-  node: "pve-01"                   # target Proxmox node (provisioning only; ignored by NetBox)
+  provision: true                  # create this VM in Proxmox via Terraform
+  vmid: 101                        # Proxmox VMID to create; stored in NetBox `vmid` custom field
+  vm_template_id: 800              # template VMID to clone from (your cloud-init template)
+  node: "pve-01"                   # target Proxmox node the VM is spawned on
   cluster: "berlin-prod-cluster"   # clustered VM; inherits the cluster's site → Proxmox pool
   role_slug: "vm"                  # role must have vm_role: true
-  platform: "ubuntu-22-04"
+  platform: "ubuntu-22-04"         # NetBox documentation only (not used to clone)
   tenant: "platform-engineering"
   status: "active"
   vcpus: 4
@@ -25,10 +30,10 @@
         dns_name: "web-01.berlin.example.com"
       address_role: "primary"      # promotes this IP to the VM's primary_ip4
 
-# A site-only VM has no cluster — only a site.
+# A documentation-only, site-only VM: tracked in NetBox, never touched by
+# Terraform (no provision flag). It may still carry a vmid for reference.
 - name: "edge-01"
   vmid: 201
-  node: "pve-06"
   site_slug: "test-lab"
   role_slug: "vm"                  # role must have vm_role: true
   platform: "debian-12"
