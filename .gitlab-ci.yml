@@ -63,11 +63,6 @@ variables:
   # the NetBox pipeline runs standalone. Set ENABLE_PROXMOX="true" (and the
   # TF_VAR_proxmox_* variables) to turn on tf_validate/tf_plan/tf_apply.
   ENABLE_PROXMOX: "false"
-  # Environments to provision. Each gets its own VM folder
-  # (inventory/virtual/<env>/) and its own GitLab-managed Terraform state
-  # (proxmox-<env>). Keep this list in sync with the parallel:matrix in the
-  # tf_plan/tf_apply jobs below.
-  PROXMOX_ENVS: "prod stage playground"
 
   # ===========================================================================
   # PIPELINE CONTROL VARIABLES
@@ -275,20 +270,29 @@ debug_environment:
 # Optional: TF_VAR_proxmox_insecure, TF_VAR_default_gateway, TF_VAR_vlan_tags,
 #           TF_VAR_ci_ssh_keys, TF_VAR_cpu_type, …
 
+# Single source of truth for the environments to provision. Each gets its own
+# VM folder (inventory/virtual/<env>/) and its own GitLab-managed Terraform
+# state (proxmox-<env>). This anchor is referenced by every job's
+# parallel:matrix below (tf_generate/tf_plan/tf_apply), so the list lives in
+# exactly one place — there is no second copy to keep in sync.
+.proxmox_envs: &proxmox_envs ["prod", "stage", "playground"]
+
 # tf_generate turns each environment's VM YAML into a per-env tfvars file
 # (terraform/generated.<env>.tfvars.json) using the same loader as the NetBox
 # controller. Pure Go, no external deps, so it always runs and guards against
-# tfgen regressions even when Proxmox is disabled.
+# tfgen regressions even when Proxmox is disabled. One matrix job per env;
+# tfgen now errors on a mistyped --group, so a bad env fails the job instead of
+# silently emitting an empty (destroy-everything) tfvars file.
 tf_generate:
   extends: .go_base
   stage: validate
+  parallel:
+    matrix:
+      - ENV: *proxmox_envs
   script:
-    - |
-      for ENV in $PROXMOX_ENVS; do
-        echo "🧩 Generating Terraform vars for environment '$ENV'..."
-        go run ./cmd/tfgen --data-dir . --group "$ENV" --out "terraform/generated.$ENV.tfvars.json"
-        cat "terraform/generated.$ENV.tfvars.json"
-      done
+    - echo "🧩 Generating Terraform vars for environment '${ENV}'..."
+    - go run ./cmd/tfgen --data-dir . --group "${ENV}" --out "terraform/generated.${ENV}.tfvars.json"
+    - cat "terraform/generated.${ENV}.tfvars.json"
   artifacts:
     paths:
       - terraform/generated.*.tfvars.json
@@ -345,7 +349,7 @@ tf_plan:
     - tf_generate
   parallel:
     matrix:
-      - ENV: ["prod", "stage", "playground"]
+      - ENV: *proxmox_envs
   script:
     - terraform plan -var-file="generated.${ENV}.tfvars.json" -out="tfplan.${ENV}" | tee "tf-plan-${ENV}.txt"
   artifacts:
@@ -366,7 +370,7 @@ tf_apply:
     - tf_generate
   parallel:
     matrix:
-      - ENV: ["prod", "stage", "playground"]
+      - ENV: *proxmox_envs
   script:
     - terraform apply -auto-approve -var-file="generated.${ENV}.tfvars.json"
   rules:

@@ -45,6 +45,19 @@ func main() {
 	folder := "inventory/virtual"
 	if *group != "" {
 		folder = filepath.Join("inventory/virtual", *group)
+
+		// Safety: a mistyped --group must fail loudly. The loader treats a
+		// missing folder as "skip" (correct for optional NetBox folders), but
+		// here a typo would yield an empty {"vms":{}} document and exit 0 — and
+		// `terraform apply` against that env's state would then plan to DESTROY
+		// every existing VM. Distinguish "typo" (folder absent) from
+		// "legitimately empty" (folder present, no VMs yet) by requiring the
+		// environment folder to exist.
+		if _, statErr := os.Stat(filepath.Join(dir, folder)); os.IsNotExist(statErr) {
+			fmt.Fprintf(os.Stderr, "❌ environment folder %q not found under %s (check --group for typos)\n",
+				*group, filepath.Join(dir, "inventory/virtual"))
+			os.Exit(1)
+		}
 	}
 
 	dl := loader.NewDataLoader(dir, logger)

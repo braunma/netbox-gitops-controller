@@ -149,7 +149,8 @@ A single VM can still be changed in isolation within its env state with
 `terraform apply -target='proxmox_virtual_environment_vm.this["web-01"]'`.
 
 **Add an environment:** create `inventory/virtual/<env>/`, then add `<env>` to
-`PROXMOX_ENVS` and to the `parallel:matrix` lists in `.gitlab-ci.yml`.
+the single `.proxmox_envs` anchor in `.gitlab-ci.yml` — it drives the
+`tf_generate`/`tf_plan`/`tf_apply` matrices, so there is no second list to edit.
 
 ## Status
 
