@@ -355,7 +355,9 @@ tf_plan:
     matrix:
       - ENV: *proxmox_envs
   script:
-    - terraform plan -input=false -lock-timeout=120s -var-file="generated.${ENV}.tfvars.json" -out="tfplan.${ENV}" | tee "tf-plan-${ENV}.txt"
+    # -no-color keeps the saved human plan free of ANSI escapes so tf_apply's
+    # destroy-detection grep below matches reliably.
+    - terraform plan -input=false -no-color -lock-timeout=120s -var-file="generated.${ENV}.tfvars.json" -out="tfplan.${ENV}" | tee "tf-plan-${ENV}.txt"
   artifacts:
     paths:
       - terraform/tfplan.*
@@ -380,6 +382,11 @@ tf_plan:
 # unseen plan). If the state has drifted since the plan, Terraform rejects the
 # stale plan and the job fails safely instead of applying something different —
 # re-run the pipeline to get a fresh plan.
+#
+# resource_group serialises applies per environment across pipelines: GitLab
+# runs at most one tf_apply for a given env at a time, so two pipelines on the
+# default branch can never apply to the same proxmox-<env> state concurrently.
+# This is defence-in-depth on top of the backend's own state lock.
 tf_apply:
   extends: .terraform_env
   stage: apply
@@ -388,7 +395,35 @@ tf_apply:
   parallel:
     matrix:
       - ENV: *proxmox_envs
+  resource_group: proxmox-${ENV}
   script:
+    # Destroy safety gate. This is a GitOps module: removing a VM from the YAML
+    # (or a replacement triggered by an immutable change) makes Terraform DESTROY
+    # a real, running VM — irreversible. The saved human plan from tf_plan lists
+    # one "# <addr> will be destroyed / must be replaced" line per destructive
+    # action; count them straight from that artifact (offline, no jq needed).
+    # Fail closed: a missing plan file aborts rather than applying blind.
+    - |
+      PLAN_TXT="tf-plan-${ENV}.txt"
+      if [ ! -f "${PLAN_TXT}" ]; then
+        echo "❌ Plan summary ${PLAN_TXT} is missing; refusing to apply (fail-closed)."
+        exit 1
+      fi
+      DESTROYS=$(grep -cE '^[[:space:]]*# .*(will be destroyed|must be replaced)$' "${PLAN_TXT}" || true)
+      DESTROYS=${DESTROYS:-0}
+      echo "Plan for '${ENV}' will destroy/replace ${DESTROYS} resource(s)."
+      if [ "${DESTROYS}" -gt 0 ]; then
+        case ",${TF_ALLOW_DESTROY}," in
+          *",${ENV},"*)
+            echo "⚠️  ${DESTROYS} resource(s) will be DESTROYED/REPLACED in '${ENV}' (confirmed via TF_ALLOW_DESTROY)." ;;
+          *)
+            echo "❌ Refusing to apply: ${DESTROYS} resource(s) would be DESTROYED or REPLACED in '${ENV}'."
+            echo "   Destroying a VM is irreversible, so it is blocked by default."
+            echo "   Review the destroyed resources in ${PLAN_TXT}, and if this is intended,"
+            echo "   re-run this job with the CI variable TF_ALLOW_DESTROY=${ENV} to confirm."
+            exit 1 ;;
+        esac
+      fi
     - terraform apply -input=false -lock-timeout=120s "tfplan.${ENV}"
   rules:
     - if: $ENABLE_PROXMOX != "true"

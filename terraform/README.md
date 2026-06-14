@@ -156,6 +156,48 @@ A single VM can still be changed in isolation within its env state with
 the single `.proxmox_envs` anchor in `.gitlab-ci.yml` — it drives the
 `tf_generate`/`tf_plan`/`tf_apply` matrices, so there is no second list to edit.
 
+## Safety
+
+Because this is a GitOps module, the YAML is the desired state: **removing a VM
+from `inventory/virtual/<env>/` (or making a change Proxmox can only satisfy by
+recreating the VM) makes Terraform destroy a real, running VM.** That is
+irreversible, so the pipeline defends against it in layers:
+
+1. **Saved plan, not blind apply.** `tf_apply` applies the exact `tfplan.<env>`
+   produced and reviewed in `tf_plan` — never a fresh re-plan. If the state has
+   drifted since the plan, Terraform rejects the stale plan and the job fails
+   safely.
+2. **Manual gate.** `tf_apply` is `when: manual` on the default branch, one
+   button per environment.
+3. **Destroy confirmation (fail-closed).** Before applying, `tf_apply` counts
+   the resources the plan would **destroy or replace**. If that count is > 0 it
+   refuses to apply unless you re-run the job with the CI variable
+   `TF_ALLOW_DESTROY=<env>` (e.g. `TF_ALLOW_DESTROY=prod`). A bare `true` does
+   **not** match — you must name the exact environment, so confirming a
+   `playground` teardown can never authorise a `prod` one. A missing plan
+   artifact aborts rather than applying blind.
+4. **Serialised applies.** `resource_group: proxmox-<env>` ensures only one
+   apply per environment runs at a time across pipelines, on top of the
+   backend's state lock (`lock-timeout=120s`).
+
+### Recommended: commit the dependency lock file
+
+`terraform/.terraform.lock.hcl` is **not** committed yet. For supply-chain
+integrity and fully reproducible runs you should generate and commit it so every
+`init` verifies the provider against pinned checksums for all CI/runner
+platforms:
+
+```sh
+cd terraform
+terraform init
+terraform providers lock -platform=linux_amd64 -platform=darwin_arm64
+git add .terraform.lock.hcl
+```
+
+Until it is committed, CI bridges the gap by passing the lock file resolved in
+`tf_plan` to `tf_apply` as an artifact (see `.gitlab-ci.yml`), so a single
+pipeline stays self-consistent — but a committed lock file is the durable fix.
+
 ## Status
 
 Scaffold — written to be correct against bpg/proxmox ~0.109 but **not yet run
