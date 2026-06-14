@@ -200,3 +200,53 @@ func TestReconcilePrefixesResolvesReferences(t *testing.T) {
 	}
 	f.requireMutationCount(t, 0)
 }
+
+// TestReconcileNetworkResolvesReferencesWithoutSiteCache reproduces the
+// production phase ordering: VLAN groups, VLANs and prefixes are reconciled in
+// the network phase with only the global cache warm — the site caches that hold
+// vlan_groups and vlans are not loaded until the later device phase. The
+// reconcilers must seed the cache as they create objects so that a VLAN resolves
+// its group and a prefix resolves its VLAN within the same phase. Before the
+// fix, both lookups missed and the associations were silently dropped.
+func TestReconcileNetworkResolvesReferencesWithoutSiteCache(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})
+	vrf := f.seed("ipam", "vrfs", client.Object{"name": "prod"})
+
+	// Only the global cache is loaded, exactly as in the network phase. No
+	// LoadSite, so vlan_groups and vlans start absent from the cache.
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	nr := NewNetworkReconciler(c)
+
+	if err := nr.ReconcileVLANGroups([]*models.VLANGroup{{
+		Name: "Fabric", Slug: "fabric", SiteSlug: "berlin-dc",
+	}}); err != nil {
+		t.Fatalf("ReconcileVLANGroups() error = %v", err)
+	}
+	if err := nr.ReconcileVLANs([]*models.VLAN{{
+		Name: "mgmt", VID: 100, SiteSlug: "berlin-dc", GroupSlug: "fabric", Status: "active",
+	}}); err != nil {
+		t.Fatalf("ReconcileVLANs() error = %v", err)
+	}
+	if err := nr.ReconcilePrefixes([]*models.Prefix{{
+		Prefix: "10.0.0.0/24", SiteSlug: "berlin-dc", VRFName: "prod", VLANName: "mgmt", Status: "active",
+	}}); err != nil {
+		t.Fatalf("ReconcilePrefixes() error = %v", err)
+	}
+
+	groupID := utils.GetIDFromObject(f.objects("ipam", "vlan-groups")[0])
+	vlan := f.objects("ipam", "vlans")[0]
+	if got := utils.GetIDFromObject(vlan["group"]); got != groupID {
+		t.Errorf("VLAN group = %v, expected group %d resolved from the seeded cache", vlan["group"], groupID)
+	}
+	prefix := f.objects("ipam", "prefixes")[0]
+	if got := utils.GetIDFromObject(prefix["vlan"]); got != utils.GetIDFromObject(vlan) {
+		t.Errorf("prefix vlan = %v, expected VLAN %d resolved from the seeded cache", prefix["vlan"], utils.GetIDFromObject(vlan))
+	}
+	if got := utils.GetIDFromObject(prefix["vrf"]); got != utils.GetIDFromObject(vrf) {
+		t.Errorf("prefix vrf = %d, expected %d", got, utils.GetIDFromObject(vrf))
+	}
+}

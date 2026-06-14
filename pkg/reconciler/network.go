@@ -80,9 +80,23 @@ func (nr *NetworkReconciler) ReconcileVLANGroups(groups []*models.VLANGroup) err
 		}
 
 		lookup := map[string]interface{}{"slug": group.Slug}
-		_, err := nr.client.Apply("ipam", "vlan-groups", lookup, payload)
+		groupObj, err := nr.client.Apply("ipam", "vlan-groups", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN group %s: %w", group.Name, err)
+		}
+
+		// Seed the cache so VLANs reconciled later in this phase can resolve their
+		// group. Site caches (which hold vlan_groups) are not loaded until the
+		// device phase, so without this the group lookup in ReconcileVLANs misses
+		// and the association is silently dropped. Mirror loadResource's key
+		// scheme: site-scoped groups go under the composite site key, global
+		// groups under the plain key. Skip dry-run creates (id 0).
+		if id := utils.GetIDFromObject(groupObj); id > 0 {
+			if siteID, ok := nr.client.Cache().GetGlobalID("sites", group.SiteSlug); group.SiteSlug != "" && ok {
+				nr.client.Cache().RegisterSite("vlan_groups", siteID, id, group.Slug, group.Name)
+			} else {
+				nr.client.Cache().Register("vlan_groups", id, group.Slug, group.Name)
+			}
 		}
 	}
 
@@ -152,9 +166,19 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			"vid":     vlan.VID,
 		}
 
-		_, err = nr.client.Apply("ipam", "vlans", lookup, payload)
+		vlanObj, err := nr.client.Apply("ipam", "vlans", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN %s: %w", vlan.Name, err)
+		}
+
+		// Seed the cache so prefixes reconciled later in this phase can resolve
+		// their VLAN. VLANs are site-scoped and not loaded into the cache until
+		// the device phase, so without this the site-aware VLAN lookup in
+		// ReconcilePrefixes misses and the association is silently dropped. Index
+		// by name under the composite site key, matching loadResource. Skip
+		// dry-run creates (id 0).
+		if id := utils.GetIDFromObject(vlanObj); id > 0 {
+			nr.client.Cache().RegisterSite("vlans", siteID, id, vlan.Name)
 		}
 	}
 
