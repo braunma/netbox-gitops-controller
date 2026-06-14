@@ -1,0 +1,45 @@
+# Example variables for the Proxmox module — COPY, DO NOT COMMIT REAL VALUES.
+#
+#   cp terraform.tfvars.example terraform.tfvars   # then fill in your secrets
+#
+# terraform.tfvars (and any *.tfvars / .env) is gitignored so real tokens and
+# SSH keys never reach the repo. In CI these are supplied as masked TF_VAR_*
+# variables instead of a file, and the per-VM list comes from
+# generated.tfvars.json (produced by `cmd/tfgen`), not from here.
+
+# --- Proxmox connection (required) ---
+proxmox_endpoint = "https://pve.example.com:8006/api2/json"
+
+# Full combined token string: 'user@realm!tokenid=secret'.
+proxmox_api_token = "gitops@pve!terraform=00000000-0000-0000-0000-000000000000"
+
+# Set true for a self-signed Proxmox certificate.
+proxmox_insecure = true
+
+# --- VM hardware defaults (optional; shown with their defaults) ---
+# Cluster-portable CPU type so VMs can live-migrate between nodes.
+cpu_type   = "x86-64-v2-AES"
+vm_on_boot = true
+
+# --- Infrastructure mapping (optional) ---
+datastore_id   = "local-lvm"
+network_bridge = "vmbr0"
+
+# NetBox names VLANs; Proxmox NICs need a numeric 802.1q tag. Map them here.
+# Names not listed are left untagged (native VLAN of the bridge).
+vlan_tags = {
+  # "Management" = 100
+}
+
+default_gateway = "10.57.196.1"
+dns_servers     = ["10.57.196.4"]
+
+# --- Cloud-init credentials (optional) ---
+ci_username = "denbi-service"
+ci_ssh_keys = [
+  "ssh-ed25519 AAAA...replace-with-your-public-key... user@host",
+]
+
+# NOTE: the `vms` variable is NOT set here — it is generated from
+# inventory/virtual/*.yaml into generated.tfvars.json and passed with
+# `terraform plan -var-file=generated.tfvars.json`.

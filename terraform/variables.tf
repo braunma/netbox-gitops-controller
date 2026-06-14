@@ -42,16 +42,10 @@ variable "proxmox_endpoint" {
   type        = string
 }
 
-# The Proxmox API token is supplied as two separate (masked) CI variables so the
-# id and the secret can be managed independently in GitLab. providers.tf joins
-# them back into the 'user@realm!tokenid=secret' string the provider expects.
-variable "proxmox_api_token_id" {
-  description = "Proxmox API token id, e.g. 'gitops@pve!terraform'."
-  type        = string
-}
-
-variable "proxmox_api_token_secret" {
-  description = "Proxmox API token secret (the UUID half of the token)."
+# The Proxmox API token as the single combined string the bpg provider expects:
+# 'user@realm!tokenid=secret'. Supplied as one masked CI variable.
+variable "proxmox_api_token" {
+  description = "Proxmox API token, full 'user@realm!tokenid=secret' string."
   type        = string
   sensitive   = true
 }

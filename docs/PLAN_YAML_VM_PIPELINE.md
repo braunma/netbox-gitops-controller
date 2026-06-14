@@ -68,9 +68,8 @@ mapping and operational detail see [`terraform/README.md`](../terraform/README.m
 
 - **Template strategy:** each provisioned VM names the template to clone directly
   via `vm_template_id` (the template's Proxmox VMID); no tag-based discovery.
-- **Secrets:** Proxmox API token split into `TF_VAR_proxmox_api_token_id` +
-  `TF_VAR_proxmox_api_token_secret` (masked GitLab CI variables, joined in
-  `providers.tf`); NetBox token likewise; Proxmox jobs gated behind
+- **Secrets:** Proxmox API token as a single masked `TF_VAR_proxmox_api_token`
+  (`user@realm!tokenid=secret`); NetBox token likewise; Proxmox jobs gated behind
   `ENABLE_PROXMOX`.
 - **Disk model:** YAML `disk` is a single size (omit to inherit the template's
   disk); multi-disk VMs would need a richer schema (out of scope for v1).

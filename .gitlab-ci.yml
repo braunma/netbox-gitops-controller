@@ -266,12 +266,11 @@ debug_environment:
 # go_* jobs). See terraform/README.md and docs/PLAN_YAML_VM_PIPELINE.md.
 #
 # Required CI variables when ENABLE_PROXMOX="true":
-#   TF_VAR_proxmox_endpoint           e.g. https://pve.example.com:8006/
-#   TF_VAR_proxmox_api_token_id       e.g. gitops@pve!terraform
-#   TF_VAR_proxmox_api_token_secret   the token UUID            (masked)
-# The provider also clones over SSH, so the runner needs an SSH agent or
-# PROXMOX_VE_SSH_USERNAME / PROXMOX_VE_SSH_PASSWORD for the target node.
-# Optional: TF_VAR_default_gateway, TF_VAR_vlan_tags, TF_VAR_ci_ssh_keys, …
+#   TF_VAR_proxmox_endpoint    e.g. https://pve.example.com:8006/api2/json
+#   TF_VAR_proxmox_api_token   user@realm!tokenid=secret          (masked)
+# No SSH is needed: clone + cloud-init run over the API.
+# Optional: TF_VAR_proxmox_insecure, TF_VAR_default_gateway, TF_VAR_vlan_tags,
+#           TF_VAR_ci_ssh_keys, TF_VAR_cpu_type, …
 
 # tf_generate turns the VM YAML into terraform/generated.tfvars.json using the
 # same loader as the NetBox controller. Pure Go, no external deps, so it always
