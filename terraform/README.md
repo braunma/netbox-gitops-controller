@@ -1,8 +1,9 @@
 # Proxmox provisioning (OpenTofu)
 
-This module provisions the VMs declared in `inventory/virtual/<env>/*.yaml` onto
-Proxmox VE, using the [`bpg/proxmox`](https://registry.terraform.io/providers/bpg/proxmox)
-provider. It is the **second consumer** of the single YAML source of truth — the
+This module is run with [OpenTofu](https://opentofu.org) (the `tofu` CLI, a
+drop-in Terraform replacement) and provisions the VMs declared in
+`inventory/virtual/<env>/*.yaml` onto Proxmox VE, using the
+[`bpg/proxmox`](https://registry.terraform.io/providers/bpg/proxmox) provider. It is the **second consumer** of the single YAML source of truth — the
 first being the NetBox controller. The two run independently (see
 `docs/PLAN_YAML_VM_PIPELINE.md`); nothing flows back from Proxmox into NetBox.
 

@@ -56,6 +56,8 @@ variables:
 
   # Container image registry paths (override in GitLab Variables for private registries)
   GOLANG_IMAGE: "golang:1.24"
+  # OpenTofu (drop-in Terraform replacement). The tf_* jobs invoke the `tofu`
+  # CLI from this image; override to pin a version or use a private mirror.
   OPENTOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.9"
 
   # PROXMOX PROVISIONING (opt-in)
@@ -311,6 +313,8 @@ tf_generate:
   before_script:
     - cd terraform
     - export TF_STATE_NAME="proxmox-${ENV}"
+    # GitLab's managed state backend endpoint is named ".../terraform/state/..."
+    # for both Terraform and OpenTofu — this is a GitLab API path, not a CLI name.
     - export TF_ADDRESS="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
     - tofu init -input=false
       -backend-config="address=${TF_ADDRESS}"
@@ -362,9 +366,9 @@ tf_plan:
     paths:
       - terraform/tfplan.*
       - terraform/tf-plan-*.txt
-      # Pass the resolved dependency lock to tf_apply so its `tofu init`
-      # selects the exact provider version this plan was built against. Without
-      # it, a patch released within `~> 0.109.0` between the two jobs would make
+      # Pass the resolved dependency lock to tf_apply so its `tofu init` selects
+      # the exact provider version this plan was built against. Without it, a
+      # patch released within `~> 0.109.0` between the two jobs would make
       # `tofu apply <planfile>` reject the saved plan. (If a committed
       # terraform/.terraform.lock.hcl exists, it takes precedence and this is a
       # harmless no-op.)
