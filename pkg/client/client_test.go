@@ -473,3 +473,69 @@ func TestCalculateDiffListFields(t *testing.T) {
 		t.Errorf("expected tagged_vlans change to be detected, got %v", changes)
 	}
 }
+
+func TestVIDRangesEqual(t *testing.T) {
+	// The desired payload the reconciler builds: a list with one [min, max] pair.
+	desired := []interface{}{[]interface{}{1, 4094}}
+
+	tests := []struct {
+		name     string
+		existing interface{}
+		want     bool
+	}{
+		{
+			name:     "array form as NetBox returns it (float64)",
+			existing: []interface{}{[]interface{}{float64(1), float64(4094)}},
+			want:     true,
+		},
+		{
+			name:     "string min-max form",
+			existing: []interface{}{"1-4094"},
+			want:     true,
+		},
+		{
+			name:     "start/end object form",
+			existing: []interface{}{map[string]interface{}{"start": float64(1), "end": float64(4094)}},
+			want:     true,
+		},
+		{
+			name:     "different bounds",
+			existing: []interface{}{[]interface{}{float64(1), float64(100)}},
+			want:     false,
+		},
+		{
+			name:     "missing entirely",
+			existing: nil,
+			want:     false,
+		},
+		{
+			name: "multiple ranges out of order still equal",
+			existing: []interface{}{
+				[]interface{}{float64(200), float64(299)},
+				[]interface{}{float64(1), float64(99)},
+			},
+			want: false, // desired declares only one range, so the sets differ
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := vidRangesEqual(tt.existing, desired); got != tt.want {
+				t.Errorf("vidRangesEqual(%v, %v) = %v, want %v", tt.existing, desired, got, tt.want)
+			}
+		})
+	}
+
+	// calculateDiff must route vid_ranges through the canonical comparison, not
+	// the ID-set path (which would treat any two range lists as equal).
+	c := &NetBoxClient{logger: utils.NewLogger(true)}
+	existing := Object{"vid_ranges": []interface{}{[]interface{}{float64(1), float64(4094)}}}
+	if changes := c.calculateDiff(existing, map[string]interface{}{"vid_ranges": desired}); len(changes) != 0 {
+		t.Errorf("expected no vid_ranges change for equal ranges, got %v", changes)
+	}
+	if changes := c.calculateDiff(existing, map[string]interface{}{
+		"vid_ranges": []interface{}{[]interface{}{1, 100}},
+	}); len(changes) == 0 {
+		t.Error("expected vid_ranges change to be detected for differing bounds")
+	}
+}

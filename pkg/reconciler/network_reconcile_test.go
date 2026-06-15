@@ -8,6 +8,20 @@ import (
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
+// singleVIDRange extracts a lone [min, max] pair from a stored vid_ranges value
+// (a list of two-element arrays, JSON-decoded to float64 by the fake server).
+func singleVIDRange(v interface{}) (lo, hi int, ok bool) {
+	list, isList := v.([]interface{})
+	if !isList || len(list) != 1 {
+		return 0, 0, false
+	}
+	pair, isPair := list[0].([]interface{})
+	if !isPair || len(pair) != 2 {
+		return 0, 0, false
+	}
+	return utils.GetIDFromObject(pair[0]), utils.GetIDFromObject(pair[1]), true
+}
+
 func TestReconcileVRFsCreateThenIdempotent(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	nr := NewNetworkReconciler(c)
@@ -55,12 +69,24 @@ func TestReconcileVLANGroupsResolvesSiteFromCache(t *testing.T) {
 	if len(stored) != 1 {
 		t.Fatalf("expected 1 VLAN group in store, got %d", len(stored))
 	}
-	if got := utils.GetIDFromObject(stored[0]["site"]); got != utils.GetIDFromObject(site) {
-		t.Errorf("VLAN group site = %d, expected cached site ID %d", got, utils.GetIDFromObject(site))
+	// NetBox 4.2: the site is carried in the generic scope, not a `site` field.
+	if st, _ := stored[0]["scope_type"].(string); st != "dcim.site" {
+		t.Errorf("VLAN group scope_type = %v, expected \"dcim.site\"", stored[0]["scope_type"])
 	}
-	if got := utils.GetIDFromObject(stored[0]["min_vid"]); got != 100 {
-		t.Errorf("VLAN group min_vid = %v, expected 100", stored[0]["min_vid"])
+	if got := utils.GetIDFromObject(stored[0]["scope_id"]); got != utils.GetIDFromObject(site) {
+		t.Errorf("VLAN group scope_id = %d, expected cached site ID %d", got, utils.GetIDFromObject(site))
 	}
+	if lo, hi, ok := singleVIDRange(stored[0]["vid_ranges"]); !ok || lo != 100 || hi != 199 {
+		t.Errorf("VLAN group vid_ranges = %v, expected single range [100, 199]", stored[0]["vid_ranges"])
+	}
+
+	// Idempotency: a second run against the just-written object must change
+	// nothing — the scope and vid_ranges must round-trip cleanly.
+	f.resetMutations()
+	if err := nr.ReconcileVLANGroups(groups); err != nil {
+		t.Fatalf("ReconcileVLANGroups() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
 }
 
 func TestReconcileVLANsResolvesSiteAndGroup(t *testing.T) {
@@ -152,8 +178,12 @@ func TestReconcilePrefixesResolvesReferences(t *testing.T) {
 	if len(stored) != 1 {
 		t.Fatalf("expected 1 prefix in store, got %d", len(stored))
 	}
-	if got := utils.GetIDFromObject(stored[0]["site"]); got != siteID {
-		t.Errorf("prefix site = %d, expected %d", got, siteID)
+	// NetBox 4.2: the prefix site is carried in the generic scope.
+	if st, _ := stored[0]["scope_type"].(string); st != "dcim.site" {
+		t.Errorf("prefix scope_type = %v, expected \"dcim.site\"", stored[0]["scope_type"])
+	}
+	if got := utils.GetIDFromObject(stored[0]["scope_id"]); got != siteID {
+		t.Errorf("prefix scope_id = %d, expected %d", got, siteID)
 	}
 	if got := utils.GetIDFromObject(stored[0]["vrf"]); got != utils.GetIDFromObject(vrf) {
 		t.Errorf("prefix vrf = %d, expected %d", got, utils.GetIDFromObject(vrf))
@@ -169,4 +199,54 @@ func TestReconcilePrefixesResolvesReferences(t *testing.T) {
 		t.Fatalf("ReconcilePrefixes() second run error = %v", err)
 	}
 	f.requireMutationCount(t, 0)
+}
+
+// TestReconcileNetworkResolvesReferencesWithoutSiteCache reproduces the
+// production phase ordering: VLAN groups, VLANs and prefixes are reconciled in
+// the network phase with only the global cache warm — the site caches that hold
+// vlan_groups and vlans are not loaded until the later device phase. The
+// reconcilers must seed the cache as they create objects so that a VLAN resolves
+// its group and a prefix resolves its VLAN within the same phase. Before the
+// fix, both lookups missed and the associations were silently dropped.
+func TestReconcileNetworkResolvesReferencesWithoutSiteCache(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})
+	vrf := f.seed("ipam", "vrfs", client.Object{"name": "prod"})
+
+	// Only the global cache is loaded, exactly as in the network phase. No
+	// LoadSite, so vlan_groups and vlans start absent from the cache.
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	nr := NewNetworkReconciler(c)
+
+	if err := nr.ReconcileVLANGroups([]*models.VLANGroup{{
+		Name: "Fabric", Slug: "fabric", SiteSlug: "berlin-dc",
+	}}); err != nil {
+		t.Fatalf("ReconcileVLANGroups() error = %v", err)
+	}
+	if err := nr.ReconcileVLANs([]*models.VLAN{{
+		Name: "mgmt", VID: 100, SiteSlug: "berlin-dc", GroupSlug: "fabric", Status: "active",
+	}}); err != nil {
+		t.Fatalf("ReconcileVLANs() error = %v", err)
+	}
+	if err := nr.ReconcilePrefixes([]*models.Prefix{{
+		Prefix: "10.0.0.0/24", SiteSlug: "berlin-dc", VRFName: "prod", VLANName: "mgmt", Status: "active",
+	}}); err != nil {
+		t.Fatalf("ReconcilePrefixes() error = %v", err)
+	}
+
+	groupID := utils.GetIDFromObject(f.objects("ipam", "vlan-groups")[0])
+	vlan := f.objects("ipam", "vlans")[0]
+	if got := utils.GetIDFromObject(vlan["group"]); got != groupID {
+		t.Errorf("VLAN group = %v, expected group %d resolved from the seeded cache", vlan["group"], groupID)
+	}
+	prefix := f.objects("ipam", "prefixes")[0]
+	if got := utils.GetIDFromObject(prefix["vlan"]); got != utils.GetIDFromObject(vlan) {
+		t.Errorf("prefix vlan = %v, expected VLAN %d resolved from the seeded cache", prefix["vlan"], utils.GetIDFromObject(vlan))
+	}
+	if got := utils.GetIDFromObject(prefix["vrf"]); got != utils.GetIDFromObject(vrf) {
+		t.Errorf("prefix vrf = %d, expected %d", got, utils.GetIDFromObject(vrf))
+	}
 }

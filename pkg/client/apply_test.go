@@ -252,6 +252,81 @@ func TestApplyChoiceFieldNoOp(t *testing.T) {
 	}
 }
 
+// TestApplyUntaggableEndpointNoOp guards the dominant "everything updates on
+// every run" regression: component templates and the tag objects themselves are
+// not taggable, so NetBox never returns a `tags` field for them. Injecting the
+// managed tag would make `tags` look perpetually changed and re-PATCH the object
+// on every run (an invisible diff, since `tags` is hidden in the output). For
+// endpoints in constants.UntaggableEndpoints, Apply must not inject the tag and
+// an otherwise-matching object must be a no-op.
+func TestApplyUntaggableEndpointNoOp(t *testing.T) {
+	for _, endpoint := range []string{
+		"rear-port-templates", "front-port-templates", "interface-templates",
+		"module-bay-templates", "device-bay-templates", "tags",
+	} {
+		t.Run(endpoint, func(t *testing.T) {
+			existing := Object{"id": float64(13), "name": "1"} // no "tags" field
+			ats := newApplyTestServer(t, []Object{existing})
+			c := newApplyTestClient(ats.srv, 7)
+
+			if _, err := c.Apply("dcim", endpoint,
+				map[string]interface{}{"name": "1"},
+				map[string]interface{}{"name": "1"}); err != nil {
+				t.Fatalf("Apply() error = %v", err)
+			}
+			if len(ats.mutations) != 0 {
+				t.Errorf("untaggable endpoint %q triggered %d phantom mutating request(s): %+v",
+					endpoint, len(ats.mutations), ats.mutations)
+			}
+		})
+	}
+}
+
+// TestApplyCustomFieldsSubsetNoOp verifies that custom_fields (a dictionary of
+// scalar values, not a related-object reference) is compared as a subset of the
+// full field set NetBox returns. Previously the existing map was reduced to the
+// scalar 0, never matched the desired map, and re-PATCHed on every run.
+func TestApplyCustomFieldsSubsetNoOp(t *testing.T) {
+	existing := Object{
+		"id":   float64(40),
+		"name": "rocky9-testvm",
+		// NetBox returns every defined custom field, including ones we don't
+		// manage and JSON numbers as float64.
+		"custom_fields": map[string]interface{}{
+			"vmid":           float64(123),
+			"vm_template_id": float64(456),
+			"unmanaged":      nil,
+		},
+		"tags": []interface{}{map[string]interface{}{"id": float64(7)}},
+	}
+	ats := newApplyTestServer(t, []Object{existing})
+	c := newApplyTestClient(ats.srv, 7)
+
+	// Desired declares only the managed subset, with ints (as built by the VM
+	// reconciler). It matches, so no PATCH.
+	if _, err := c.Apply("virtualization", "virtual-machines",
+		map[string]interface{}{"name": "rocky9-testvm"},
+		map[string]interface{}{"name": "rocky9-testvm",
+			"custom_fields": map[string]interface{}{"vmid": 123, "vm_template_id": 456}}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if len(ats.mutations) != 0 {
+		t.Errorf("matching custom_fields triggered %d phantom mutating request(s): %+v",
+			len(ats.mutations), ats.mutations)
+	}
+
+	// A genuinely changed custom field value must still PATCH.
+	if _, err := c.Apply("virtualization", "virtual-machines",
+		map[string]interface{}{"name": "rocky9-testvm"},
+		map[string]interface{}{"name": "rocky9-testvm",
+			"custom_fields": map[string]interface{}{"vmid": 123, "vm_template_id": 999}}); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+	if len(ats.mutations) != 1 || ats.mutations[0].method != "PATCH" {
+		t.Fatalf("expected 1 PATCH for changed custom field, got %+v", ats.mutations)
+	}
+}
+
 // TestApplyErrorWhenObjectHasNoID verifies Apply fails loudly instead of
 // PATCHing object ID 0 when the matched object has no usable ID.
 func TestApplyErrorWhenObjectHasNoID(t *testing.T) {

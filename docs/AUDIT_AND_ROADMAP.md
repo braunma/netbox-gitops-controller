@@ -27,7 +27,7 @@ Reconciled (create/update, idempotent, gitops-tagged):
 Infrastructure: site-aware composite-key cache, managed-tag injection, dry-run,
 visual diff output, plan summary + `--output json`, `--only`/`--site`/`--device`/
 `--vm` selective sync, drift exit code, opt-in `--prune`, GitLab CI, the
-`yamlcheck` validator, and the optional Proxmox/Terraform pipeline (`cmd/tfgen`,
+`yamlcheck` validator, and the optional Proxmox/OpenTofu pipeline (`cmd/tfgen`,
 `terraform/`).
 
 ## 2. Correctness — ✅ all resolved

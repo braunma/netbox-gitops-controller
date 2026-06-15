@@ -2,7 +2,6 @@ package reconciler
 
 import (
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
@@ -84,8 +83,12 @@ func TestReconcileClustersResolvesReferences(t *testing.T) {
 	if got := utils.GetIDFromObject(cl["group"]); got != groupID {
 		t.Errorf("cluster group = %d, expected %d", got, groupID)
 	}
-	if got := utils.GetIDFromObject(cl["site"]); got != utils.GetIDFromObject(site) {
-		t.Errorf("cluster site = %d, expected %d", got, utils.GetIDFromObject(site))
+	// NetBox 4.2: the cluster site is carried in the generic scope.
+	if st, _ := cl["scope_type"].(string); st != "dcim.site" {
+		t.Errorf("cluster scope_type = %v, expected \"dcim.site\"", cl["scope_type"])
+	}
+	if got := utils.GetIDFromObject(cl["scope_id"]); got != utils.GetIDFromObject(site) {
+		t.Errorf("cluster scope_id = %d, expected %d", got, utils.GetIDFromObject(site))
 	}
 	if got := utils.GetIDFromObject(cl["tenant"]); got != utils.GetIDFromObject(tenant) {
 		t.Errorf("cluster tenant = %d, expected %d", got, utils.GetIDFromObject(tenant))
@@ -198,16 +201,14 @@ func TestReconcileVMsFullFlow(t *testing.T) {
 		t.Errorf("VM primary_ip4 = %v, expected IP ID %d", vm["primary_ip4"], utils.GetIDFromObject(ips[0]))
 	}
 
-	// Second run: everything diffs to a no-op except setVMPrimaryIP, which
-	// PATCHes the VM unconditionally (same behavior as the device reconciler).
+	// Second run: everything diffs to a no-op. setVMPrimaryIP now skips the
+	// PATCH when the VM already points at the IP, so an unchanged inventory
+	// produces zero mutations (same behavior as the device reconciler).
 	f.resetMutations()
 	if err := vr.ReconcileVMs(vms); err != nil {
 		t.Fatalf("ReconcileVMs() second run error = %v", err)
 	}
-	muts := f.requireMutationCount(t, 1)
-	if muts[0].method != "PATCH" || !strings.Contains(muts[0].path, "/api/virtualization/virtual-machines/") {
-		t.Errorf("second-run mutation = %s %s, expected only the primary-IP VM PATCH", muts[0].method, muts[0].path)
-	}
+	f.requireMutationCount(t, 0)
 }
 
 func TestReconcileVMsTaggedVLANsIdempotent(t *testing.T) {
@@ -417,7 +418,7 @@ func TestReconcileClustersToleratesMissingOptionalRefs(t *testing.T) {
 	if len(stored) != 1 {
 		t.Fatalf("expected 1 cluster in store, got %d", len(stored))
 	}
-	for _, field := range []string{"group", "site", "tenant"} {
+	for _, field := range []string{"group", "scope_type", "scope_id", "tenant"} {
 		if _, set := stored[0][field]; set {
 			t.Errorf("cluster %s should be unset when the reference is unknown, got %v", field, stored[0][field])
 		}

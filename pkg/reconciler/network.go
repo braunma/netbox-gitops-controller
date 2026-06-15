@@ -62,24 +62,41 @@ func (nr *NetworkReconciler) ReconcileVLANGroups(groups []*models.VLANGroup) err
 		if group.SiteSlug != "" {
 			siteID, ok := nr.client.Cache().GetGlobalID("sites", group.SiteSlug)
 			if ok {
-				payload["site"] = siteID
+				setSiteScope(payload, siteID)
 			}
 		}
 
 		if group.Description != "" {
 			payload["description"] = group.Description
 		}
-		if group.MinVID > 0 {
-			payload["min_vid"] = group.MinVID
-		}
-		if group.MaxVID > 0 {
-			payload["max_vid"] = group.MaxVID
+		// NetBox 4.2 replaced the scalar min_vid/max_vid fields with vid_ranges,
+		// a list of [min, max] pairs. Sending the old fields is silently dropped
+		// and re-PATCHed every run; emit a single range covering the configured
+		// bounds instead.
+		if group.MinVID > 0 && group.MaxVID > 0 {
+			payload["vid_ranges"] = []interface{}{
+				[]interface{}{group.MinVID, group.MaxVID},
+			}
 		}
 
 		lookup := map[string]interface{}{"slug": group.Slug}
-		_, err := nr.client.Apply("ipam", "vlan-groups", lookup, payload)
+		groupObj, err := nr.client.Apply("ipam", "vlan-groups", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN group %s: %w", group.Name, err)
+		}
+
+		// Seed the cache so VLANs reconciled later in this phase can resolve their
+		// group. Site caches (which hold vlan_groups) are not loaded until the
+		// device phase, so without this the group lookup in ReconcileVLANs misses
+		// and the association is silently dropped. Mirror loadResource's key
+		// scheme: site-scoped groups go under the composite site key, global
+		// groups under the plain key. Skip dry-run creates (id 0).
+		if id := utils.GetIDFromObject(groupObj); id > 0 {
+			if siteID, ok := nr.client.Cache().GetGlobalID("sites", group.SiteSlug); group.SiteSlug != "" && ok {
+				nr.client.Cache().RegisterSite("vlan_groups", siteID, id, group.Slug, group.Name)
+			} else {
+				nr.client.Cache().Register("vlan_groups", id, group.Slug, group.Name)
+			}
 		}
 	}
 
@@ -149,9 +166,19 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			"vid":     vlan.VID,
 		}
 
-		_, err = nr.client.Apply("ipam", "vlans", lookup, payload)
+		vlanObj, err := nr.client.Apply("ipam", "vlans", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN %s: %w", vlan.Name, err)
+		}
+
+		// Seed the cache so prefixes reconciled later in this phase can resolve
+		// their VLAN. VLANs are site-scoped and not loaded into the cache until
+		// the device phase, so without this the site-aware VLAN lookup in
+		// ReconcilePrefixes misses and the association is silently dropped. Index
+		// by name under the composite site key, matching loadResource. Skip
+		// dry-run creates (id 0).
+		if id := utils.GetIDFromObject(vlanObj); id > 0 {
+			nr.client.Cache().RegisterSite("vlans", siteID, id, vlan.Name)
 		}
 	}
 
@@ -164,15 +191,15 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 
 	for _, prefix := range prefixes {
 		payload := map[string]interface{}{
-			"prefix": prefix.Prefix,
-			"status": prefix.Status,
+			"prefix":  prefix.Prefix,
+			"status":  prefix.Status,
 			"is_pool": prefix.IsPool,
 		}
 
 		if prefix.SiteSlug != "" {
 			siteID, ok := nr.client.Cache().GetGlobalID("sites", prefix.SiteSlug)
 			if ok {
-				payload["site"] = siteID
+				setSiteScope(payload, siteID)
 			}
 		}
 

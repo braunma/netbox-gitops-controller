@@ -2,14 +2,14 @@
 
 **Goal:** use one VM YAML (`inventory/virtual/<env>/*.yaml`, one file per VM) as
 the single source of truth to **both** describe VMs in NetBox **and** provision
-them in Proxmox via Terraform — one repo, one pipeline.
+them in Proxmox via OpenTofu — one repo, one pipeline.
 
 **Status:** ✅ Implemented (scaffold). Done: `provision`/`vmid`/`vm_template_id`/
 `node` model fields, the declarative `vmid` and `vm_template_id` custom fields
 (foundation phase), VM-payload wiring,
 `cmd/tfgen` (YAML → `tfvars.json`, unit-tested), the `terraform/` Proxmox module
 (`bpg/proxmox`), and opt-in `.gitlab-ci.yml` jobs (`tf_generate`/`tf_validate`/
-`tf_plan`/`tf_apply`). The Terraform module is authored but **not yet run against
+`tf_plan`/`tf_apply`). The OpenTofu module is authored but **not yet run against
 a live Proxmox** — validate with a real `plan` before applying. For the field
 mapping and operational detail see [`terraform/README.md`](../terraform/README.md).
 
@@ -49,7 +49,7 @@ mapping and operational detail see [`terraform/README.md`](../terraform/README.m
 
 6. **One state per environment, not per VM.** VMs live in per-env folders
    (`inventory/virtual/{prod,stage,playground}/`, one file per VM). tfgen
-   `--group <env>` emits a per-env tfvars; the same Terraform module is applied
+   `--group <env>` emits a per-env tfvars; the same OpenTofu module is applied
    once per env (`parallel:matrix`) into its own GitLab-managed state
    (`proxmox-<env>`). Environments are a small fixed set, so the blast radius
    that matters (prod vs. the rest) is isolated with a tiny matrix; a single VM
@@ -62,7 +62,7 @@ mapping and operational detail see [`terraform/README.md`](../terraform/README.m
 
 - **`cmd/tfgen` / `pkg/tfgen`** — pure, deterministic, unit-tested. Reuses
   `pkg/loader.LoadVMs` so tfgen and the NetBox reconciler parse the same structs
-  (no second YAML schema). Emits a single `vms` Terraform variable keyed by VM
+  (no second YAML schema). Emits a single `vms` OpenTofu variable keyed by VM
   name. Skips VMs without `provision: true` (NetBox-only); errors when a
   provisioned VM lacks a `node`, `vmid` or `vm_template_id`, or on duplicate VM
   names. `--group <env>` scopes the load to one environment subfolder.

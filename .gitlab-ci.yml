@@ -273,7 +273,7 @@ debug_environment:
 #           TF_VAR_ci_ssh_keys, TF_VAR_cpu_type, …
 
 # Single source of truth for the environments to provision. Each gets its own
-# VM folder (inventory/virtual/<env>/) and its own GitLab-managed Terraform
+# VM folder (inventory/virtual/<env>/) and its own GitLab-managed OpenTofu
 # state (proxmox-<env>). This anchor is referenced by every job's
 # parallel:matrix below (tf_generate/tf_plan/tf_apply), so the list lives in
 # exactly one place — there is no second copy to keep in sync.
@@ -292,7 +292,7 @@ tf_generate:
     matrix:
       - ENV: *proxmox_envs
   script:
-    - echo "🧩 Generating Terraform vars for environment '${ENV}'..."
+    - echo "🧩 Generating OpenTofu vars for environment '${ENV}'..."
     - go run ./cmd/tfgen --data-dir . --group "${ENV}" --out "terraform/generated.${ENV}.tfvars.json"
     - cat "terraform/generated.${ENV}.tfvars.json"
   artifacts:
@@ -303,7 +303,7 @@ tf_generate:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
-# Per-environment Terraform: same module, one GitLab-managed state per env
+# Per-environment OpenTofu: same module, one GitLab-managed state per env
 # (proxmox-<env>). The state name and backend address are derived from the
 # matrix's $ENV in the shell so there's no fragile nested CI-variable expansion.
 .opentofu_env:
@@ -402,7 +402,7 @@ tf_apply:
   resource_group: proxmox-${ENV}
   script:
     # Destroy safety gate. This is a GitOps module: removing a VM from the YAML
-    # (or a replacement triggered by an immutable change) makes Terraform DESTROY
+    # (or a replacement triggered by an immutable change) makes OpenTofu DESTROY
     # a real, running VM — irreversible. The saved human plan from tf_plan lists
     # one "# <addr> will be destroyed / must be replaced" line per destructive
     # action; count them straight from that artifact (offline, no jq needed).

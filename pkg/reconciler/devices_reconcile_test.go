@@ -118,19 +118,14 @@ func TestReconcileDevicesFullFlow(t *testing.T) {
 		t.Errorf("expected exactly 1 cable for the bidirectional link definition, got %d", got)
 	}
 
-	// Second run: everything is found and diffed to no-op, except
-	// setPrimaryIP, which currently PATCHes the device unconditionally.
+	// Second run: everything is found and diffed to a no-op. setPrimaryIP now
+	// skips the PATCH when the device already points at the IP, so an unchanged
+	// inventory produces zero mutations.
 	f.resetMutations()
 	if err := NewDeviceReconciler(c).ReconcileDevices(devices); err != nil {
 		t.Fatalf("ReconcileDevices() second run error = %v", err)
 	}
-	muts := f.requireMutationCount(t, 1)
-	if muts[0].method != "PATCH" || !strings.Contains(muts[0].path, "/api/dcim/devices/") {
-		t.Errorf("second-run mutation = %s %s, expected only the primary-IP device PATCH", muts[0].method, muts[0].path)
-	}
-	if got := utils.GetIDFromObject(muts[0].body["primary_ip4"]); got != utils.GetIDFromObject(ips[0]) {
-		t.Errorf("second-run PATCH body = %v, expected primary_ip4 only", muts[0].body)
-	}
+	f.requireMutationCount(t, 0)
 }
 
 func TestReconcileDevicesErrorsOnUnresolvedReferences(t *testing.T) {
@@ -336,6 +331,39 @@ func TestReconcileDevicesInstallsChildIntoBay(t *testing.T) {
 		t.Errorf("bay installed_device = %v, expected child ID %d", bayObj["installed_device"], utils.GetIDFromObject(childObj))
 	}
 	_ = bay
+}
+
+func TestReconcileDevicesBayInstallIsIdempotent(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	siteID, roleID, deviceTypeID := seedDeviceFoundation(t, f, c)
+
+	// Parent chassis with no rack (as the Isilon chassis is modelled), so the
+	// child's device Apply produces no changes and only the bay placement is
+	// in play.
+	parent := f.seed("dcim", "devices", client.Object{
+		"name": "chassis-01", "site": siteID, "role": roleID, "device_type": deviceTypeID,
+	})
+	parentID := utils.GetIDFromObject(parent)
+	f.seed("dcim", "device-bays", client.Object{"name": "bay-1", "device": parentID})
+
+	child := &models.DeviceConfig{
+		Name: "node-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
+		ParentDevice: "chassis-01", DeviceBay: "bay-1",
+	}
+
+	// First run installs the child into the bay.
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{child}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+
+	// Second run must be a no-op. Before the fix, installDeviceIntoBay checked a
+	// non-existent "device_bay" field on the device, so it re-detached and
+	// re-installed every run, inflating the change count.
+	f.resetMutations()
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{child}); err != nil {
+		t.Fatalf("ReconcileDevices() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
 }
 
 func TestReconcileDevicesSelfHealsDeviceBays(t *testing.T) {

@@ -45,9 +45,12 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 			dtr.client.Cache().Register("manufacturers", mfgID, utils.Slugify(mt.Manufacturer), mt.Manufacturer)
 		}
 
+		// NetBox module types are identified by manufacturer + model and have no
+		// `slug` field of their own; sending one is silently dropped by the API
+		// and would otherwise show up as a phantom diff on every run. The slug is
+		// still used locally as the lookup/cache key.
 		payload := map[string]interface{}{
 			"model":        mt.Model,
-			"slug":         mt.Slug,
 			"manufacturer": mfgID,
 		}
 
@@ -55,7 +58,12 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 			payload["description"] = mt.Description
 		}
 
-		lookup := map[string]interface{}{"slug": mt.Slug}
+		// Match on the real NetBox identity for a module type (manufacturer +
+		// model); there is no slug to filter on.
+		lookup := map[string]interface{}{
+			"manufacturer_id": mfgID,
+			"model":           mt.Model,
+		}
 		mtObj, err := dtr.client.Apply("dcim", "module-types", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile module type %s: %w", mt.Model, err)

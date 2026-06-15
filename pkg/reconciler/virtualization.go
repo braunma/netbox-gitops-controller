@@ -118,7 +118,7 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 		}
 		if cl.SiteSlug != "" {
 			if siteID, ok := vr.lookupSiteID(cl.SiteSlug); ok {
-				payload["site"] = siteID
+				setSiteScope(payload, siteID)
 			} else {
 				vr.logger.Warning("Site %s not found for cluster %s, leaving unset", cl.SiteSlug, cl.Name)
 			}
@@ -408,6 +408,17 @@ func (vr *VirtualizationReconciler) setVMPrimaryIP(vmID, ipID int) error {
 		field = "primary_ip6"
 	}
 
+	// Skip the PATCH if the VM already points at this IP. A direct Update records
+	// an "update" unconditionally, so re-setting an unchanged primary IP inflates
+	// the change count on every run.
+	vm, err := vr.client.Get("virtualization", "virtual-machines", vmID)
+	if err != nil {
+		return fmt.Errorf("failed to get virtual machine: %w", err)
+	}
+	if utils.GetIDFromObject(vm[field]) == ipID {
+		return nil
+	}
+
 	if err := vr.client.Update("virtualization", "virtual-machines", vmID, map[string]interface{}{
 		field: ipID,
 	}); err != nil {
@@ -426,7 +437,9 @@ func (vr *VirtualizationReconciler) lookupCluster(name string) (id, siteID int, 
 	if err == nil && len(clusters) > 0 {
 		cl := clusters[0]
 		id = utils.GetIDFromObject(cl)
-		siteID = utils.GetIDFromObject(cl["site"])
+		// NetBox 4.2 reports a cluster's site via the generic scope, not a
+		// `site` field; siteIDFromScope handles both representations.
+		siteID = siteIDFromScope(cl)
 		return id, siteID, id != 0
 	}
 	// Fall back to a cluster registered earlier in this same run: in --dry-run
