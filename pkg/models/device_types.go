@@ -41,16 +41,16 @@ type ModuleType struct {
 
 // DeviceType represents a device type definition (blueprint for devices)
 type DeviceType struct {
-	Model         string                  `yaml:"model" json:"model" validate:"required"`
-	Slug          string                  `yaml:"slug" json:"slug" validate:"required"`
-	Manufacturer  string                  `yaml:"manufacturer" json:"manufacturer" validate:"required"`
-	UHeight       int                     `yaml:"u_height,omitempty" json:"u_height,omitempty"`
-	IsFullDepth   bool                    `yaml:"is_full_depth,omitempty" json:"is_full_depth,omitempty"`
-	SubdeviceRole string                  `yaml:"subdevice_role,omitempty" json:"subdevice_role,omitempty"`
-	Tags          []string                `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Interfaces    []InterfaceTemplate     `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
-	FrontPorts    []PortTemplate          `yaml:"front_ports,omitempty" json:"front_ports,omitempty"`
-	RearPorts     []PortTemplate          `yaml:"rear_ports,omitempty" json:"rear_ports,omitempty"`
-	ModuleBays    []ModuleBayTemplate     `yaml:"module_bays,omitempty" json:"module_bays,omitempty"`
-	DeviceBays    []DeviceBayTemplate     `yaml:"device_bays,omitempty" json:"device_bays,omitempty"`
+	Model         string              `yaml:"model" json:"model" validate:"required"`
+	Slug          string              `yaml:"slug" json:"slug" validate:"required"`
+	Manufacturer  string              `yaml:"manufacturer" json:"manufacturer" validate:"required"`
+	UHeight       int                 `yaml:"u_height,omitempty" json:"u_height,omitempty"`
+	IsFullDepth   bool                `yaml:"is_full_depth,omitempty" json:"is_full_depth,omitempty"`
+	SubdeviceRole string              `yaml:"subdevice_role,omitempty" json:"subdevice_role,omitempty"`
+	Tags          []string            `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Interfaces    []InterfaceTemplate `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
+	FrontPorts    []PortTemplate      `yaml:"front_ports,omitempty" json:"front_ports,omitempty"`
+	RearPorts     []PortTemplate      `yaml:"rear_ports,omitempty" json:"rear_ports,omitempty"`
+	ModuleBays    []ModuleBayTemplate `yaml:"module_bays,omitempty" json:"module_bays,omitempty"`
+	DeviceBays    []DeviceBayTemplate `yaml:"device_bays,omitempty" json:"device_bays,omitempty"`
 }

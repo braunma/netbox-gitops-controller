@@ -27,11 +27,11 @@ type VLANGroup struct {
 
 // VRF represents a NetBox VRF
 type VRF struct {
-	Name         string   `yaml:"name" json:"name" validate:"required"`
-	RD           string   `yaml:"rd,omitempty" json:"rd,omitempty"`
-	Description  string   `yaml:"description,omitempty" json:"description,omitempty"`
-	EnforceUnique bool    `yaml:"enforce_unique,omitempty" json:"enforce_unique,omitempty"`
-	Tags         []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Name          string   `yaml:"name" json:"name" validate:"required"`
+	RD            string   `yaml:"rd,omitempty" json:"rd,omitempty"`
+	Description   string   `yaml:"description,omitempty" json:"description,omitempty"`
+	EnforceUnique bool     `yaml:"enforce_unique,omitempty" json:"enforce_unique,omitempty"`
+	Tags          []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
 // Slug generates a slug from the VRF name
