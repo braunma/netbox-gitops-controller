@@ -299,7 +299,7 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 	if err := yaml.Unmarshal(content, &items); err != nil {
 		var single map[string]interface{}
 		if err2 := yaml.Unmarshal(content, &single); err2 != nil {
-			return fmt.Errorf("failed to unmarshal YAML: %w", err)
+			return fmt.Errorf("failed to unmarshal YAML as list (%v) or single mapping: %w", err, err2)
 		}
 		items = []map[string]interface{}{single}
 	}

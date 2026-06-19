@@ -33,7 +33,7 @@ type DeviceBayTemplate struct {
 // ModuleType represents a blueprint for a module (e.g., NVIDIA H200)
 type ModuleType struct {
 	Model        string   `yaml:"model" json:"model" validate:"required"`
-	Slug         string   `yaml:"slug" json:"slug" validate:"required"`
+	Slug         string   `yaml:"slug,omitempty" json:"slug,omitempty"`
 	Manufacturer string   `yaml:"manufacturer" json:"manufacturer" validate:"required"`
 	Description  string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Tags         []string `yaml:"tags,omitempty" json:"tags,omitempty"`

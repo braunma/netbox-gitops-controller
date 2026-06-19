@@ -2,6 +2,8 @@ package utils
 
 import (
 	"strings"
+
+	"github.com/braunma/netbox-gitops-controller/internal/constants"
 )
 
 // NormalizeColor converts various color formats to NetBox format (6-char hex without #)
@@ -36,18 +38,7 @@ func NormalizeColor(input string) string {
 
 // GetCableColor returns the default color for a cable type
 func GetCableColor(cableType string) string {
-	colors := map[string]string{
-		"cat6":  "f44336",
-		"cat6a": "ffeb3b",
-		"cat7":  "ff9800",
-		"dac":   "000000",
-		"fiber": "00bcd4",
-		"om3":   "00bcd4",
-		"om4":   "2196f3",
-		"os2":   "9c27b0",
-	}
-
-	if color, ok := colors[strings.ToLower(cableType)]; ok {
+	if color, ok := constants.CableColorMap[strings.ToLower(cableType)]; ok {
 		return color
 	}
 

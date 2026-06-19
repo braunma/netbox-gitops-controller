@@ -51,7 +51,7 @@ func main() {
 	rootCmd.Flags().StringVar(&outputFormat, "output", "text", "Output format: 'text' or 'json' (json prints the plan to stdout and moves logs to stderr)")
 	rootCmd.Flags().BoolVar(&detailedExitcode, "detailed-exitcode", false, "Exit with code 2 when changes are pending (dry-run) or were applied; 0 means in sync")
 	rootCmd.Flags().StringSliceVar(&onlyPhases, "only", nil, fmt.Sprintf("Restrict the sync to specific phases (comma-separated or repeated): %s", strings.Join(validPhases, ", ")))
-	rootCmd.Flags().StringVar(&siteFilter, "site", "", "Restrict device reconciliation to devices of a single site slug")
+	rootCmd.Flags().StringVar(&siteFilter, "site", "", "Restrict reconciliation to devices and VMs of a single site slug")
 	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
 	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
 	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
