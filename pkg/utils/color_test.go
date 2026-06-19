@@ -57,34 +57,34 @@ func TestNormalizeColor(t *testing.T) {
 
 func TestGetCableColor(t *testing.T) {
 	tests := []struct {
-		name       string
-		cableType  string
-		expected   string
+		name      string
+		cableType string
+		expected  string
 	}{
 		{
-			name:       "cat6",
-			cableType:  "cat6",
-			expected:   "f44336",
+			name:      "cat6",
+			cableType: "cat6",
+			expected:  "f44336",
 		},
 		{
-			name:       "cat6a",
-			cableType:  "cat6a",
-			expected:   "ffeb3b",
+			name:      "cat6a",
+			cableType: "cat6a",
+			expected:  "ffeb3b",
 		},
 		{
-			name:       "fiber",
-			cableType:  "fiber",
-			expected:   "00bcd4",
+			name:      "fiber",
+			cableType: "fiber",
+			expected:  "00bcd4",
 		},
 		{
-			name:       "unknown type",
-			cableType:  "unknown",
-			expected:   "",
+			name:      "unknown type",
+			cableType: "unknown",
+			expected:  "",
 		},
 		{
-			name:       "case insensitive",
-			cableType:  "CAT6A",
-			expected:   "ffeb3b",
+			name:      "case insensitive",
+			cableType: "CAT6A",
+			expected:  "ffeb3b",
 		},
 	}
 
