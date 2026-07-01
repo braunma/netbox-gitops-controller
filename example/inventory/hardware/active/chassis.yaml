@@ -14,7 +14,8 @@
   tags: ["gitops", "production"]
 
 # Blade servers installed in chassis bays
-# These demonstrate the parent_device and device_bay features
+# These demonstrate the parent_device and device_bay features.
+# eth0 comes from the blade device type template (type/enabled not repeated).
 - name: "example-blade-01"
   device_type_slug: "example-blade-server"
   role_slug: "server"
@@ -26,8 +27,6 @@
   tags: ["gitops", "production"]
   interfaces:
     - name: "eth0"
-      type: "1000base-t"
-      enabled: true
       description: "Management interface"
 
 - name: "example-blade-02"
@@ -41,6 +40,4 @@
   tags: ["gitops", "production"]
   interfaces:
     - name: "eth0"
-      type: "1000base-t"
-      enabled: true
       description: "Management interface"

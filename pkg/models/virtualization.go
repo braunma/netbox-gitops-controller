@@ -36,7 +36,7 @@ type Cluster struct {
 // no Link field.
 type VMInterfaceConfig struct {
 	Name         string    `yaml:"name" json:"name" validate:"required"`
-	Enabled      bool      `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Enabled      *bool     `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	Description  string    `yaml:"description,omitempty" json:"description,omitempty"`
 	MTU          int       `yaml:"mtu,omitempty" json:"mtu,omitempty"`
 	MACAddress   string    `yaml:"mac_address,omitempty" json:"mac_address,omitempty"`
@@ -83,4 +83,10 @@ type VMConfig struct {
 // Slug generates a slug from the virtual machine name.
 func (v *VMConfig) Slug() string {
 	return slugify(v.Name)
+}
+
+// IsEnabled reports whether the VM interface should be enabled in NetBox.
+// Interfaces are enabled unless explicitly set to `enabled: false` in YAML.
+func (i *VMInterfaceConfig) IsEnabled() bool {
+	return i.Enabled == nil || *i.Enabled
 }

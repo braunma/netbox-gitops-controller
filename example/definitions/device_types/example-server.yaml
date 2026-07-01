@@ -1,7 +1,18 @@
 # Example Server Device Type
+#
+# The interface templates below are the single source of truth for the
+# physical ports of this model: NetBox copies them onto every device that is
+# instantiated from this type. Inventory files then only reference ports by
+# name and add what differs per device (IPs, VLANs, cabling) - they do not
+# need to repeat `type` or `enabled`.
 manufacturer: "Example Vendor"
 model: "Example Server R100"
 slug: "example-server-r100"
 u_height: 2
 is_full_depth: true
 comments: "Example 2U rack server for testing"
+interfaces:
+  - name: "eth0"
+    type: "1000base-t"
+  - name: "eth1"
+    type: "10gbase-x-sfpp"

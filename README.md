@@ -91,33 +91,51 @@ Here we define the "blueprint" including all physical ports. NetBox copies these
   # Optional: Front/Rear Ports for Patch Panels
 ```
 
-### Step 2: Create a Device Instance (Server/Switch)
+### Step 2: Create Device Instances (Server/Switch)
 
 File: `inventory/hardware/active/servers.yaml`
 
-Here we define the actual server.
+Inventory files support a grouped form: fields under `defaults` are merged
+into every device in the file (device values win, `tags` are combined).
+Since the ports already come from the device type template, an interface is
+only listed here when it carries device-specific data — IPs, VLANs, cabling —
+without repeating `type` or `enabled`.
 
 ```yaml
-- name: "srv-web-01"
+defaults:
   site_slug: "berlin"
   role_slug: "server"
   device_type_slug: "dell-r640"
   rack_slug: "rack-a01"
   status: "active"
-  
-  # Interface Configuration (L2/L3 & Cabling)
-  interfaces:
-    - name: "idrac"
-      ip: "10.0.10.50/24"
-      
-    - name: "eth0"
-      ip: "10.0.20.50/24"
-      address_role: "primary"  # Sets the Primary IP on the Device object
-      link:
-        peer_device: "sw-leaf-01"
-        peer_port: "Eth1/1"
-        cable_type: "cat6a"    # Optional
+  tags: ["gitops", "production"]
+
+devices:
+  - name: "srv-web-01"
+    position: 10
+    interfaces:
+      - name: "idrac"
+        ip: "10.0.10.50/24"   # string shorthand for `ip: { address: ... }`
+
+      - name: "eth0"
+        ip:
+          address: "10.0.20.50/24"
+          vrf: "Production"
+        address_role: "primary"  # Sets the Primary IP on the Device object
+        link:
+          peer_device: "sw-leaf-01"
+          peer_port: "Eth1/1"
+          cable_type: "cat6a"    # Optional
+
+  - name: "srv-web-02"
+    position: 12
+    interfaces:
+      - name: "idrac"
+        ip: "10.0.10.51/24"
 ```
+
+The classic form — a plain YAML list of devices — is still fully supported;
+`defaults` is just a shortcut, and every field can still be set per device.
 
 ### Step 3: Configure Switch Ports & VLANs
 
@@ -134,6 +152,24 @@ File: `inventory/hardware/active/switches.yaml`
       # mode: "tagged"
       # tagged_vlans: ["Vlan10", "Vlan20"]
 ```
+
+### Conventions that keep the YAML small
+
+  * **Ports live in the device type, not the inventory.** Define every
+    physical port once as an interface template (Step 1). In the inventory,
+    only list an interface when it needs device-specific settings, and never
+    repeat its `type` — `type` on a concrete device is only needed for
+    interfaces that do *not* exist in the template (e.g. virtual or LAG
+    interfaces).
+  * **Interfaces are enabled by default.** `enabled: true` is implied; only
+    write `enabled: false` to shut a port.
+  * **Declare each cable on one end only.** Pick a convention (e.g. the
+    server/endpoint side owns the `link:`) — the reconciler wires both ends
+    from a single declaration. Declaring the same cable from both sides works
+    but means every re-patch is a two-file edit.
+  * **Group shared fields in `defaults`.** One file per rack, role or
+    hardware batch with a `defaults` block keeps each device down to its name,
+    position and IPs.
 
 -----
 
@@ -324,7 +360,7 @@ few objects of each supported type:
 - 2 sites, 5 device roles, 2 platforms, 1 tenant (+ group)
 - 2 VRFs, 2 VLAN groups, 3 VLANs, 3 prefixes, 3 racks
 - 6 device types, 2 module types, 2 VM custom fields (`vmid`, `vm_template_id`)
-- 7 hardware devices — including a blade chassis with two child blades, a GPU
+- 8 hardware devices — including a blade chassis with two child blades, a GPU
   server, and a patch panel (front/rear ports)
 - 2 virtual machines (one provisioned in Proxmox, one NetBox documentation-only)
 

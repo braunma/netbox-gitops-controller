@@ -33,7 +33,7 @@ example/
     ├── hardware/
     │   ├── active/       # Active devices (servers, switches, etc.)
     │   └── passive/      # Passive devices (patch panels, PDUs, etc.)
-    └── virtual/          # Virtual machines (vms.yaml)
+    └── virtual/          # Virtual machines (per-env folders, one YAML per VM)
 ```
 
 ## Using Your Own Data
@@ -47,7 +47,7 @@ This repository is designed to work with your private definitions and inventory:
 
 ## Format
 
-All files use YAML format. Each file contains a list of objects with the appropriate fields for that object type. See the example files in this directory for reference.
+All files use YAML format. Each file contains a list of objects with the appropriate fields for that object type. Device inventory files may alternatively use the grouped form — a `defaults:` block whose fields are merged into every entry of a `devices:` list (see `inventory/hardware/active/servers.yaml`). See the example files in this directory for reference.
 
 ## Testing
 

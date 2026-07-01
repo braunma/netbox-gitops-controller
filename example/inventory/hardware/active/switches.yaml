@@ -1,4 +1,9 @@
 # Example Switch Inventory for Testing
+#
+# The classic list form is still supported (and fine for single devices).
+# Port `type` / `enabled` come from the device type template; cables to the
+# servers are declared on the server side only (see servers.yaml), so this
+# file just documents switch-specific settings.
 
 - name: "example-switch-01"
   device_type_slug: "example-switch-48"
@@ -11,10 +16,6 @@
   tags: ["gitops", "production"]
   interfaces:
     - name: "GigabitEthernet1/0/1"
-      type: "1000base-t"
-      enabled: true
-      description: "Uplink port 1"
+      description: "Downlink to example-server-01"
     - name: "GigabitEthernet1/0/2"
-      type: "1000base-t"
-      enabled: true
-      description: "Uplink port 2"
+      description: "Downlink to example-server-02"

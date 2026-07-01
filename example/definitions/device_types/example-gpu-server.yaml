@@ -7,6 +7,12 @@ u_height: 4
 is_full_depth: true
 comments: "Example 4U GPU server with module bays"
 
+interfaces:
+  - name: "eth0"
+    type: "1000base-t"
+  - name: "eth1"
+    type: "10gbase-x-sfpp"
+
 # Module bay templates for GPU cards
 module_bays:
   - name: "GPU-1"

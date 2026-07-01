@@ -1,5 +1,7 @@
 package models
 
+import "gopkg.in/yaml.v3"
+
 // LinkConfig represents a cable connection definition
 type LinkConfig struct {
 	PeerDevice string  `yaml:"peer_device" json:"peer_device" validate:"required"`
@@ -21,11 +23,33 @@ type IPConfig struct {
 	AddressRole string   `yaml:"address_role,omitempty" json:"address_role,omitempty"`
 }
 
+// UnmarshalYAML accepts either the full mapping form or a plain CIDR string
+// as a shorthand:
+//
+//	ip: "10.0.0.1/24"
+//
+// is equivalent to
+//
+//	ip:
+//	  address: "10.0.0.1/24"
+func (ip *IPConfig) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		return value.Decode(&ip.Address)
+	}
+	type rawIPConfig IPConfig // alias without UnmarshalYAML to avoid recursion
+	var raw rawIPConfig
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*ip = IPConfig(raw)
+	return nil
+}
+
 // InterfaceConfig represents an interface configuration (for concrete devices)
 type InterfaceConfig struct {
 	Name         string      `yaml:"name" json:"name" validate:"required"`
 	Type         string      `yaml:"type,omitempty" json:"type,omitempty"`
-	Enabled      bool        `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Enabled      *bool       `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	Label        string      `yaml:"label,omitempty" json:"label,omitempty"`
 	Description  string      `yaml:"description,omitempty" json:"description,omitempty"`
 	MTU          int         `yaml:"mtu,omitempty" json:"mtu,omitempty"`
@@ -97,4 +121,10 @@ type DeviceConfig struct {
 // Slug generates a slug from the device name
 func (d *DeviceConfig) Slug() string {
 	return slugify(d.Name)
+}
+
+// IsEnabled reports whether the interface should be enabled in NetBox.
+// Interfaces are enabled unless explicitly set to `enabled: false` in YAML.
+func (i *InterfaceConfig) IsEnabled() bool {
+	return i.Enabled == nil || *i.Enabled
 }

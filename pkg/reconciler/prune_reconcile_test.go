@@ -173,7 +173,7 @@ func TestPruneDeviceChildrenEndToEnd(t *testing.T) {
 	devices := []*models.DeviceConfig{{
 		Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
 		Interfaces: []models.InterfaceConfig{{
-			Name: "eth0", Type: "1000base-t", Enabled: true,
+			Name: "eth0", Type: "1000base-t",
 			IP: &models.IPConfig{Address: "10.0.0.1/24"},
 		}},
 	}}

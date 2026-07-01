@@ -21,6 +21,199 @@ func TestDataLoaderInitialization(t *testing.T) {
 	}
 }
 
+// TestLoadDevicesGroupedDefaults verifies the grouped `defaults` + `devices`
+// file form: defaults are applied to every device, per-device values win,
+// and tags are unioned instead of replaced.
+func TestLoadDevicesGroupedDefaults(t *testing.T) {
+	dir := t.TempDir()
+	deviceDir := filepath.Join(dir, "devices")
+	if err := os.MkdirAll(deviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `
+defaults:
+  site_slug: "berlin-dc"
+  role_slug: "server"
+  device_type_slug: "example-server-r100"
+  rack_slug: "rack-a01"
+  status: "active"
+  tags: ["gitops", "production"]
+
+devices:
+  - name: "web-01"
+    position: 10
+    interfaces:
+      - name: "eth0"
+        ip:
+          address: "10.0.0.1/24"
+
+  - name: "web-02"
+    position: 12
+    role_slug: "storage"
+    tags: ["lab", "gitops"]
+`
+	if err := os.WriteFile(filepath.Join(deviceDir, "servers.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewDataLoader(dir, utils.NewLogger(false))
+	devices, err := loader.LoadDevices("devices")
+	if err != nil {
+		t.Fatalf("LoadDevices() error = %v", err)
+	}
+	if len(devices) != 2 {
+		t.Fatalf("LoadDevices() returned %d devices, expected 2", len(devices))
+	}
+
+	web01 := devices[0]
+	if web01.Name != "web-01" || web01.SiteSlug != "berlin-dc" || web01.RoleSlug != "server" ||
+		web01.DeviceTypeSlug != "example-server-r100" || web01.RackSlug != "rack-a01" ||
+		web01.Status != "active" || web01.Position != 10 {
+		t.Errorf("web-01 defaults not applied correctly: %+v", web01)
+	}
+	if len(web01.Interfaces) != 1 || web01.Interfaces[0].IP == nil || web01.Interfaces[0].IP.Address != "10.0.0.1/24" {
+		t.Errorf("web-01 interfaces not preserved: %+v", web01.Interfaces)
+	}
+	if len(web01.Tags) != 2 || web01.Tags[0] != "gitops" || web01.Tags[1] != "production" {
+		t.Errorf("web-01 tags = %v, expected [gitops production]", web01.Tags)
+	}
+
+	web02 := devices[1]
+	if web02.RoleSlug != "storage" {
+		t.Errorf("web-02 role_slug = %q, device value should win over default", web02.RoleSlug)
+	}
+	expectedTags := []string{"gitops", "production", "lab"}
+	if len(web02.Tags) != len(expectedTags) {
+		t.Fatalf("web-02 tags = %v, expected %v", web02.Tags, expectedTags)
+	}
+	for i, tag := range expectedTags {
+		if web02.Tags[i] != tag {
+			t.Errorf("web-02 tags = %v, expected %v", web02.Tags, expectedTags)
+			break
+		}
+	}
+}
+
+// TestLoadDevicesGroupedFormRejectsStrayKeys verifies that a top-level key
+// next to `devices` fails loudly instead of being silently dropped.
+func TestLoadDevicesGroupedFormRejectsStrayKeys(t *testing.T) {
+	dir := t.TempDir()
+	deviceDir := filepath.Join(dir, "devices")
+	if err := os.MkdirAll(deviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `
+defaults:
+  site_slug: "berlin-dc"
+name: "orphaned-device"
+devices:
+  - name: "web-01"
+    role_slug: "server"
+    device_type_slug: "example-server-r100"
+`
+	if err := os.WriteFile(filepath.Join(deviceDir, "servers.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewDataLoader(dir, utils.NewLogger(false))
+	if _, err := loader.LoadDevices("devices"); err == nil {
+		t.Error("LoadDevices() should reject stray top-level keys in grouped form")
+	}
+}
+
+// TestInterfaceEnabledDefault verifies that interfaces are enabled unless
+// explicitly disabled, so `enabled: true` boilerplate is not required.
+func TestInterfaceEnabledDefault(t *testing.T) {
+	dir := t.TempDir()
+	deviceDir := filepath.Join(dir, "devices")
+	if err := os.MkdirAll(deviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `
+- name: "web-01"
+  site_slug: "berlin-dc"
+  role_slug: "server"
+  device_type_slug: "example-server-r100"
+  interfaces:
+    - name: "eth0"
+    - name: "eth1"
+      enabled: false
+    - name: "eth2"
+      enabled: true
+`
+	if err := os.WriteFile(filepath.Join(deviceDir, "servers.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewDataLoader(dir, utils.NewLogger(false))
+	devices, err := loader.LoadDevices("devices")
+	if err != nil {
+		t.Fatalf("LoadDevices() error = %v", err)
+	}
+	if len(devices) != 1 || len(devices[0].Interfaces) != 3 {
+		t.Fatalf("unexpected devices/interfaces: %+v", devices)
+	}
+
+	ifaces := devices[0].Interfaces
+	if !ifaces[0].IsEnabled() {
+		t.Error("eth0 (enabled omitted) should default to enabled")
+	}
+	if ifaces[1].IsEnabled() {
+		t.Error("eth1 (enabled: false) should be disabled")
+	}
+	if !ifaces[2].IsEnabled() {
+		t.Error("eth2 (enabled: true) should be enabled")
+	}
+}
+
+// TestIPShorthand verifies that `ip:` accepts a plain CIDR string as a
+// shorthand for the full mapping form.
+func TestIPShorthand(t *testing.T) {
+	dir := t.TempDir()
+	deviceDir := filepath.Join(dir, "devices")
+	if err := os.MkdirAll(deviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `
+- name: "web-01"
+  site_slug: "berlin-dc"
+  role_slug: "server"
+  device_type_slug: "example-server-r100"
+  interfaces:
+    - name: "eth0"
+      ip: "10.0.0.1/24"
+    - name: "eth1"
+      ip:
+        address: "10.0.1.1/24"
+        vrf: "Production"
+`
+	if err := os.WriteFile(filepath.Join(deviceDir, "servers.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewDataLoader(dir, utils.NewLogger(false))
+	devices, err := loader.LoadDevices("devices")
+	if err != nil {
+		t.Fatalf("LoadDevices() error = %v", err)
+	}
+	if len(devices) != 1 || len(devices[0].Interfaces) != 2 {
+		t.Fatalf("unexpected devices/interfaces: %+v", devices)
+	}
+
+	eth0 := devices[0].Interfaces[0]
+	if eth0.IP == nil || eth0.IP.Address != "10.0.0.1/24" {
+		t.Errorf("eth0 IP shorthand not parsed: %+v", eth0.IP)
+	}
+	eth1 := devices[0].Interfaces[1]
+	if eth1.IP == nil || eth1.IP.Address != "10.0.1.1/24" || eth1.IP.VRF != "Production" {
+		t.Errorf("eth1 IP mapping form not parsed: %+v", eth1.IP)
+	}
+}
+
 // Integration tests for example YAML files
 func TestLoadDefinitionFiles(t *testing.T) {
 	// Skip if not in project directory

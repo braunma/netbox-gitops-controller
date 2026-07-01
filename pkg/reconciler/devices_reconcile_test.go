@@ -36,7 +36,7 @@ func TestReconcileDevicesFullFlow(t *testing.T) {
 			Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
 			RackSlug: "R01", Position: 10, Face: "front",
 			Interfaces: []models.InterfaceConfig{{
-				Name: "eth0", Type: "1000base-t", Enabled: true, MTU: 9000,
+				Name: "eth0", Type: "1000base-t", MTU: 9000,
 				Mode: "access", UntaggedVLAN: "mgmt",
 				IP:          &models.IPConfig{Address: "10.0.0.1/24"},
 				AddressRole: "primary",
@@ -46,7 +46,7 @@ func TestReconcileDevicesFullFlow(t *testing.T) {
 		{
 			Name: "sw-02", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
 			Interfaces: []models.InterfaceConfig{{
-				Name: "eth0", Type: "1000base-t", Enabled: true,
+				Name: "eth0", Type: "1000base-t",
 				Link: &models.LinkConfig{PeerDevice: "sw-01", PeerPort: "eth0", CableType: "cat6"},
 			}},
 		},

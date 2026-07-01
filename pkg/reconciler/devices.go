@@ -270,7 +270,7 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 		payload := map[string]interface{}{
 			"device":  deviceID,
 			"name":    iface.Name,
-			"enabled": iface.Enabled,
+			"enabled": iface.IsEnabled(),
 		}
 
 		// Only include type if not empty (NetBox rejects empty string)

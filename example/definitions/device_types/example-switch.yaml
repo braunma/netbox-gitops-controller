@@ -1,7 +1,15 @@
 # Example Switch Device Type
+#
+# Port templates are defined once here; concrete switches in the inventory
+# only override per-port settings (VLANs, descriptions, links).
 manufacturer: "Example Vendor"
 model: "Example Switch 48"
 slug: "example-switch-48"
 u_height: 1
 is_full_depth: true
 comments: "Example 48-port switch for testing"
+interfaces:
+  - name: "GigabitEthernet1/0/1"
+    type: "1000base-t"
+  - name: "GigabitEthernet1/0/2"
+    type: "1000base-t"
