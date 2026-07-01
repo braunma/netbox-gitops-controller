@@ -142,7 +142,7 @@ func TestReconcileVMsFullFlow(t *testing.T) {
 		Platform: "ubuntu-22-04", Tenant: "acme-corp", Status: "active",
 		VCPUs: 4, Memory: 8192, Disk: 100,
 		Interfaces: []models.VMInterfaceConfig{{
-			Name: "eth0", Enabled: true, MTU: 1500, Mode: "access",
+			Name: "eth0", MTU: 1500, Mode: "access",
 			UntaggedVLAN: "mgmt",
 			IP:           &models.IPConfig{Address: "10.0.0.10/24"},
 			AddressRole:  "primary",
@@ -233,7 +233,7 @@ func TestReconcileVMsTaggedVLANsIdempotent(t *testing.T) {
 	vms := []*models.VMConfig{{
 		Name: "trunk-vm", Cluster: "c1",
 		Interfaces: []models.VMInterfaceConfig{{
-			Name: "eth0", Enabled: true, Mode: "tagged",
+			Name: "eth0", Mode: "tagged",
 			TaggedVLANs: []string{"red", "blue"},
 		}},
 	}}
@@ -263,8 +263,8 @@ func TestReconcileVMInterfaceResolvesParent(t *testing.T) {
 	vms := []*models.VMConfig{{
 		Name: "vm1", SiteSlug: "berlin-dc",
 		Interfaces: []models.VMInterfaceConfig{
-			{Name: "eth0", Enabled: true},
-			{Name: "eth0.100", Enabled: true, Parent: "eth0"},
+			{Name: "eth0"},
+			{Name: "eth0.100", Parent: "eth0"},
 		},
 	}}
 	if err := vr.ReconcileVMs(vms); err != nil {
@@ -297,8 +297,8 @@ func TestReconcileVMIPWithVRF(t *testing.T) {
 	vms := []*models.VMConfig{{
 		Name: "vm1", SiteSlug: "berlin-dc",
 		Interfaces: []models.VMInterfaceConfig{{
-			Name: "eth0", Enabled: true,
-			IP: &models.IPConfig{Address: "10.0.0.5/24", VRF: "prod"},
+			Name: "eth0",
+			IP:   &models.IPConfig{Address: "10.0.0.5/24", VRF: "prod"},
 		}},
 	}}
 	if err := vr.ReconcileVMs(vms); err != nil {

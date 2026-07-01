@@ -37,13 +37,10 @@
       status: "active"
       # No serial - will be set to empty string
 
+  # eth0/eth1 come from the device type template; only overrides are listed
   interfaces:
     - name: "eth0"
-      type: "1000base-t"
-      enabled: true
       description: "Management interface"
 
     - name: "eth1"
-      type: "10gbase-x-sfpp"
-      enabled: true
       description: "High-speed data interface"

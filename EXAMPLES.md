@@ -30,7 +30,7 @@ few objects of each supported type:
 | Racks             | 3     | Rack A-01, Rack A-02, Test Rack                                |
 | Module types      | 2     | 10G SFP+ module, GPU A100                                       |
 | Device types      | 6     | server, switch, GPU server, blade chassis, blade, patch panel  |
-| Hardware devices  | 7     | server, switch, GPU server, chassis + 2 blades, patch panel    |
+| Hardware devices  | 8     | 2 servers, switch, GPU server, chassis + 2 blades, patch panel |
 | Virtual machines  | 2     | `web-01` (provisioned in Proxmox), `edge-01` (doc-only)        |
 | Virtualization    | —     | cluster type Proxmox VE, group Production, cluster `berlin-prod-cluster` |
 
@@ -75,23 +75,37 @@ per-site VLAN groups and are referenced from prefixes and interfaces by name,
 resolved against the object's site.
 
 ### Devices and interfaces
-A device references its site, role, device type and rack by slug, and lists its
-interfaces inline (see `inventory/hardware/active/servers.yaml`):
+A device references its site, role, device type and rack by slug. Inventory
+files support a grouped form where a `defaults` block is merged into every
+device (device values win, tags are combined), so shared fields are written
+once (see `inventory/hardware/active/servers.yaml`):
 
 ```yaml
-- name: "example-server-01"
+defaults:
   device_type_slug: "example-server-r100"
   role_slug: "server"
   site_slug: "berlin-dc"
   rack_slug: "rack-a01"
-  position: 10
   status: "active"
-  interfaces:
-    - name: "eth0"
-      type: "1000base-t"
-    - name: "eth1"
-      type: "10gbase-x-sfpp"
+  tags: ["gitops", "production"]
+
+devices:
+  - name: "example-server-01"
+    position: 10
+    interfaces:
+      - name: "eth1"
+        description: "Data interface"
 ```
+
+Interface `type` and `enabled` are not repeated in the inventory: the ports
+come from the device type's interface templates, and interfaces are enabled
+unless explicitly set to `enabled: false`. `type` is only needed for
+interfaces that don't exist in the template. The classic form — a plain YAML
+list of devices — remains fully supported (see `switches.yaml` and
+`chassis.yaml`).
+
+An interface's `ip:` accepts either a plain CIDR string (`ip: "10.0.0.1/24"`)
+or the full mapping form with `dns_name`, `vrf`, `status` etc.
 
 ### Self-healing device bays and blades
 `example-chassis.yaml` defines device-bay templates; the controller auto-creates
@@ -154,18 +168,19 @@ provision the VMs in Proxmox from the same YAML — NetBox itself ignores them
 `provision: true` a VM is documentation-only. See
 [`terraform/README.md`](terraform/README.md) for that optional pipeline.
 
-### Auto-wiring (feature reference)
-The bundled example data does not connect cables, but the controller can wire
-them automatically from a `link:` block on any interface, front port or rear
-port — it creates the cable bidirectionally between the two endpoints:
+### Auto-wiring
+The controller wires cables automatically from a `link:` block on any
+interface, front port or rear port — it creates the cable bidirectionally
+between the two endpoints, so each cable is declared on **one end only**
+(convention: the server/endpoint side owns the link, see `servers.yaml`):
 
 ```yaml
 interfaces:
-  - name: "eth0"
+  - name: "eth1"
     link:
       peer_device: "example-switch-01"
       peer_port: "GigabitEthernet1/0/1"
-      cable_type: "cat6a"          # optional
+      cable_type: "cat6"           # optional
 ```
 
 ### GitOps tag

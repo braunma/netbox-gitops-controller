@@ -1,20 +1,46 @@
 # Example Server Inventory for Testing
+#
+# This file uses the grouped `defaults` + `devices` form: fields under
+# `defaults` are merged into every device below. Device values win over
+# defaults, and `tags` are combined instead of replaced.
+#
+# Conventions demonstrated here:
+#   - Interface `type` and `enabled` are NOT repeated: the ports come from
+#     the device type template and interfaces are enabled by default.
+#     Only list an interface at all when it carries device-specific data
+#     (IPs, VLANs, descriptions, cabling).
+#   - Cables are declared on ONE end only (the server/endpoint side).
+#     The reconciler wires both ends from a single declaration.
 
-- name: "example-server-01"
+defaults:
   device_type_slug: "example-server-r100"
   role_slug: "server"
   site_slug: "berlin-dc"
   rack_slug: "rack-a01"
-  position: 10
   face: "front"
   status: "active"
   tags: ["gitops", "production"]
-  interfaces:
-    - name: "eth0"
-      type: "1000base-t"
-      enabled: true
-      description: "Management interface"
-    - name: "eth1"
-      type: "10gbase-x-sfpp"
-      enabled: true
-      description: "Data interface"
+
+devices:
+  - name: "example-server-01"
+    position: 10
+    interfaces:
+      - name: "eth0"
+        description: "Management interface"
+      - name: "eth1"
+        description: "Data interface"
+        link:
+          peer_device: "example-switch-01"
+          peer_port: "GigabitEthernet1/0/1"
+          cable_type: "cat6"
+
+  - name: "example-server-02"
+    position: 12
+    tags: ["lab"] # merged with the default tags -> gitops, production, lab
+    interfaces:
+      - name: "eth1"
+        description: "Data interface"
+        link:
+          peer_device: "example-switch-01"
+          peer_port: "GigabitEthernet1/0/2"
+          cable_type: "cat6"

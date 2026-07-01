@@ -293,15 +293,9 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 		return fmt.Errorf("failed to read file: %w", err)
 	}
 
-	// Unmarshal YAML - usually a list, but accept a single top-level mapping
-	// as a one-element list (e.g. one device type per file)
-	var items []map[string]interface{}
-	if err := yaml.Unmarshal(content, &items); err != nil {
-		var single map[string]interface{}
-		if err2 := yaml.Unmarshal(content, &single); err2 != nil {
-			return fmt.Errorf("failed to unmarshal YAML as list (%v) or single mapping: %w", err, err2)
-		}
-		items = []map[string]interface{}{single}
+	items, err := decodeItems(content)
+	if err != nil {
+		return err
 	}
 
 	// Get current target slice and append items from this file
@@ -502,6 +496,99 @@ func (dl *DataLoader) loadFile(path string, target interface{}) error {
 	}
 
 	return nil
+}
+
+// decodeItems parses YAML file content into a list of raw item mappings.
+// Three top-level document shapes are accepted:
+//
+//  1. A list of mappings (the classic form).
+//  2. A single mapping, treated as a one-element list (e.g. one device type
+//     per file).
+//  3. A grouped form with an optional `defaults` mapping and a `devices`
+//     list. The defaults are merged into every entry: entry values win over
+//     defaults, and `tags` are combined (union) instead of replaced.
+//
+// The grouped form exists so inventory files don't have to repeat shared
+// fields (site_slug, role_slug, rack_slug, tags, ...) on every device.
+func decodeItems(content []byte) ([]map[string]interface{}, error) {
+	var items []map[string]interface{}
+	listErr := yaml.Unmarshal(content, &items)
+	if listErr == nil {
+		return items, nil
+	}
+
+	var single map[string]interface{}
+	if err := yaml.Unmarshal(content, &single); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal YAML as list (%v) or single mapping: %w", listErr, err)
+	}
+
+	if _, hasDevices := single["devices"]; !hasDevices {
+		return []map[string]interface{}{single}, nil
+	}
+
+	// Grouped form: only `defaults` and `devices` are allowed at the top level
+	// so typos (e.g. a stray device field next to `devices`) fail loudly
+	// instead of being silently dropped.
+	for key := range single {
+		if key != "defaults" && key != "devices" {
+			return nil, fmt.Errorf("grouped form only allows 'defaults' and 'devices' at the top level, found %q", key)
+		}
+	}
+
+	var grouped struct {
+		Defaults map[string]interface{}   `yaml:"defaults"`
+		Devices  []map[string]interface{} `yaml:"devices"`
+	}
+	if err := yaml.Unmarshal(content, &grouped); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal grouped defaults/devices form: %w", err)
+	}
+
+	merged := make([]map[string]interface{}, 0, len(grouped.Devices))
+	for _, device := range grouped.Devices {
+		merged = append(merged, mergeDefaults(grouped.Defaults, device))
+	}
+	return merged, nil
+}
+
+// mergeDefaults applies file-level defaults to a single item mapping. Item
+// values take precedence over defaults; `tags` from both are unioned so a
+// device can add tags without dropping the shared ones.
+func mergeDefaults(defaults, item map[string]interface{}) map[string]interface{} {
+	if len(defaults) == 0 {
+		return item
+	}
+	merged := make(map[string]interface{}, len(defaults)+len(item))
+	for key, value := range defaults {
+		merged[key] = value
+	}
+	for key, value := range item {
+		if key == "tags" {
+			merged[key] = unionTags(defaults[key], value)
+			continue
+		}
+		merged[key] = value
+	}
+	return merged
+}
+
+// unionTags combines two YAML tag lists, keeping default tags first and
+// dropping duplicates. Non-list values fall back to the item value.
+func unionTags(defaultTags, itemTags interface{}) interface{} {
+	defaultList, dOK := defaultTags.([]interface{})
+	itemList, iOK := itemTags.([]interface{})
+	if !dOK || !iOK {
+		return itemTags
+	}
+	seen := make(map[string]bool, len(defaultList)+len(itemList))
+	union := make([]interface{}, 0, len(defaultList)+len(itemList))
+	for _, tag := range append(append([]interface{}{}, defaultList...), itemList...) {
+		key := fmt.Sprintf("%v", tag)
+		if !seen[key] {
+			seen[key] = true
+			union = append(union, tag)
+		}
+	}
+	return union
 }
 
 // findYAMLFiles recursively finds all YAML files in a directory

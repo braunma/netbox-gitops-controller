@@ -268,7 +268,7 @@ func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *
 		payload := map[string]interface{}{
 			"virtual_machine": vmID,
 			"name":            iface.Name,
-			"enabled":         iface.Enabled,
+			"enabled":         iface.IsEnabled(),
 		}
 		if iface.Description != "" {
 			payload["description"] = iface.Description
