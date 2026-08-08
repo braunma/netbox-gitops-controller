@@ -36,6 +36,7 @@ model: Widget 4000
 slug: acme-widget-4000
 part_number: W4000
 u_height: 2
+subdevice_role: parent
 airflow: front-to-rear
 weight: 21.9
 weight_unit: kg

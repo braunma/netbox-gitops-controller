@@ -58,13 +58,17 @@ const (
 // These objects are also not prunable by tag and are intentionally excluded
 // from pruneTargets.
 var UntaggableEndpoints = map[string]bool{
-	"custom-fields":        true,
-	"tags":                 true,
-	"interface-templates":  true,
-	"front-port-templates": true,
-	"rear-port-templates":  true,
-	"device-bay-templates": true,
-	"module-bay-templates": true,
+	"custom-fields":                 true,
+	"tags":                          true,
+	"interface-templates":           true,
+	"front-port-templates":          true,
+	"rear-port-templates":           true,
+	"device-bay-templates":          true,
+	"module-bay-templates":          true,
+	"console-port-templates":        true,
+	"console-server-port-templates": true,
+	"power-port-templates":          true,
+	"power-outlet-templates":        true,
 }
 
 // Field transforms for API calls

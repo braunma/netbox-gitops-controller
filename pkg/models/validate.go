@@ -152,6 +152,35 @@ func (d *DeviceType) Validate() error {
 			errs = append(errs, fmt.Errorf("rear port %q: type is required", rp.Name))
 		}
 	}
+	for i, cp := range d.ConsolePorts {
+		if cp.Name == "" {
+			errs = append(errs, fmt.Errorf("console port %d: name is required", i+1))
+		}
+	}
+	for i, cp := range d.ConsoleServerPorts {
+		if cp.Name == "" {
+			errs = append(errs, fmt.Errorf("console server port %d: name is required", i+1))
+		}
+	}
+	for i, pp := range d.PowerPorts {
+		if pp.Name == "" {
+			errs = append(errs, fmt.Errorf("power port %d: name is required", i+1))
+		}
+	}
+	for i, po := range d.PowerOutlets {
+		if po.Name == "" {
+			errs = append(errs, fmt.Errorf("power outlet %d: name is required", i+1))
+		}
+	}
+
+	// NetBox refuses device bay templates unless the device type is declared a
+	// parent, rejecting the bay with a message that names the constraint but
+	// not the fix. Catching it here keeps the failure in the YAML, before any
+	// part of the device type has been written.
+	if len(d.DeviceBays) > 0 && d.SubdeviceRole != "parent" {
+		errs = append(errs, fmt.Errorf(
+			"subdevice_role must be \"parent\" to declare device_bays (found %q)", d.SubdeviceRole))
+	}
 
 	return wrap("device type", d.Model, errs)
 }

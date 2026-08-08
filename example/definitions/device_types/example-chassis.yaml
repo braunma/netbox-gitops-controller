@@ -5,6 +5,8 @@ model: "Example Blade Chassis"
 slug: "example-blade-chassis"
 u_height: 10
 is_full_depth: true
+# Required by NetBox before it will accept device bay templates.
+subdevice_role: "parent"
 comments: "Example blade server chassis with device bays"
 
 # Device bay templates - these will be auto-created on actual devices
