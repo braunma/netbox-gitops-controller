@@ -250,3 +250,48 @@ func TestReconcileNetworkResolvesReferencesWithoutSiteCache(t *testing.T) {
 		t.Errorf("prefix vrf = %d, expected %d", got, utils.GetIDFromObject(vrf))
 	}
 }
+
+// TestReconcileVRFsRegistersForSameRunLookup covers a first-run bug found
+// against a live NetBox: the global cache is loaded once, before any phase, so
+// a VRF created during the run was invisible to the prefixes that reference
+// it. Those prefixes were created in the global table, and the next run
+// created a second, correctly scoped copy beside them.
+func TestReconcileVRFsRegistersForSameRunLookup(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	nr := NewNetworkReconciler(c)
+
+	vrfs := []*models.VRF{{Name: "Management", RD: "65000:10"}}
+	if err := nr.ReconcileVRFs(vrfs); err != nil {
+		t.Fatalf("ReconcileVRFs() error = %v", err)
+	}
+
+	vrfID, ok := c.Cache().GetGlobalID("vrfs", "Management")
+	if !ok {
+		t.Fatal("VRF created this run is not resolvable from the cache")
+	}
+	if want := utils.GetIDFromObject(f.objects("ipam", "vrfs")[0]); vrfID != want {
+		t.Errorf("cached VRF id = %d, want %d", vrfID, want)
+	}
+
+	// The prefix that references it must land in the VRF on this same run.
+	prefixes := []*models.Prefix{{Prefix: "10.0.100.0/24", VRFName: "Management", Status: "active"}}
+	if err := nr.ReconcilePrefixes(prefixes); err != nil {
+		t.Fatalf("ReconcilePrefixes() error = %v", err)
+	}
+	got := f.objects("ipam", "prefixes")
+	if len(got) != 1 {
+		t.Fatalf("expected 1 prefix, got %d", len(got))
+	}
+	if utils.GetIDFromObject(got[0]["vrf"]) != vrfID {
+		t.Errorf("prefix vrf = %v, want the VRF created this run (%d)", got[0]["vrf"], vrfID)
+	}
+
+	// Second pass must not create a duplicate.
+	f.resetMutations()
+	if err := nr.ReconcilePrefixes(prefixes); err != nil {
+		t.Fatalf("ReconcilePrefixes() second pass error = %v", err)
+	}
+	if n := len(f.objects("ipam", "prefixes")); n != 1 {
+		t.Errorf("prefixes after second pass = %d, want 1 (no duplicate)", n)
+	}
+}

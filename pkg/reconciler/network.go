@@ -40,10 +40,16 @@ func (nr *NetworkReconciler) ReconcileVRFs(vrfs []*models.VRF) error {
 		}
 
 		lookup := map[string]interface{}{"name": vrf.Name}
-		_, err := nr.client.Apply("ipam", "vrfs", lookup, payload)
+		vrfObj, err := nr.client.Apply("ipam", "vrfs", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VRF %s: %w", vrf.Name, err)
 		}
+		// Register so a VRF created in this same run resolves for the prefixes
+		// and interfaces that reference it later. Without this, the global
+		// cache — loaded once, before any phase — still has no entry, so on a
+		// fresh NetBox a VRF-scoped prefix was created in the global table and
+		// the next run created a second, correctly scoped copy beside it.
+		nr.client.Cache().Register("vrfs", utils.GetIDFromObject(vrfObj), vrf.Name)
 	}
 
 	return nil

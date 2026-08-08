@@ -67,6 +67,13 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **VRF-scoped prefixes are no longer created twice.** The global cache is
+  loaded once, before any phase runs, and `ReconcileVRFs` never registered the
+  VRFs it created — so on a fresh NetBox every prefix referencing a VRF was
+  created in the global table, and the next run created a second, correctly
+  scoped copy beside it. The stale copy persisted until a `--prune` run reaped
+  it. VRFs are now registered on creation, as sites, roles and device types
+  already were. Found running against a live NetBox 4.6.7.
 - **Component templates are no longer re-`PATCH`ed on every run.** The four new
   template endpoints (console port, console server port, power port, power
   outlet) were not registered as untaggable, so the managed tag was injected
