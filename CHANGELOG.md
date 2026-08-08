@@ -29,17 +29,11 @@ are about to run before applying a sync with pruning enabled.
   `description`, `comments` and `weight`/`weight_unit` fields. Power ports are
   reconciled before power outlets so an outlet can resolve the port that feeds
   it.
-- **Multi-position patch panel rear ports.** Rear port templates accept
-  `positions`, so a breakout panel's trunk is no longer flattened to a single
-  position. Verified against NetBox 4.6.7.
-
-  > **Known limitation:** the matching front-port side (`rear_port_position`)
-  > is **not** applied on NetBox 4.6+. That release replaced the front port's
-  > singular `rear_port`/`rear_port_position` fields with a `rear_ports` list,
-  > and NetBox accepts the old fields silently instead of rejecting them — so
-  > front ports are created but left unwired, and re-`PATCH`ed on every run.
-  > This affects all front port handling (device types and device instances),
-  > not only the new field. See "Front ports on NetBox 4.6+" in the README.
+- **Multi-position patch panel ports.** Rear ports accept `positions` and
+  front ports accept `rear_port_position`, so a breakout panel is no longer
+  flattened to a single position per port. Both default to 1, and both are
+  applied correctly on NetBox 4.6+ (see the front port fix below). Verified
+  against NetBox 4.6.7.
 - **NetBox version check.** The controller queries `/api/status/` on startup,
   logs the detected release, and refuses to run against a NetBox older than
   3.6 — the release that renamed the device `device_role` field to `role`.

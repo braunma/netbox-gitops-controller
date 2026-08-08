@@ -251,19 +251,16 @@ than silently matching nothing.
 > A run that both skips files and uses `--prune` warns and lists the skipped
 > files before deleting anything. Preview with `--dry-run --prune` first.
 
-### Front Ports on NetBox 4.6+
+### Front Ports Across NetBox Releases
 
 NetBox 4.6 replaced a front port's singular `rear_port` / `rear_port_position`
-fields with a `rear_ports` list. This controller still sends the singular
-form, and **NetBox 4.6+ accepts it silently rather than rejecting it** — so on
-those releases a front port is created but is *not* wired to its rear port,
-and it is re-`PATCH`ed on every run.
+fields with a `rear_ports` list of `{position, rear_port, rear_port_position}`
+mappings — and **accepts the old fields silently rather than rejecting them**,
+so sending the wrong shape leaves the port created but unwired.
 
-This affects front ports in device types and on device instances alike. Rear
-ports are unaffected: `positions` works correctly, verified against 4.6.7.
-
-If you use patch panels on NetBox 4.6 or newer, verify the front-to-rear
-mapping in NetBox after a sync until this is addressed.
+The controller picks the shape from the release reported by `/api/status/`, so
+patch panels wire correctly on both older releases and 4.6+. Nothing in your
+YAML changes; `rear_port` and `rear_port_position` stay as they are.
 
 ### NetBox Version Compatibility
 
