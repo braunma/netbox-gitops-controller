@@ -2,7 +2,9 @@ package loader
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
@@ -118,20 +120,35 @@ func (dl *DataLoader) LoadDeviceTypeLibrary(root string) ([]*models.DeviceType, 
 	}
 
 	deviceTypes := make([]*models.DeviceType, 0, len(files))
+	// A slug is the identity a device type is reconciled under, so two files
+	// claiming one slug would make the resulting NetBox state depend on the
+	// order the directory happened to be walked in.
+	sourceBySlug := make(map[string]string, len(files))
+
 	for _, path := range files {
-		dt, err := dl.loadDeviceTypeLibraryFile(path)
+		parsed, err := dl.loadDeviceTypeLibraryFile(path)
 		if err != nil {
 			return nil, err
 		}
-		deviceTypes = append(deviceTypes, dt)
+		for _, dt := range parsed {
+			if previous, clash := sourceBySlug[dt.Slug]; clash {
+				return nil, fmt.Errorf("duplicate device type slug %q in the library: declared in both %s and %s",
+					dt.Slug, previous, path)
+			}
+			sourceBySlug[dt.Slug] = path
+			deviceTypes = append(deviceTypes, dt)
+		}
 	}
 
 	dl.logger.Info("Loaded %d device type(s) from library %s", len(deviceTypes), root)
 	return deviceTypes, nil
 }
 
-// loadDeviceTypeLibraryFile parses one library file into the native model.
-func (dl *DataLoader) loadDeviceTypeLibraryFile(path string) (*models.DeviceType, error) {
+// loadDeviceTypeLibraryFile parses one library file into the native model. The
+// library publishes a single device type per file, but a multi-document file
+// is read in full rather than having everything after the first document
+// silently ignored.
+func (dl *DataLoader) loadDeviceTypeLibraryFile(path string) ([]*models.DeviceType, error) {
 	content, err := os.ReadFile(path)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read %s: %w", path, err)
@@ -140,25 +157,46 @@ func (dl *DataLoader) loadDeviceTypeLibraryFile(path string) (*models.DeviceType
 	// KnownFields catches a library file whose schema has drifted (or a native
 	// device type file dropped into the library root by mistake) instead of
 	// silently importing a device type with no components.
-	var dtl dtlDeviceType
 	dec := yaml.NewDecoder(bytes.NewReader(content))
 	dec.KnownFields(true)
-	if err := dec.Decode(&dtl); err != nil {
-		return nil, fmt.Errorf("failed to parse device type library file %s: %w", path, err)
+
+	var deviceTypes []*models.DeviceType
+	for docIndex := 1; ; docIndex++ {
+		var dtl dtlDeviceType
+		err := dec.Decode(&dtl)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse device type library file %s (document %d): %w", path, docIndex, err)
+		}
+
+		dt, err := dtl.toModel()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		// Library device types go through the same model validation as native
+		// ones, so a malformed component is caught here rather than as a 400
+		// from NetBox partway through a run.
+		if err := dt.Validate(); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+
+		// Nothing this project cannot express is dropped quietly.
+		if len(dtl.InventoryItems) > 0 {
+			dl.logger.Warning("%s: %d inventory item(s) are not imported (inventory item templates are not managed)",
+				path, len(dtl.InventoryItems))
+		}
+
+		deviceTypes = append(deviceTypes, dt)
 	}
 
-	dt, err := dtl.toModel()
-	if err != nil {
-		return nil, fmt.Errorf("%s: %w", path, err)
+	// An empty or comment-only file is a placeholder, not a failure.
+	if len(deviceTypes) == 0 {
+		dl.logger.Warning("%s contains no device type, skipping", path)
 	}
 
-	// Nothing this project cannot express is dropped quietly.
-	if len(dtl.InventoryItems) > 0 {
-		dl.logger.Warning("%s: %d inventory item(s) are not imported (inventory item templates are not managed)",
-			path, len(dtl.InventoryItems))
-	}
-
-	return dt, nil
+	return deviceTypes, nil
 }
 
 // toModel translates the library schema into the native device type model,

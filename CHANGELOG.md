@@ -20,7 +20,10 @@ are about to run before applying a sync with pruning enabled.
   Point `--devicetype-library` or `DEVICETYPE_LIBRARY` at a library checkout,
   or drop files into `definitions/device_type_library/`. Library entries are
   merged with natively defined device types; a local definition with the same
-  slug wins and the override is logged.
+  slug wins and the override is logged. Library files go through the same
+  model validation as native ones, multi-document files are read in full,
+  empty files are skipped, and two library files claiming the same slug are
+  rejected rather than resolved by directory walk order.
 - **Device type component templates** for console ports, console server ports,
   power ports and power outlets, plus the `part_number`, `airflow`,
   `description`, `comments` and `weight`/`weight_unit` fields. Power ports are
@@ -39,7 +42,16 @@ are about to run before applying a sync with pruning enabled.
   without being applied. Defaults to `_*.yaml` and `_*.yml`; override with
   `--ignore-file` or `IGNORED_FILES` (comma-separated globs matched against
   the filename), and load everything with `--include-ignored-files`. Every
-  skipped file is logged.
+  skipped file is logged, and a run that both skips files and uses `--prune`
+  warns with the list before deleting anything.
+
+  > **Upgrade note:** the `_*` default is new. If your repository already
+  > contains YAML files whose names start with an underscore, they will no
+  > longer be applied. Objects this controller previously created from such a
+  > file still carry the managed tag and would be deleted as orphans by
+  > `--prune`. Check with `--dry-run --prune` before the first pruning run
+  > after upgrading, or set `IGNORED_FILES` to a pattern that does not match
+  > them.
 - **Shared test fixture factories** for the reconciler suite
   (`pkg/reconciler/fixtures_test.go`), so tests state only the fields they are
   actually about.

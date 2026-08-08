@@ -239,9 +239,17 @@ match the **filename only**, not the path — a file inside a directory whose
 name matches a pattern is still loaded. An invalid glob fails at startup rather
 than silently matching nothing.
 
-> **Note:** A parked file is invisible to the controller, which means `--prune`
-> treats the objects it declares as orphans. Do not park a file that describes
-> objects still present in NetBox and then run with `--prune`.
+> **⚠️ Pruning:** A parked file is invisible to the controller, so `--prune`
+> cannot tell its objects apart from orphans. Two cases, and only you can tell
+> them apart:
+>
+> - Objects **another system owns** were never created here, carry no `gitops`
+>   tag, and are safe — pruning never touches untagged objects.
+> - Objects **this controller previously created** from a file you have now
+>   parked still carry the tag and **will be deleted** as orphans.
+>
+> A run that both skips files and uses `--prune` warns and lists the skipped
+> files before deleting anything. Preview with `--dry-run --prune` first.
 
 ### NetBox Version Compatibility
 

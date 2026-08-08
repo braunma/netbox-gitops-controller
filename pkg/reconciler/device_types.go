@@ -119,10 +119,16 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 		if dt.Comments != "" {
 			payload["comments"] = dt.Comments
 		}
-		// NetBox rejects a weight without its unit, so only send the pair.
-		if dt.Weight != 0 && dt.WeightUnit != "" {
+		// NetBox rejects a weight without its unit, so only send the pair —
+		// but say so rather than dropping a declared value in silence.
+		switch {
+		case dt.Weight != 0 && dt.WeightUnit != "":
 			payload["weight"] = dt.Weight
 			payload["weight_unit"] = dt.WeightUnit
+		case dt.Weight != 0:
+			dtr.logger.Warning("Device type %s declares weight %v without weight_unit; not setting a weight", dt.Slug, dt.Weight)
+		case dt.WeightUnit != "":
+			dtr.logger.Warning("Device type %s declares weight_unit %q without a weight; not setting a weight", dt.Slug, dt.WeightUnit)
 		}
 
 		lookup := map[string]interface{}{"slug": dt.Slug}

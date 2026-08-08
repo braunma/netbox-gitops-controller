@@ -71,13 +71,6 @@ func withModules(modules ...models.ModuleConfig) deviceOption {
 	}
 }
 
-// withSite overrides the seeded site, for tests about site scoping.
-func withSite(slug string) deviceOption {
-	return func(d *models.DeviceConfig) {
-		d.SiteSlug = slug
-	}
-}
-
 // interfaceOption customises an interface built by testInterface.
 type interfaceOption func(*models.InterfaceConfig)
 

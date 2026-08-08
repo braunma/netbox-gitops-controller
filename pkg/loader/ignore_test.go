@@ -106,3 +106,25 @@ func TestValidateIgnorePatterns(t *testing.T) {
 		t.Fatal("ValidateIgnorePatterns() = nil, want an error for a malformed glob")
 	}
 }
+
+func TestIgnoredFilesAreReportable(t *testing.T) {
+	base := t.TempDir()
+	writeSites(t, base, "sites.yaml", "- name: Berlin\n  slug: berlin\n")
+	writeSites(t, base, "_staged.yaml", "- name: Staged\n  slug: staged\n")
+
+	dl := NewDataLoader(base, utils.NewLogger(false))
+	if got := dl.IgnoredFiles(); len(got) != 0 {
+		t.Fatalf("IgnoredFiles() = %v before loading, want empty", got)
+	}
+
+	if _, err := dl.LoadSites("definitions/sites"); err != nil {
+		t.Fatalf("LoadSites() error = %v", err)
+	}
+
+	// The caller needs these to warn before pruning, which would delete any
+	// managed object declared only in a parked file.
+	ignored := dl.IgnoredFiles()
+	if len(ignored) != 1 || filepath.Base(ignored[0]) != "_staged.yaml" {
+		t.Fatalf("IgnoredFiles() = %v, want the parked file reported", ignored)
+	}
+}

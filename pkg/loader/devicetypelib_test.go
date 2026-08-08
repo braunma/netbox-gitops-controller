@@ -291,3 +291,77 @@ func TestMergeDeviceTypesLocalDefinitionWins(t *testing.T) {
 		t.Errorf("merged[1] = %q, want the non-clashing library type kept", merged[1].Slug)
 	}
 }
+
+func TestLoadDeviceTypeLibraryReadsEveryDocument(t *testing.T) {
+	dl, root := testLoader(t)
+	// The library publishes one type per file, but a multi-document file must
+	// not have everything after the first document silently dropped.
+	writeLibraryFile(t, root, "Acme", "multi.yaml", `---
+manufacturer: Acme
+model: First
+---
+manufacturer: Acme
+model: Second
+`)
+
+	got, err := dl.LoadDeviceTypeLibrary(root)
+	if err != nil {
+		t.Fatalf("LoadDeviceTypeLibrary() error = %v", err)
+	}
+	if len(got) != 2 {
+		t.Fatalf("loaded %d device types from a 2-document file, want 2", len(got))
+	}
+	if got[0].Model != "First" || got[1].Model != "Second" {
+		t.Errorf("models = %q, %q; want First, Second", got[0].Model, got[1].Model)
+	}
+}
+
+func TestLoadDeviceTypeLibrarySkipsEmptyFile(t *testing.T) {
+	dl, root := testLoader(t)
+	writeLibraryFile(t, root, "Acme", "placeholder.yaml", "# parked for later\n")
+	writeLibraryFile(t, root, "Acme", "real.yaml", "manufacturer: Acme\nmodel: Real\n")
+
+	got, err := dl.LoadDeviceTypeLibrary(root)
+	if err != nil {
+		t.Fatalf("LoadDeviceTypeLibrary() error = %v; an empty placeholder must not fail the run", err)
+	}
+	if len(got) != 1 || got[0].Model != "Real" {
+		t.Fatalf("loaded %+v, want only the non-empty file", got)
+	}
+}
+
+func TestLoadDeviceTypeLibraryValidatesComponents(t *testing.T) {
+	dl, root := testLoader(t)
+	// An interface without a type is rejected by NetBox with a 400 partway
+	// through a run; model validation has to catch it first.
+	writeLibraryFile(t, root, "Acme", "bad.yaml", `---
+manufacturer: Acme
+model: Bad
+interfaces:
+  - name: eth0
+`)
+
+	_, err := dl.LoadDeviceTypeLibrary(root)
+	if err == nil {
+		t.Fatal("LoadDeviceTypeLibrary() = nil, want an interface without a type rejected")
+	}
+	if !strings.Contains(err.Error(), "type is required") {
+		t.Errorf("error = %q, want it to name the missing type", err)
+	}
+}
+
+func TestLoadDeviceTypeLibraryRejectsDuplicateSlugs(t *testing.T) {
+	dl, root := testLoader(t)
+	// Two files claiming one slug would make the resulting NetBox state depend
+	// on directory walk order.
+	writeLibraryFile(t, root, "Acme", "a.yaml", "manufacturer: Acme\nmodel: A\nslug: shared\n")
+	writeLibraryFile(t, root, "Globex", "b.yaml", "manufacturer: Globex\nmodel: B\nslug: shared\n")
+
+	_, err := dl.LoadDeviceTypeLibrary(root)
+	if err == nil {
+		t.Fatal("LoadDeviceTypeLibrary() = nil, want duplicate slugs rejected")
+	}
+	if !strings.Contains(err.Error(), "shared") || !strings.Contains(err.Error(), "duplicate") {
+		t.Errorf("error = %q, want it to name the duplicated slug", err)
+	}
+}

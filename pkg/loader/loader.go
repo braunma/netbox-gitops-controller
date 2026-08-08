@@ -6,6 +6,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -27,6 +28,12 @@ type DataLoader struct {
 	// ignorePatterns are matched against each file's basename. Empty means
 	// nothing is skipped.
 	ignorePatterns []string
+
+	// ignored accumulates the files skipped by those patterns, so a caller can
+	// report them before doing something destructive. Loading is sequential
+	// today; the mutex keeps that an implementation detail.
+	ignoredMu sync.Mutex
+	ignored   []string
 }
 
 // NewDataLoader creates a new data loader applying DefaultIgnorePatterns.
@@ -81,11 +88,24 @@ func (dl *DataLoader) filterIgnored(files []string) []string {
 	for _, f := range files {
 		if dl.isIgnored(f) {
 			dl.logger.Info("Ignoring %s (matches an ignore pattern; use --include-ignored-files to load it)", f)
+			dl.ignoredMu.Lock()
+			dl.ignored = append(dl.ignored, f)
+			dl.ignoredMu.Unlock()
 			continue
 		}
 		kept = append(kept, f)
 	}
 	return kept
+}
+
+// IgnoredFiles returns the files skipped so far by an ignore pattern. It lets
+// the caller warn before a destructive operation: objects declared only in a
+// parked file are invisible to this run, so pruning would treat any that this
+// controller previously created as orphans.
+func (dl *DataLoader) IgnoredFiles() []string {
+	dl.ignoredMu.Lock()
+	defer dl.ignoredMu.Unlock()
+	return append([]string(nil), dl.ignored...)
 }
 
 // LoadSites loads site definitions from a folder

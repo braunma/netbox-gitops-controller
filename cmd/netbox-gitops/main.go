@@ -219,6 +219,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 		logger.Info("Prune: removing orphaned gitops-managed objects")
 		logger.Info("═══════════════════════════════════════════════════════")
 
+		// A parked file's objects were never loaded, so they are not in the
+		// set of objects seen this run. Any of them this controller previously
+		// created still carries the managed tag and would be pruned as an
+		// orphan; objects owned by another system are untagged and are safe.
+		// The operator is the only one who can tell those apart.
+		if ignored := dataLoader.IgnoredFiles(); len(ignored) > 0 {
+			logger.Warning("Pruning with %d ignored file(s) skipped: any managed object declared only in them will be deleted as an orphan", len(ignored))
+			for _, f := range ignored {
+				logger.Warning("  ignored: %s", f)
+			}
+			logger.Warning("  re-run with --include-ignored-files if those objects should be kept")
+		}
+
 		if err := c.Prune(pruneTargets(phases)); err != nil {
 			logger.Error("Failed to prune orphaned objects", err)
 			return err
