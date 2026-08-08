@@ -114,6 +114,12 @@ func validateModels(base string) error {
 		func() error { _, err := dl.LoadPrefixes("definitions/prefixes"); return err },
 		func() error { _, err := dl.LoadModuleTypes("definitions/module_types"); return err },
 		func() error { _, err := dl.LoadDeviceTypes("definitions/device_types"); return err },
+		func() error {
+			// Community-format library at the conventional path; a library
+			// configured elsewhere is checked on the next sync instead.
+			_, err := dl.LoadDeviceTypeLibrary(filepath.Join(base, "definitions", "device_type_library"))
+			return err
+		},
 		// Match the reconciler's device folders so VM definitions under
 		// inventory/virtual are not mis-parsed as devices by a recursive scan.
 		func() error { _, err := dl.LoadDevices("inventory/hardware/active"); return err },

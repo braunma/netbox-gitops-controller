@@ -438,7 +438,7 @@ func TestLoadDefinitionFiles(t *testing.T) {
 			}
 			// Child device types (blades) must have u_height 0
 			if dt.UHeight < 0 {
-				t.Errorf("DeviceType %s has invalid UHeight: %d", dt.Model, dt.UHeight)
+				t.Errorf("DeviceType %s has invalid UHeight: %v", dt.Model, dt.UHeight)
 			}
 		}
 	})

@@ -55,6 +55,8 @@ example/
 │   │   ├── example-chassis.yaml               # device bays
 │   │   ├── example-blade.yaml                 # child device (u_height 0)
 │   │   └── example-patch-panel.yaml           # ports defined per instance
+│   ├── device_type_library/                   # community library format
+│   │   └── Dell/poweredge-r650.yaml           # one type per file, hyphenated keys
 │   └── virtualization/
 │       ├── cluster_types/, cluster_groups/, clusters/
 └── inventory/                   # Concrete instances

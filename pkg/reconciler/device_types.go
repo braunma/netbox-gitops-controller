@@ -107,6 +107,23 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 		if dt.SubdeviceRole != "" {
 			payload["subdevice_role"] = dt.SubdeviceRole
 		}
+		if dt.PartNumber != "" {
+			payload["part_number"] = dt.PartNumber
+		}
+		if dt.Airflow != "" {
+			payload["airflow"] = dt.Airflow
+		}
+		if dt.Description != "" {
+			payload["description"] = dt.Description
+		}
+		if dt.Comments != "" {
+			payload["comments"] = dt.Comments
+		}
+		// NetBox rejects a weight without its unit, so only send the pair.
+		if dt.Weight != 0 && dt.WeightUnit != "" {
+			payload["weight"] = dt.Weight
+			payload["weight_unit"] = dt.WeightUnit
+		}
 
 		lookup := map[string]interface{}{"slug": dt.Slug}
 		dtObj, err := dtr.client.Apply("dcim", "device-types", lookup, payload)
@@ -137,6 +154,23 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 		// 3. INTERFACES LAST
 		if err := dtr.reconcileInterfaceTemplates(dtID, dt.Interfaces); err != nil {
 			return fmt.Errorf("failed to reconcile interface templates for %s: %w", dt.Model, err)
+		}
+
+		if err := dtr.reconcileConsolePortTemplates(dtID, "console-port-templates", dt.ConsolePorts); err != nil {
+			return fmt.Errorf("failed to reconcile console port templates for %s: %w", dt.Model, err)
+		}
+
+		if err := dtr.reconcileConsolePortTemplates(dtID, "console-server-port-templates", dt.ConsoleServerPorts); err != nil {
+			return fmt.Errorf("failed to reconcile console server port templates for %s: %w", dt.Model, err)
+		}
+
+		// Power ports before outlets: an outlet names the port that feeds it.
+		if err := dtr.reconcilePowerPortTemplates(dtID, dt.PowerPorts); err != nil {
+			return fmt.Errorf("failed to reconcile power port templates for %s: %w", dt.Model, err)
+		}
+
+		if err := dtr.reconcilePowerOutletTemplates(dtID, dt.PowerOutlets); err != nil {
+			return fmt.Errorf("failed to reconcile power outlet templates for %s: %w", dt.Model, err)
 		}
 
 		if err := dtr.reconcileModuleBayTemplates(dtID, dt.ModuleBays); err != nil {
@@ -196,7 +230,10 @@ func (dtr *DeviceTypeReconciler) reconcileFrontPortTemplates(deviceTypeID int, t
 			})
 			if err == nil && len(rearPorts) > 0 {
 				payload["rear_port"] = utils.GetIDFromObject(rearPorts[0])
-				payload["rear_port_position"] = 1
+				// A multi-position rear port (e.g. an MPO trunk broken out to
+				// several front ports) needs the specific position; single
+				// position panels leave it unset and get 1.
+				payload["rear_port_position"] = defaultPosition(tmpl.RearPortPosition)
 			}
 		}
 
@@ -223,7 +260,7 @@ func (dtr *DeviceTypeReconciler) reconcileRearPortTemplates(deviceTypeID int, te
 			"device_type": deviceTypeID,
 			"name":        tmpl.Name,
 			"type":        tmpl.Type,
-			"positions":   1,
+			"positions":   defaultPosition(tmpl.Positions),
 		}
 
 		lookup := map[string]interface{}{
@@ -236,6 +273,114 @@ func (dtr *DeviceTypeReconciler) reconcileRearPortTemplates(deviceTypeID int, te
 		_, err := dtr.client.Apply("dcim", "rear-port-templates", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile rear port template %s: %w", tmpl.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// defaultPosition maps an unset (zero) position to NetBox's default of 1.
+func defaultPosition(p int) int {
+	if p <= 0 {
+		return 1
+	}
+	return p
+}
+
+// reconcileConsolePortTemplates reconciles console port or console server port
+// templates, which share an identical payload shape and differ only by
+// endpoint.
+func (dtr *DeviceTypeReconciler) reconcileConsolePortTemplates(deviceTypeID int, endpoint string, templates []models.ConsolePortTemplate) error {
+	for _, tmpl := range templates {
+		payload := map[string]interface{}{
+			"device_type": deviceTypeID,
+			"name":        tmpl.Name,
+		}
+		if tmpl.Type != "" {
+			payload["type"] = tmpl.Type
+		}
+
+		lookup := map[string]interface{}{
+			"device_type_id": deviceTypeID,
+			"name":           tmpl.Name,
+		}
+
+		if _, err := dtr.client.Apply("dcim", endpoint, lookup, payload); err != nil {
+			return fmt.Errorf("failed to reconcile %s %s: %w", endpoint, tmpl.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// reconcilePowerPortTemplates reconciles power port (inlet) templates.
+func (dtr *DeviceTypeReconciler) reconcilePowerPortTemplates(deviceTypeID int, templates []models.PowerPortTemplate) error {
+	for _, tmpl := range templates {
+		payload := map[string]interface{}{
+			"device_type": deviceTypeID,
+			"name":        tmpl.Name,
+		}
+		if tmpl.Type != "" {
+			payload["type"] = tmpl.Type
+		}
+		if tmpl.MaximumDraw > 0 {
+			payload["maximum_draw"] = tmpl.MaximumDraw
+		}
+		if tmpl.AllocatedDraw > 0 {
+			payload["allocated_draw"] = tmpl.AllocatedDraw
+		}
+
+		lookup := map[string]interface{}{
+			"device_type_id": deviceTypeID,
+			"name":           tmpl.Name,
+		}
+
+		if _, err := dtr.client.Apply("dcim", "power-port-templates", lookup, payload); err != nil {
+			return fmt.Errorf("failed to reconcile power port template %s: %w", tmpl.Name, err)
+		}
+	}
+
+	return nil
+}
+
+// reconcilePowerOutletTemplates reconciles power outlet templates. An outlet
+// may name the power port template that feeds it; that port is resolved by
+// name on the same device type, so power ports must be reconciled first.
+func (dtr *DeviceTypeReconciler) reconcilePowerOutletTemplates(deviceTypeID int, templates []models.PowerOutletTemplate) error {
+	for _, tmpl := range templates {
+		payload := map[string]interface{}{
+			"device_type": deviceTypeID,
+			"name":        tmpl.Name,
+		}
+		if tmpl.Type != "" {
+			payload["type"] = tmpl.Type
+		}
+		if tmpl.FeedLeg != "" {
+			payload["feed_leg"] = tmpl.FeedLeg
+		}
+
+		if tmpl.PowerPort != "" {
+			powerPorts, err := dtr.client.Filter("dcim", "power-port-templates", map[string]interface{}{
+				"device_type_id": deviceTypeID,
+				"name":           tmpl.PowerPort,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to look up power port %s for outlet %s: %w", tmpl.PowerPort, tmpl.Name, err)
+			}
+			if len(powerPorts) > 0 {
+				payload["power_port"] = utils.GetIDFromObject(powerPorts[0])
+			} else {
+				dtr.logger.Warning("Power outlet %s references unknown power port %s; leaving it unfed", tmpl.Name, tmpl.PowerPort)
+			}
+		}
+
+		lookup := map[string]interface{}{
+			"device_type_id": deviceTypeID,
+			"name":           tmpl.Name,
+		}
+
+		if _, err := dtr.client.Apply("dcim", "power-outlet-templates", lookup, payload); err != nil {
+			return fmt.Errorf("failed to reconcile power outlet template %s: %w", tmpl.Name, err)
 		}
 	}
 

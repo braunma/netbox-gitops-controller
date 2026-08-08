@@ -1,0 +1,68 @@
+# Changelog
+
+All notable changes to this project are documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project aims to adhere to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+Because this controller can **delete objects from a live NetBox** when run with
+`--prune`, treat this file as an upgrade safety document rather than
+bookkeeping: read the entries between the version you last ran and the one you
+are about to run before applying a sync with pruning enabled.
+
+## [Unreleased]
+
+### Added
+
+- **Community device type library support.** Device types published in the
+  community library layout (`<library>/<Manufacturer>/<model>.yaml`, one
+  document per file, hyphenated component keys) can now be consumed unchanged.
+  Point `--devicetype-library` or `DEVICETYPE_LIBRARY` at a library checkout,
+  or drop files into `definitions/device_type_library/`. Library entries are
+  merged with natively defined device types; a local definition with the same
+  slug wins and the override is logged.
+- **Device type component templates** for console ports, console server ports,
+  power ports and power outlets, plus the `part_number`, `airflow`,
+  `description`, `comments` and `weight`/`weight_unit` fields. Power ports are
+  reconciled before power outlets so an outlet can resolve the port that feeds
+  it.
+- **Multi-position patch panel ports.** Rear port templates accept `positions`
+  and front port templates accept `rear_port_position`, so a breakout panel is
+  no longer flattened to a single position per port. Both default to 1.
+- **NetBox version check.** The controller queries `/api/status/` on startup,
+  logs the detected release, and refuses to run against a NetBox older than
+  3.6 — the release that renamed the device `device_role` field to `role`.
+  A server whose version cannot be determined is reported as a warning and the
+  run continues.
+- **Ignored files.** Files matching an ignore pattern are skipped while
+  loading, so inventory owned by another system can stay in the repository
+  without being applied. Defaults to `_*.yaml` and `_*.yml`; override with
+  `--ignore-file` or `IGNORED_FILES` (comma-separated globs matched against
+  the filename), and load everything with `--include-ignored-files`. Every
+  skipped file is logged.
+- **Shared test fixture factories** for the reconciler suite
+  (`pkg/reconciler/fixtures_test.go`), so tests state only the fields they are
+  actually about.
+- This changelog.
+
+### Fixed
+
+- **Parent devices are reconciled before their children.** A device with
+  `parent_device` is installed into a bay on that parent, which is resolved
+  with a live NetBox lookup. Devices were previously reconciled in the order
+  the loader read the files (lexical by filename, then by position within each
+  file), so a child that happened to be listed first aborted the run with
+  `parent device X not found`. Devices are now topologically sorted, so a
+  parent always precedes its children at any nesting depth, and file layout no
+  longer matters. A `parent_device` cycle is reported before any change is
+  applied.
+
+### Changed
+
+- `DeviceType.UHeight` is now a decimal rather than an integer, so half-height
+  (0.5U) device types are represented correctly. Existing whole-number
+  definitions are unaffected.
+- The phase order and the two intra-phase orderings (cables applied in a
+  second pass, parents before children) are documented in the README, and the
+  forward phase order is now pinned by a test alongside the existing prune
+  order test.

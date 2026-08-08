@@ -9,25 +9,13 @@ import (
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
-// names returns the device names in slice order, for readable assertions.
-func names(devices []*models.DeviceConfig) []string {
-	out := make([]string, len(devices))
-	for i, d := range devices {
-		out[i] = d.Name
-	}
-	return out
-}
-
-// dev builds a minimal device, optionally hosted in a bay on parent.
+// dev is a shorthand for the ordering tests: a device, optionally hosted in a
+// bay on parent.
 func dev(name, parent string) *models.DeviceConfig {
-	d := &models.DeviceConfig{
-		Name: name, SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
+	if parent == "" {
+		return testDevice(name)
 	}
-	if parent != "" {
-		d.ParentDevice = parent
-		d.DeviceBay = "bay-1"
-	}
-	return d
+	return testDevice(name, inBay(parent, "bay-1"))
 }
 
 func TestSortDevicesByDependency(t *testing.T) {
@@ -97,7 +85,7 @@ func TestSortDevicesByDependency(t *testing.T) {
 			if err != nil {
 				t.Fatalf("sortDevicesByDependency() error = %v", err)
 			}
-			gotNames := names(got)
+			gotNames := deviceNames(got)
 			if len(gotNames) != len(tt.want) {
 				t.Fatalf("got %v, want %v", gotNames, tt.want)
 			}
@@ -135,7 +123,7 @@ func TestSortDevicesByDependencyRejectsCycles(t *testing.T) {
 			// so it must be reported rather than silently dropping devices.
 			got, err := sortDevicesByDependency(tt.input)
 			if err == nil {
-				t.Fatalf("sortDevicesByDependency() = %v, want a cycle error", names(got))
+				t.Fatalf("sortDevicesByDependency() = %v, want a cycle error", deviceNames(got))
 			}
 			if !strings.Contains(err.Error(), "cycle") {
 				t.Errorf("error = %q, expected it to name the problem as a cycle", err)

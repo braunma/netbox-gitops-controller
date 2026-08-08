@@ -115,3 +115,118 @@ func TestReconcileDeviceTypesWithTemplates(t *testing.T) {
 	}
 	f.requireMutationCount(t, 0)
 }
+
+// TestReconcileDeviceTypesPowerAndConsoleTemplates covers the component
+// templates a community-library device type commonly carries beyond
+// interfaces and patch panel ports.
+func TestReconcileDeviceTypesPowerAndConsoleTemplates(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	dtr := NewDeviceTypeReconciler(c)
+
+	deviceTypes := []*models.DeviceType{{
+		Model:        "Widget 4000",
+		Slug:         "acme-widget-4000",
+		Manufacturer: "Acme",
+		UHeight:      2,
+		PartNumber:   "W4000",
+		Airflow:      "front-to-rear",
+		Weight:       21.9,
+		WeightUnit:   "kg",
+		ConsolePorts: []models.ConsolePortTemplate{{Name: "console", Type: "rj-45"}},
+		ConsoleServerPorts: []models.ConsolePortTemplate{
+			{Name: "console-server-1", Type: "rj-45"},
+		},
+		PowerPorts: []models.PowerPortTemplate{
+			{Name: "PSU1", Type: "iec-60320-c14", MaximumDraw: 750, AllocatedDraw: 500},
+		},
+		PowerOutlets: []models.PowerOutletTemplate{
+			{Name: "outlet-1", Type: "iec-60320-c13", PowerPort: "PSU1", FeedLeg: "A"},
+		},
+	}}
+	if err := dtr.ReconcileDeviceTypes(deviceTypes); err != nil {
+		t.Fatalf("ReconcileDeviceTypes() error = %v", err)
+	}
+
+	dts := f.objects("dcim", "device-types")
+	if len(dts) != 1 {
+		t.Fatalf("expected 1 device type, got %d", len(dts))
+	}
+	if dts[0]["part_number"] != "W4000" || dts[0]["airflow"] != "front-to-rear" {
+		t.Errorf("device type = %+v, expected part_number and airflow to be sent", dts[0])
+	}
+	if dts[0]["weight_unit"] != "kg" {
+		t.Errorf("device type = %+v, expected weight to be sent with its unit", dts[0])
+	}
+
+	for _, endpoint := range []string{
+		"console-port-templates", "console-server-port-templates",
+		"power-port-templates", "power-outlet-templates",
+	} {
+		if got := len(f.objects("dcim", endpoint)); got != 1 {
+			t.Errorf("%s = %d object(s), want 1", endpoint, got)
+		}
+	}
+
+	pp := f.objects("dcim", "power-port-templates")[0]
+	if pp["maximum_draw"] != float64(750) || pp["allocated_draw"] != float64(500) {
+		t.Errorf("power port = %+v, expected draw values to be sent", pp)
+	}
+
+	// The outlet must resolve the power port that feeds it, which only works
+	// because power ports are reconciled first.
+	outlet := f.objects("dcim", "power-outlet-templates")[0]
+	if got := utils.GetIDFromObject(outlet["power_port"]); got != utils.GetIDFromObject(pp) {
+		t.Errorf("outlet power_port = %v, expected the PSU1 template ID %d", outlet["power_port"], utils.GetIDFromObject(pp))
+	}
+	if outlet["feed_leg"] != "A" {
+		t.Errorf("outlet feed_leg = %v, want A", outlet["feed_leg"])
+	}
+
+	// Second run must be a no-op.
+	f.resetMutations()
+	if err := dtr.ReconcileDeviceTypes(deviceTypes); err != nil {
+		t.Fatalf("ReconcileDeviceTypes() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
+}
+
+// TestReconcileDeviceTypesMultiPositionPorts checks that a breakout patch
+// panel keeps its rear port capacity and per-front-port position instead of
+// collapsing every port to position 1.
+func TestReconcileDeviceTypesMultiPositionPorts(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	dtr := NewDeviceTypeReconciler(c)
+
+	deviceTypes := []*models.DeviceType{{
+		Model:        "Breakout Panel",
+		Slug:         "breakout-panel",
+		Manufacturer: "Acme",
+		UHeight:      1,
+		RearPorts:    []models.PortTemplate{{Name: "trunk-1", Type: "mpo-12", Positions: 12}},
+		FrontPorts: []models.PortTemplate{
+			{Name: "breakout-1", Type: "lc", RearPort: "trunk-1", RearPortPosition: 3},
+			// Position omitted: falls back to NetBox's default of 1.
+			{Name: "breakout-2", Type: "lc", RearPort: "trunk-1"},
+		},
+	}}
+	if err := dtr.ReconcileDeviceTypes(deviceTypes); err != nil {
+		t.Fatalf("ReconcileDeviceTypes() error = %v", err)
+	}
+
+	rear := f.objects("dcim", "rear-port-templates")[0]
+	if rear["positions"] != float64(12) {
+		t.Errorf("rear port positions = %v, want 12", rear["positions"])
+	}
+
+	byName := map[string]map[string]interface{}{}
+	for _, fp := range f.objects("dcim", "front-port-templates") {
+		name, _ := fp["name"].(string)
+		byName[name] = fp
+	}
+	if got := byName["breakout-1"]["rear_port_position"]; got != float64(3) {
+		t.Errorf("breakout-1 rear_port_position = %v, want 3", got)
+	}
+	if got := byName["breakout-2"]["rear_port_position"]; got != float64(1) {
+		t.Errorf("breakout-2 rear_port_position = %v, want the default 1", got)
+	}
+}

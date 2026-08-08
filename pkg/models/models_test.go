@@ -112,7 +112,7 @@ func TestDeviceTypeModel(t *testing.T) {
 	}
 
 	if dt.UHeight != 2 {
-		t.Errorf("DeviceType.UHeight = %d, expected %d", dt.UHeight, 2)
+		t.Errorf("DeviceType.UHeight = %v, expected %v", dt.UHeight, 2.0)
 	}
 
 	if !dt.IsFullDepth {

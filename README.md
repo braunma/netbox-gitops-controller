@@ -88,8 +88,49 @@ Here we define the "blueprint" including all physical ports. NetBox copies these
       mgmt_only: true
     - name: "eth0"
       type: "25gbase-x-sfp28"
-  # Optional: Front/Rear Ports for Patch Panels
+  # Optional: console_ports, console_server_ports, power_ports, power_outlets,
+  # front_ports/rear_ports for patch panels, module_bays, device_bays
 ```
+
+#### Reusing the community device type library
+
+You do not have to hand-write a device type that already exists. The NetBox
+community publishes thousands of them in the
+[devicetype-library](https://github.com/netbox-community/devicetype-library),
+and that format is consumed **unchanged** — one device type per file, laid out
+as `<library>/<Manufacturer>/<model>.yaml`, with hyphenated component keys
+(`console-ports`, `power-ports`, …).
+
+Point the controller at a library checkout:
+
+```bash
+# Explicit path (a git submodule, a clone, or a directory of vendored files)
+./netbox-gitops --devicetype-library ../devicetype-library/device-types
+
+# Or via the environment
+export DEVICETYPE_LIBRARY=../devicetype-library/device-types
+```
+
+With neither set, `definitions/device_type_library/` inside the data directory
+is used if it exists — so vendoring just the models you need is as simple as
+copying the files in:
+
+```text
+definitions/
+├── device_types/              # Native format: a YAML list per file
+│   └── servers.yaml
+└── device_type_library/       # Community format: one device type per file
+    └── Dell/
+        └── poweredge-r650.yaml
+```
+
+Library entries are merged with your native definitions. If both define the
+same slug, **your local definition wins** and the override is logged, so a
+vendored library can be customised without editing the checkout. Fields the
+library carries but this project does not manage (inventory items) are
+reported rather than dropped silently.
+
+See `example/definitions/device_type_library/` for a working example.
 
 ### Step 2: Create Device Instances (Server/Switch)
 
@@ -174,6 +215,45 @@ File: `inventory/hardware/active/switches.yaml`
 -----
 
 ## ⚠️ Important Concepts & Troubleshooting
+
+### Parking a File (Ignored Files)
+
+Not everything in the repository should be applied. Inventory owned by another
+system, a draft you are not ready to sync, a reference copy — all of these can
+stay in place and be skipped:
+
+```bash
+# Default: filenames starting with an underscore are skipped
+inventory/hardware/active/_imported-from-cmdb.yaml   # not applied
+
+# Override the patterns (globs, matched against the filename)
+./netbox-gitops --ignore-file '_*.yaml' --ignore-file 'imported-*.yaml'
+export IGNORED_FILES='_*.yaml,imported-*.yaml'
+
+# Apply everything, including parked files
+./netbox-gitops --include-ignored-files
+```
+
+Every skipped file is logged, so a parked file never goes unnoticed. Patterns
+match the **filename only**, not the path — a file inside a directory whose
+name matches a pattern is still loaded. An invalid glob fails at startup rather
+than silently matching nothing.
+
+> **Note:** A parked file is invisible to the controller, which means `--prune`
+> treats the objects it declares as orphans. Do not park a file that describes
+> objects still present in NetBox and then run with `--prune`.
+
+### NetBox Version Compatibility
+
+On startup the controller reads `/api/status/`, logs the detected release, and
+refuses to run against NetBox older than **3.6** — the release that renamed the
+device `device_role` field to `role`. Without this check an unsupported server
+produces a scatter of `400 Bad Request` errors on individual fields rather than
+one clear message.
+
+A server whose version cannot be determined (no status endpoint, a proxy that
+rewrites it) is reported as a warning and the run continues: the check exists
+to explain failures, not to become a new way to fail.
 
 ### Phase Order (Dependency Model)
 
@@ -398,7 +478,8 @@ few objects of each supported type:
 
 - 2 sites, 5 device roles, 2 platforms, 1 tenant (+ group)
 - 2 VRFs, 2 VLAN groups, 3 VLANs, 3 prefixes, 3 racks
-- 6 device types, 2 module types, 2 VM custom fields (`vmid`, `vm_template_id`)
+- 6 device types (native format) + 1 in the community library format,
+  2 module types, 2 VM custom fields (`vmid`, `vm_template_id`)
 - 8 hardware devices — including a blade chassis with two child blades, a GPU
   server, and a patch panel (front/rear ports)
 - 2 virtual machines (one provisioned in Proxmox, one NetBox documentation-only)

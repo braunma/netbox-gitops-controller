@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -28,6 +29,10 @@ var (
 	deviceFilter     string
 	vmFilter         string
 	prune            bool
+
+	deviceTypeLibrary   string
+	ignoredFiles        []string
+	includeIgnoredFiles bool
 )
 
 // validPhases are the values accepted by --only, in execution order.
@@ -55,6 +60,9 @@ func main() {
 	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
 	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
 	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
+	rootCmd.Flags().StringVar(&deviceTypeLibrary, "devicetype-library", "", "Path to a community-format device type library (default: $DEVICETYPE_LIBRARY, else <data-dir>/definitions/device_type_library)")
+	rootCmd.Flags().StringSliceVar(&ignoredFiles, "ignore-file", nil, fmt.Sprintf("Filename globs to skip while loading (default: %s)", strings.Join(loader.DefaultIgnorePatterns, ", ")))
+	rootCmd.Flags().BoolVar(&includeIgnoredFiles, "include-ignored-files", false, "Load files that an ignore pattern would otherwise skip")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -110,8 +118,20 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Fail fast and legibly on a NetBox too old for the API fields used below.
+	if err := c.CheckVersion(); err != nil {
+		logger.Error("Unsupported NetBox version", err)
+		return err
+	}
+
 	// Initialize data loader
 	dataLoader := loader.NewDataLoader(dataDir, logger)
+	patterns, err := resolveIgnorePatterns()
+	if err != nil {
+		logger.Error("Invalid ignore pattern", err)
+		return err
+	}
+	dataLoader.SetIgnorePatterns(patterns)
 
 	// =========================================================================
 	// LOAD GLOBAL CACHES (MUST BE BEFORE PHASE 1)
@@ -392,12 +412,62 @@ func runDeviceTypes(c *client.NetBoxClient, dataLoader *loader.DataLoader, logge
 		logger.Error("Failed to load device types", err)
 		return err
 	}
+
+	libraryTypes, err := dataLoader.LoadDeviceTypeLibrary(resolveDeviceTypeLibrary())
+	if err != nil {
+		logger.Error("Failed to load the device type library", err)
+		return err
+	}
+	deviceTypes = loader.MergeDeviceTypes(deviceTypes, libraryTypes, logger)
+
 	if err := deviceTypeReconciler.ReconcileDeviceTypes(deviceTypes); err != nil {
 		logger.Error("Failed to reconcile device types", err)
 		return err
 	}
 
 	return nil
+}
+
+// resolveIgnorePatterns returns the filename globs to skip while loading:
+// none when --include-ignored-files is set, else --ignore-file, else
+// IGNORED_FILES (comma-separated), else the defaults.
+func resolveIgnorePatterns() ([]string, error) {
+	if includeIgnoredFiles {
+		return nil, nil
+	}
+
+	patterns := ignoredFiles
+	if len(patterns) == 0 {
+		if env := os.Getenv("IGNORED_FILES"); env != "" {
+			for _, p := range strings.Split(env, ",") {
+				if trimmed := strings.TrimSpace(p); trimmed != "" {
+					patterns = append(patterns, trimmed)
+				}
+			}
+		}
+	}
+	if len(patterns) == 0 {
+		patterns = loader.DefaultIgnorePatterns
+	}
+
+	if err := loader.ValidateIgnorePatterns(patterns); err != nil {
+		return nil, err
+	}
+	return patterns, nil
+}
+
+// resolveDeviceTypeLibrary returns the root of the community-format device
+// type library: the --devicetype-library flag, else DEVICETYPE_LIBRARY, else
+// the conventional path inside the data directory. The default is optional —
+// LoadDeviceTypeLibrary skips a root that does not exist.
+func resolveDeviceTypeLibrary() string {
+	if deviceTypeLibrary != "" {
+		return deviceTypeLibrary
+	}
+	if env := os.Getenv("DEVICETYPE_LIBRARY"); env != "" {
+		return env
+	}
+	return filepath.Join(dataDir, "definitions", "device_type_library")
 }
 
 // runDevices loads the device inventory, applies the --site/--device
