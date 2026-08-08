@@ -175,6 +175,43 @@ File: `inventory/hardware/active/switches.yaml`
 
 ## ⚠️ Important Concepts & Troubleshooting
 
+### Phase Order (Dependency Model)
+
+NetBox rejects an object whose references do not exist yet — a device needs its
+site, role and device type; a prefix needs its VRF. The controller therefore
+reconciles in a fixed order derived from the object types themselves, **not**
+from file or directory names. You never have to number or sort your YAML: the
+layout under `definitions/` and `inventory/` is free-form, and the same order
+runs every time.
+
+| # | Phase | Objects, in reconcile order |
+|---|-------|-----------------------------|
+| 1 | `foundation` | tags → roles → custom fields → platforms → tenant groups → tenants → sites → racks |
+| 2 | `network` | VRFs → VLAN groups → VLANs → prefixes |
+| 2 | `device-types` | manufacturers → device types (incl. interface/port/bay templates) → module types |
+| 3 | `devices` | per device: device → interfaces → IP addresses → primary IP → modules → device bays → front/rear ports; **then all cables** |
+| 4 | `virtualization` | cluster types → cluster groups → clusters → VMs → VM interfaces → VM IPs |
+
+Two orderings inside a phase are worth knowing about, because both solve
+problems that a "number your files" convention leaves to the user:
+
+  * **Cables run last, in a second pass.** A cable needs the ports on *both*
+    ends to exist, so every `link:` found while reconciling devices is queued
+    and applied only after all devices and their ports are in place. Peer order
+    in the YAML is irrelevant.
+  * **Parents are reconciled before their children.** A device with
+    `parent_device` is installed into a bay on that parent, so the parent must
+    exist first. The device list is topologically sorted before reconciliation,
+    at any nesting depth — a blade may be declared above its chassis, or in an
+    alphabetically earlier file, and the run still succeeds. A `parent_device`
+    that is not declared in the run is assumed to exist in NetBox already; a
+    cycle (`a` parented to `b` parented to `a`) is reported as an error before
+    any change is applied.
+
+The phase order is asserted by `TestValidPhasesCreationOrder`, and its mirror
+image — the reverse order used for `--prune` — by
+`TestPruneTargetsReverseDependencyOrder`.
+
 ### The `gitops` Tag
 
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`).
@@ -313,7 +350,9 @@ targeted hotfixes:
 Valid `--only` values: `foundation`, `network`, `device-types`, `devices`,
 `virtualization`. `--site` filters the device and virtualization phases by site
 slug; `--device` filters a single device; `--vm` filters a single virtual
-machine by name.
+machine by name. Selected phases always run in the fixed dependency order — see
+[Phase Order](#phase-order-dependency-model) — regardless of the order you list
+them in.
 
 > **Note:** Skipped phases are not validated — if you sync `--only devices`,
 > the referenced sites, roles and device types must already exist in NetBox.

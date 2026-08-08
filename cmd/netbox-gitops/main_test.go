@@ -37,6 +37,24 @@ func keys(phases map[string]bool) []pruneTargetKey {
 	return out
 }
 
+// TestValidPhasesCreationOrder pins the forward dependency order of the sync
+// phases, the mirror image of the prune order asserted below. runSync executes
+// the phases in this sequence and pruneTargets derives its scoping from it, so
+// a reordering here silently changes both. The order is documented in the
+// README's "Phase order" table; keep the two in step.
+func TestValidPhasesCreationOrder(t *testing.T) {
+	want := []string{"foundation", "network", "device-types", "devices", "virtualization"}
+
+	if len(validPhases) != len(want) {
+		t.Fatalf("validPhases = %v, want %v", validPhases, want)
+	}
+	for i := range want {
+		if validPhases[i] != want[i] {
+			t.Fatalf("validPhases = %v, want %v", validPhases, want)
+		}
+	}
+}
+
 // TestPruneTargetsReverseDependencyOrder is the safety net for the deletion
 // order: every object must be pruned before the object it references, or
 // NetBox would reject the delete with a foreign-key error. These failures

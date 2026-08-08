@@ -2,6 +2,7 @@ package reconciler
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
@@ -42,6 +43,15 @@ func NewDeviceReconciler(c *client.NetBoxClient) *DeviceReconciler {
 func (dr *DeviceReconciler) ReconcileDevices(devices []*models.DeviceConfig) error {
 	dr.logger.Info("Reconciling %d devices...", len(devices))
 
+	// A child device is placed into a bay on its parent, which reconcileDevice
+	// resolves with a live NetBox lookup — so a parent declared in this same run
+	// must have been reconciled already. Order the list accordingly instead of
+	// relying on the order the loader happened to read the files in.
+	devices, err := sortDevicesByDependency(devices)
+	if err != nil {
+		return err
+	}
+
 	// Phase 1: Reconcile all devices and their ports
 	dr.logger.Debug("═══ Phase 1: Devices and Ports ═══")
 	for i, device := range devices {
@@ -59,6 +69,65 @@ func (dr *DeviceReconciler) ReconcileDevices(devices []*models.DeviceConfig) err
 	}
 
 	return nil
+}
+
+// sortDevicesByDependency returns the devices ordered so that a parent always
+// precedes the children it hosts, at any nesting depth. Devices that are not
+// related by parent_device keep their original relative order, so a run's
+// output stays stable and diffable.
+//
+// A parent_device that is not declared in this run is left alone: it must
+// already exist in NetBox, and reconcileDevice looks it up there.
+func sortDevicesByDependency(devices []*models.DeviceConfig) ([]*models.DeviceConfig, error) {
+	// First occurrence wins; a duplicate name is a data error that surfaces
+	// with a clearer message when NetBox rejects the second device.
+	indexByName := make(map[string]int, len(devices))
+	for i, d := range devices {
+		if _, seen := indexByName[d.Name]; !seen {
+			indexByName[d.Name] = i
+		}
+	}
+
+	const (
+		unvisited = iota
+		visiting
+		done
+	)
+	state := make([]int, len(devices))
+	sorted := make([]*models.DeviceConfig, 0, len(devices))
+
+	// Depth-first emit: a device is appended only after its ancestors are.
+	var visit func(i int, chain []string) error
+	visit = func(i int, chain []string) error {
+		switch state[i] {
+		case done:
+			return nil
+		case visiting:
+			// Includes a device naming itself as its own parent.
+			return fmt.Errorf("parent_device cycle detected: %s",
+				strings.Join(append(chain, devices[i].Name), " -> "))
+		}
+
+		state[i] = visiting
+		if parent := devices[i].ParentDevice; parent != "" {
+			if pi, ok := indexByName[parent]; ok {
+				if err := visit(pi, append(chain, devices[i].Name)); err != nil {
+					return err
+				}
+			}
+		}
+		state[i] = done
+
+		sorted = append(sorted, devices[i])
+		return nil
+	}
+
+	for i := range devices {
+		if err := visit(i, nil); err != nil {
+			return nil, err
+		}
+	}
+	return sorted, nil
 }
 
 // reconcileDevice reconciles a single device
