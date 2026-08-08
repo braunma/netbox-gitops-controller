@@ -539,3 +539,77 @@ func TestVIDRangesEqual(t *testing.T) {
 		t.Error("expected vid_ranges change to be detected for differing bounds")
 	}
 }
+
+// TestValuesEqualNumericStrings covers NetBox's decimal serialization: fields
+// such as u_height and weight come back as JSON strings when the serializer
+// coerces decimals, while the payload carries a number. Without a numeric
+// comparison every device type carrying one is re-PATCHed on every run.
+func TestValuesEqualNumericStrings(t *testing.T) {
+	equal := []struct {
+		name string
+		a, b interface{}
+	}{
+		{"string decimal vs float", "1.0", 1.0},
+		{"float vs string decimal", 1.0, "1.0"},
+		{"string decimal vs int", "2.0", 2},
+		{"int vs string decimal", 2, "2.0"},
+		{"fractional height", "0.5", 0.5},
+		{"weight", "19.40", 19.4},
+		{"zero", "0.0", 0},
+		{"padded by the serializer", " 4.0 ", 4.0},
+		// Pre-existing numeric conversions must keep working.
+		{"float vs int", 3.0, 3},
+		{"int vs float", 3, 3.0},
+		{"string vs string", "active", "active"},
+	}
+	for _, tt := range equal {
+		t.Run(tt.name, func(t *testing.T) {
+			if !valuesEqual(tt.a, tt.b) {
+				t.Errorf("valuesEqual(%#v, %#v) = false, want true", tt.a, tt.b)
+			}
+		})
+	}
+
+	// The numeric comparison must not collapse genuinely different values, and
+	// must not fire for strings that are not numbers.
+	notEqual := []struct {
+		name string
+		a, b interface{}
+	}{
+		{"different decimals", "1.0", 2.0},
+		{"different ints", 1, 2},
+		{"non-numeric string vs number", "active", 1.0},
+		{"empty string vs zero", "", 0},
+		{"number-ish word vs number", "one", 1},
+		{"different strings", "active", "offline"},
+		{"nil vs zero", nil, 0},
+		{"bool vs number", true, 1},
+	}
+	for _, tt := range notEqual {
+		t.Run(tt.name, func(t *testing.T) {
+			if valuesEqual(tt.a, tt.b) {
+				t.Errorf("valuesEqual(%#v, %#v) = true, want false", tt.a, tt.b)
+			}
+		})
+	}
+}
+
+// TestCalculateChangesToleratesStringifiedDecimals is the end-to-end form of
+// the above: an object whose decimals NetBox returns as strings must produce
+// no changes when the desired payload already matches.
+func TestCalculateChangesToleratesStringifiedDecimals(t *testing.T) {
+	c := &NetBoxClient{}
+
+	existing := Object{"u_height": "1.0", "weight": "19.40", "model": "R650"}
+	desired := map[string]interface{}{"u_height": 1.0, "weight": 19.4, "model": "R650"}
+
+	if changes := c.calculateDiff(existing, desired); len(changes) != 0 {
+		t.Errorf("calculateDiff() = %v, want no changes for equal stringified decimals", changes)
+	}
+
+	// A real difference must still be detected.
+	changed := map[string]interface{}{"u_height": 2.0, "weight": 19.4, "model": "R650"}
+	if changes := c.calculateDiff(existing, changed); len(changes) != 1 {
+		t.Errorf("calculateDiff() = %v, want the changed u_height detected", changes)
+	}
+}

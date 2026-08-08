@@ -59,6 +59,12 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **Decimal fields no longer produce a phantom update on every run.** NetBox
+  renders decimal fields (`u_height`, `weight`) as JSON strings when its
+  serializer coerces decimals, while the payload carries a number, so the two
+  never compared equal and every affected device type was re-`PATCH`ed on
+  every sync. Values are now compared numerically when one side is a number
+  and the other is a string that cleanly parses as one.
 - **Parent devices are reconciled before their children.** A device with
   `parent_device` is installed into a bay on that parent, which is resolved
   with a live NetBox lookup. Devices were previously reconciled in the order

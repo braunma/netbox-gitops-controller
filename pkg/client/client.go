@@ -9,6 +9,8 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -692,7 +694,53 @@ func valuesEqual(a, b interface{}) bool {
 		}
 	}
 
+	// NetBox renders decimal fields (u_height, weight, ...) as JSON strings
+	// when its serializer coerces decimals, so a numeric payload would never
+	// match the string it reads back and the object would be re-PATCHed on
+	// every run. Compare numerically whenever one side is a number and the
+	// other is a string that cleanly parses as one; a non-numeric string
+	// falls through to the plain comparison below.
+	if n, s, ok := numberAndNumericString(a, b); ok {
+		return n == s
+	}
+
 	return a == b
+}
+
+// numberAndNumericString reports whether a and b are a number and a numeric
+// string in either order, returning both as float64.
+func numberAndNumericString(a, b interface{}) (float64, float64, bool) {
+	an, aNum := toFloat(a)
+	bn, bNum := toFloat(b)
+
+	as, aStr := a.(string)
+	bs, bStr := b.(string)
+
+	switch {
+	case aNum && bStr:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(bs), 64)
+		return an, parsed, err == nil
+	case bNum && aStr:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(as), 64)
+		return parsed, bn, err == nil
+	}
+	return 0, 0, false
+}
+
+// toFloat converts the numeric types that reach valuesEqual (JSON decoding
+// yields float64; payloads may carry Go ints) to float64.
+func toFloat(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	}
+	return 0, false
 }
 
 // Cache returns the cache manager
