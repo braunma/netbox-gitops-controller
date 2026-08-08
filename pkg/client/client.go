@@ -29,6 +29,9 @@ type NetBoxClient struct {
 	recorder     *ChangeRecorder
 	dryRun       bool
 	managedTagID int
+	// version is the NetBox release reported by /api/status/, learned by
+	// CheckVersion. The zero value means "not determined".
+	version NetBoxVersion
 
 	// seen records the IDs of objects reconciled this run, keyed by
 	// "app/endpoint". Prune uses it to tell declared objects apart from
@@ -316,10 +319,23 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 
 	c.logger.Debug("  → Applying %s with lookup: %v", endpoint, lookup)
 
-	// Try to find existing object
-	existing, err := c.Filter(app, endpoint, lookup)
-	if err != nil {
-		return nil, fmt.Errorf("failed to filter objects: %w", err)
+	// A lookup scoped by a reference that does not exist yet cannot match
+	// anything, so skip the query and plan a create. This happens in --dry-run
+	// against an empty NetBox: an object planned but never written is
+	// registered with id 0, and NetBox rejects "site_id=0" as an invalid
+	// choice rather than returning an empty result — which used to abort the
+	// first dry-run, the very run the documentation tells you to start with.
+	// In a real apply the referenced object has been created, so its id is
+	// never 0 and this never triggers.
+	var existing []Object
+	if unresolved, ok := unresolvedReference(lookup); ok {
+		c.logger.Debug("  → %s is scoped by %s, which is only planned in this run; treating as new", endpoint, unresolved)
+	} else {
+		var err error
+		existing, err = c.Filter(app, endpoint, lookup)
+		if err != nil {
+			return nil, fmt.Errorf("failed to filter objects: %w", err)
+		}
 	}
 
 	if len(existing) == 0 {
@@ -378,6 +394,20 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	}
 
 	return obj, nil
+}
+
+// unresolvedReference reports the first lookup key that scopes the query by a
+// reference id of 0 — an object planned in this run but not yet written.
+func unresolvedReference(lookup map[string]interface{}) (string, bool) {
+	for key, value := range lookup {
+		if !strings.HasSuffix(key, "_id") {
+			continue
+		}
+		if n, ok := toFloat(value); ok && n == 0 {
+			return key, true
+		}
+	}
+	return "", false
 }
 
 // formatLookup formats lookup criteria for display
@@ -488,6 +518,18 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 			continue
 		}
 
+		// rear_ports (NetBox 4.6 front port terminations) is a list of
+		// {position, rear_port, rear_port_position} mappings. Its entries carry
+		// no "id", so the ID-set comparison below would read both sides as
+		// empty and report the field permanently equal — a changed mapping
+		// would never be written. Compare the mappings themselves.
+		if key == "rear_ports" {
+			if !portMappingsEqual(existingValue, desiredValue) {
+				changes[key] = desiredValue
+			}
+			continue
+		}
+
 		// Slice-valued fields (e.g. tags, tagged_vlans) are compared as an
 		// order-insensitive set of referenced IDs. NetBox returns them as
 		// nested objects ([{id, ...}]) while we send plain []int, so a direct
@@ -536,6 +578,55 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 	}
 
 	return changes
+}
+
+// portMapping is a canonical front-port-to-rear-port termination.
+type portMapping struct{ position, rearPort, rearPortPosition int }
+
+// portMappingsEqual compares two rear_ports values as an order-insensitive set
+// of terminations, tolerating the nested-object form NetBox returns for
+// rear_port and the plain ID we send.
+func portMappingsEqual(existing, desired interface{}) bool {
+	a, b := canonicalPortMappings(existing), canonicalPortMappings(desired)
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// canonicalPortMappings normalises a rear_ports value to a sorted slice.
+func canonicalPortMappings(v interface{}) []portMapping {
+	items, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]portMapping, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		out = append(out, portMapping{
+			position:         utils.GetIDFromObject(m["position"]),
+			rearPort:         utils.GetIDFromObject(m["rear_port"]),
+			rearPortPosition: utils.GetIDFromObject(m["rear_port_position"]),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].position != out[j].position {
+			return out[i].position < out[j].position
+		}
+		if out[i].rearPort != out[j].rearPort {
+			return out[i].rearPort < out[j].rearPort
+		}
+		return out[i].rearPortPosition < out[j].rearPortPosition
+	})
+	return out
 }
 
 // idSetEqual reports whether two slice-valued fields reference the same set of

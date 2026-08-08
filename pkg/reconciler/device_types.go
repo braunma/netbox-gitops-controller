@@ -60,10 +60,14 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 
 		// Match on the real NetBox identity for a module type (manufacturer +
 		// model); there is no slug to filter on.
-		lookup := map[string]interface{}{
-			"manufacturer_id": mfgID,
-			"model":           mt.Model,
+		lookup := map[string]interface{}{"model": mt.Model}
+		if mfgID != 0 {
+			lookup["manufacturer_id"] = mfgID
 		}
+		// mfgID is 0 only in --dry-run, when the manufacturer itself is still
+		// just planned. NetBox rejects manufacturer_id=0 as an invalid choice,
+		// which used to abort the very first dry-run against an empty NetBox;
+		// matching on model alone is enough to plan against.
 		mtObj, err := dtr.client.Apply("dcim", "module-types", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile module type %s: %w", mt.Model, err)
@@ -235,11 +239,11 @@ func (dtr *DeviceTypeReconciler) reconcileFrontPortTemplates(deviceTypeID int, t
 				"name":           tmpl.RearPort,
 			})
 			if err == nil && len(rearPorts) > 0 {
-				payload["rear_port"] = utils.GetIDFromObject(rearPorts[0])
 				// A multi-position rear port (e.g. an MPO trunk broken out to
 				// several front ports) needs the specific position; single
 				// position panels leave it unset and get 1.
-				payload["rear_port_position"] = defaultPosition(tmpl.RearPortPosition)
+				setFrontPortTermination(dtr.client, payload,
+					utils.GetIDFromObject(rearPorts[0]), defaultPosition(tmpl.RearPortPosition))
 			}
 		}
 
@@ -283,6 +287,27 @@ func (dtr *DeviceTypeReconciler) reconcileRearPortTemplates(deviceTypeID int, te
 	}
 
 	return nil
+}
+
+// setFrontPortTermination writes a front port's rear-port termination in the
+// shape the connected NetBox expects. NetBox 4.6 replaced the singular
+// rear_port/rear_port_position fields with a rear_ports list of mappings, and
+// accepts the old fields silently rather than rejecting them — so sending the
+// wrong shape leaves the port created but unwired, and re-PATCHed forever.
+func setFrontPortTermination(c *client.NetBoxClient, payload map[string]interface{}, rearPortID, rearPortPosition int) {
+	if c.UsesPortMappings() {
+		payload["positions"] = 1
+		payload["rear_ports"] = []interface{}{
+			map[string]interface{}{
+				"position":           1,
+				"rear_port":          rearPortID,
+				"rear_port_position": rearPortPosition,
+			},
+		}
+		return
+	}
+	payload["rear_port"] = rearPortID
+	payload["rear_port_position"] = rearPortPosition
 }
 
 // defaultPosition maps an unset (zero) position to NetBox's default of 1.

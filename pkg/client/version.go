@@ -7,6 +7,13 @@ import (
 	"strings"
 )
 
+// PortMappingsVersion is the release where a front port's singular
+// rear_port/rear_port_position fields were replaced by a rear_ports list of
+// {position, rear_port, rear_port_position} mappings. NetBox accepts the old
+// fields silently on newer releases instead of rejecting them, so the shape
+// must be chosen by version rather than discovered from an error.
+var PortMappingsVersion = NetBoxVersion{Major: 4, Minor: 6}
+
 // MinSupportedNetBoxVersion is the oldest NetBox release this controller is
 // known to work against. The reconcilers write `role` on devices rather than
 // the pre-3.6 `device_role`, so anything older fails with confusing field
@@ -114,6 +121,20 @@ func (c *NetBoxClient) CheckVersion() error {
 			version, MinSupportedNetBoxVersion)
 	}
 
+	c.version = version
 	c.logger.Info("Connected to NetBox %s", version)
 	return nil
 }
+
+// UsesPortMappings reports whether the connected NetBox expects front port
+// terminations as a rear_ports list. Unknown versions keep the pre-4.6 shape,
+// which is what every release before the check existed understood.
+func (c *NetBoxClient) UsesPortMappings() bool {
+	if c.version.Major == 0 {
+		return false
+	}
+	return c.version.AtLeast(PortMappingsVersion)
+}
+
+// SetVersionForTesting pins the detected version without contacting a server.
+func (c *NetBoxClient) SetVersionForTesting(v NetBoxVersion) { c.version = v }

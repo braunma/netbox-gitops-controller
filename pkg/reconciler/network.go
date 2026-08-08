@@ -210,8 +210,9 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 		}
 
 		if prefix.VRFName != "" {
-			vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName)
-			if ok {
+			// A VRF registered during a --dry-run has id 0 (nothing was
+			// written), and NetBox rejects 0 both as a value and as a filter.
+			if vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName); ok && vrfID != 0 {
 				payload["vrf"] = vrfID
 			}
 		}
@@ -248,8 +249,7 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 
 		lookup := map[string]interface{}{"prefix": prefix.Prefix}
 		if prefix.VRFName != "" {
-			vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName)
-			if ok {
+			if vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName); ok && vrfID != 0 {
 				lookup["vrf_id"] = vrfID
 			}
 		}

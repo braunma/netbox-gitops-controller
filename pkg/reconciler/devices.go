@@ -158,6 +158,12 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	if device.RackSlug != "" {
 		if rackID, ok := dr.client.Cache().GetSiteID("racks", siteID, device.RackSlug); ok {
 			yamlRackID = rackID
+		} else {
+			// Racks are only registered by the foundation phase, so a run that
+			// skips it (--only devices) can miss one. Say so: placing a device
+			// with no rack when the YAML asks for one is silent data loss.
+			dr.logger.Warning("Rack %q not found at site %q for device %s; the device will have no rack, position or face",
+				device.RackSlug, device.SiteSlug, device.Name)
 		}
 	}
 
@@ -218,10 +224,18 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		deviceBayID = utils.GetIDFromObject(bays[0])
 	}
 
-	// Determine final rack ID: YAML rack takes precedence, then parent's rack
-	if yamlRackID > 0 {
+	// Determine final rack ID: YAML rack takes precedence, then parent's rack.
+	// A bay-mounted device is the exception: NetBox derives its location from
+	// the parent and installDeviceIntoBay has to clear rack/position/face to
+	// install it, so sending a rack here would be undone on install and
+	// re-sent on the next run forever. Inventory files commonly set rack_slug
+	// in a shared `defaults` block, so a blade inherits one it must not use.
+	switch {
+	case deviceBayID > 0:
+		finalRackID = 0
+	case yamlRackID > 0:
 		finalRackID = yamlRackID
-	} else if parentRackID > 0 {
+	case parentRackID > 0:
 		finalRackID = parentRackID
 	}
 
@@ -756,18 +770,14 @@ func (dr *DeviceReconciler) reconcileFrontPorts(deviceID int, device *models.Dev
 		rearPortID := utils.GetIDFromObject(rearPorts[0])
 
 		payload := map[string]interface{}{
-			"device":    deviceID,
-			"name":      port.Name,
-			"rear_port": rearPortID,
+			"device": deviceID,
+			"name":   port.Name,
 		}
+		setFrontPortTermination(dr.client, payload, rearPortID, defaultPosition(port.RearPortPosition))
 
 		// Only include type if not empty (NetBox rejects empty string)
 		if port.Type != "" {
 			payload["type"] = port.Type
-		}
-
-		if port.RearPortPosition > 0 {
-			payload["rear_port_position"] = port.RearPortPosition
 		}
 		if port.Label != "" {
 			payload["label"] = port.Label

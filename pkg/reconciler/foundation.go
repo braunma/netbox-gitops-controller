@@ -111,10 +111,15 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 			"name":    rack.Name,
 		}
 
-		_, err = fr.client.Apply("dcim", "racks", lookup, payload)
+		rackObj, err := fr.client.Apply("dcim", "racks", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile rack %s: %w", rack.Name, err)
 		}
+		// NetBox racks have no slug of their own — they are identified by name
+		// within a site — so the YAML slug exists only here. Register it (and
+		// the name) site-scoped, or a device's rack_slug resolves nothing and
+		// the device is silently created with no rack, position or face.
+		fr.client.Cache().RegisterSite("racks", siteID, utils.GetIDFromObject(rackObj), rack.Slug, rack.Name)
 	}
 
 	return nil

@@ -67,6 +67,30 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **Front ports are wired correctly on NetBox 4.6+.** That release replaced a
+  front port's singular `rear_port`/`rear_port_position` fields with a
+  `rear_ports` list of `{position, rear_port, rear_port_position}` mappings,
+  and accepts the old fields silently instead of rejecting them — so front
+  ports were created unwired and re-`PATCH`ed on every run. The shape is now
+  chosen from the release reported by `/api/status/`, and the mappings are
+  compared as an order-insensitive set so they stay idempotent.
+- **A device in a bay is no longer given a rack.** NetBox derives a
+  bay-mounted device's location from its parent, and installing it into the
+  bay clears `rack`/`position`/`face` — so a blade that inherited `rack_slug`
+  from its file's `defaults` had the rack set on every run and cleared again
+  on every install.
+- **`rack_slug` now resolves.** NetBox racks have no slug of their own — they
+  are identified by name within a site — so the YAML slug only ever existed
+  locally and nothing registered it. Every device was silently created with no
+  rack, position or face, on every run. Racks are now registered site-scoped
+  under their YAML slug, and a `rack_slug` that still cannot be resolved is
+  reported instead of dropped in silence.
+- **`--dry-run` works against an empty NetBox.** An object planned but never
+  written is registered with id 0, and NetBox rejects `site_id=0` as an
+  invalid choice rather than returning no results — so the first dry-run, the
+  run the README tells you to start with, aborted. A lookup scoped by a
+  reference that does not exist yet cannot match anything, so it is now
+  treated as a create instead of being sent to the API.
 - **VRF-scoped prefixes are no longer created twice.** The global cache is
   loaded once, before any phase runs, and `ReconcileVRFs` never registered the
   VRFs it created — so on a fresh NetBox every prefix referencing a VRF was

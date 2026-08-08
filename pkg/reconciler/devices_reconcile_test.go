@@ -284,13 +284,20 @@ func TestReconcileDevicesInstallsChildIntoBay(t *testing.T) {
 		t.Fatalf("expected 3 mutations (create child, detach from rack, install into bay), got %d: %+v", len(muts), muts)
 	}
 
-	// The child inherits the parent's rack on creation...
-	if muts[0].method != "POST" || utils.GetIDFromObject(muts[0].body["rack"]) != rackID {
-		t.Errorf("child create = %s body %v, expected POST with parent's rack %d", muts[0].method, muts[0].body, rackID)
+	// The child is created without a rack: NetBox derives a bay-mounted
+	// device's location from its parent, and installDeviceIntoBay has to clear
+	// rack/position/face to install it. Setting one here would be undone on
+	// install and re-sent on the next run forever.
+	if muts[0].method != "POST" {
+		t.Errorf("first mutation = %s, expected the child create POST", muts[0].method)
+	}
+	if got := utils.GetIDFromObject(muts[0].body["rack"]); got != 0 {
+		t.Errorf("child create body %v: bay-mounted devices must not set a rack (got %d)", muts[0].body, got)
 	}
 	if _, hasPos := muts[0].body["position"]; hasPos {
 		t.Errorf("child create body %v: bay-mounted devices must not set a position", muts[0].body)
 	}
+	_ = rackID
 
 	// ...is then detached from the rack so it can enter the bay...
 	if muts[1].method != "PATCH" || !strings.Contains(muts[1].path, "/api/dcim/devices/") {
@@ -513,4 +520,54 @@ func TestReconcileDevicesSkipsCableWhenPeerMissing(t *testing.T) {
 	if got := len(f.objects("dcim", "cables")); got != 0 {
 		t.Errorf("expected no cables for a missing peer device, got %d", got)
 	}
+}
+
+// TestReconcileDevicesBayMountedDeviceGetsNoRack covers a convergence bug: a
+// bay-mounted device inherits rack_slug from its file's `defaults`, but
+// installDeviceIntoBay must clear rack/position/face to install it. Sending a
+// rack meant the install undid it and the next run re-sent it, forever.
+func TestReconcileDevicesBayMountedDeviceGetsNoRack(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	siteID, roleID, deviceTypeID := seedDeviceFoundation(t, f, c)
+	rack := f.seed("dcim", "racks", client.Object{"name": "R01", "site": siteID})
+	if err := c.Cache().LoadSite(testSiteSlug); err != nil {
+		t.Fatalf("LoadSite() error = %v", err)
+	}
+	parent := f.seed("dcim", "devices", client.Object{
+		"name": "chassis-01", "site": siteID, "role": roleID, "device_type": deviceTypeID,
+		"rack": map[string]interface{}{"id": utils.GetIDFromObject(rack)},
+	})
+	f.seed("dcim", "device-bays", client.Object{"name": "bay-1", "device": utils.GetIDFromObject(parent)})
+
+	// A blade that inherited rack_slug/position from a shared defaults block.
+	blade := testDevice("blade-01", inBay("chassis-01", "bay-1"), inRack("R01", 5))
+
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{blade}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+
+	var created client.Object
+	for _, d := range f.objects("dcim", "devices") {
+		if d["name"] == "blade-01" {
+			created = d
+		}
+	}
+	if created == nil {
+		t.Fatal("blade was not created")
+	}
+	if got := utils.GetIDFromObject(created["rack"]); got != 0 {
+		t.Errorf("bay-mounted device rack = %v, want none (NetBox derives it from the parent)", created["rack"])
+	}
+	// installDeviceIntoBay clears position/face on install, so the key may be
+	// present but must never carry a value.
+	if pos := created["position"]; pos != nil {
+		t.Errorf("bay-mounted device has position %v, want none", pos)
+	}
+
+	// And the second run must be a no-op.
+	f.resetMutations()
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{blade}); err != nil {
+		t.Fatalf("ReconcileDevices() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
 }

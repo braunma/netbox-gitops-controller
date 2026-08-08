@@ -613,3 +613,68 @@ func TestCalculateChangesToleratesStringifiedDecimals(t *testing.T) {
 		t.Errorf("calculateDiff() = %v, want the changed u_height detected", changes)
 	}
 }
+
+// TestPortMappingsEqual covers NetBox 4.6 front port terminations, a list of
+// {position, rear_port, rear_port_position} maps. Entries carry no "id", so
+// the generic ID-set comparison reads both sides as empty and reports them
+// permanently equal — a changed mapping would never be written.
+func TestPortMappingsEqual(t *testing.T) {
+	mapping := func(pos, rear, rearPos interface{}) interface{} {
+		return map[string]interface{}{"position": pos, "rear_port": rear, "rear_port_position": rearPos}
+	}
+
+	// NetBox returns rear_port as a nested object and numbers as float64;
+	// the payload sends a plain ID and Go ints.
+	existing := []interface{}{mapping(1.0, map[string]interface{}{"id": 7.0}, 3.0)}
+	desired := []interface{}{mapping(1, 7, 3)}
+	if !portMappingsEqual(existing, desired) {
+		t.Error("portMappingsEqual() = false for equal mappings in NetBox's and our representations")
+	}
+
+	// Order must not matter.
+	twoA := []interface{}{mapping(1, 7, 1), mapping(2, 8, 1)}
+	twoB := []interface{}{mapping(2, 8, 1), mapping(1, 7, 1)}
+	if !portMappingsEqual(twoA, twoB) {
+		t.Error("portMappingsEqual() = false for the same set in a different order")
+	}
+
+	for _, tc := range []struct {
+		name             string
+		existing, desire []interface{}
+	}{
+		{"different rear port", []interface{}{mapping(1, 7, 1)}, []interface{}{mapping(1, 9, 1)}},
+		{"different position", []interface{}{mapping(1, 7, 1)}, []interface{}{mapping(2, 7, 1)}},
+		{"different rear position", []interface{}{mapping(1, 7, 1)}, []interface{}{mapping(1, 7, 4)}},
+		{"extra mapping", []interface{}{mapping(1, 7, 1)}, twoA},
+		{"empty vs one", nil, []interface{}{mapping(1, 7, 1)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if portMappingsEqual(tc.existing, tc.desire) {
+				t.Error("portMappingsEqual() = true, want the difference detected")
+			}
+		})
+	}
+}
+
+// TestUnresolvedReference covers the --dry-run bootstrap path: an object
+// planned but never written is registered with id 0, and NetBox rejects
+// "site_id=0" as an invalid choice rather than returning no results.
+func TestUnresolvedReference(t *testing.T) {
+	if _, ok := unresolvedReference(map[string]interface{}{"name": "sw-01", "site_id": 0}); !ok {
+		t.Error("unresolvedReference() = false for a zero reference id")
+	}
+	if key, _ := unresolvedReference(map[string]interface{}{"site_id": 0}); key != "site_id" {
+		t.Errorf("unresolvedReference() key = %q, want site_id", key)
+	}
+	if _, ok := unresolvedReference(map[string]interface{}{"name": "sw-01", "site_id": 4}); ok {
+		t.Error("unresolvedReference() = true for a resolved reference")
+	}
+	// A zero that is not a reference must not trigger it: 0 is a legitimate
+	// value for fields like vid or position.
+	if _, ok := unresolvedReference(map[string]interface{}{"vid": 0, "position": 0}); ok {
+		t.Error("unresolvedReference() = true for a non-reference zero")
+	}
+	if _, ok := unresolvedReference(map[string]interface{}{"slug": "berlin"}); ok {
+		t.Error("unresolvedReference() = true for a lookup with no reference")
+	}
+}

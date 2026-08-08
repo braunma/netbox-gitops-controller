@@ -72,6 +72,15 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 
 	cm.client.logger.Debug("Found Site: %s (ID: %d)", siteSlug, siteID)
 
+	// A site registered during a --dry-run has id 0: it was planned, never
+	// written, so NetBox holds nothing scoped to it and rejects site_id=0 as a
+	// filter value. There is nothing to load, and objects declared against it
+	// resolve from the same-run registrations instead.
+	if siteID == 0 {
+		cm.client.logger.Debug("Site %s is only planned in this run; no site cache to load", siteSlug)
+		return nil
+	}
+
 	// Load site-specific resources with composite keys
 	resources := map[string]string{
 		"vlans":       "ipam/vlans",
