@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package models
 
 // Site represents a NetBox site

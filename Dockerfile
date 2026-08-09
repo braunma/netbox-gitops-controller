@@ -25,6 +25,17 @@ RUN CGO_ENABLED=0 go build -trimpath \
  && CGO_ENABLED=0 go build -trimpath -ldflags "-s -w" -o /out/yamlcheck ./cmd/yamlcheck/
 
 FROM ${RUNTIME_IMAGE}
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_DATE=unknown
+# Standard OCI annotations, so a registry UI and any scanning in the pipeline
+# can identify the image and its licence without unpacking it.
+LABEL org.opencontainers.image.title="netbox-gitops-controller" \
+      org.opencontainers.image.description="Declarative GitOps controller for NetBox" \
+      org.opencontainers.image.licenses="Apache-2.0" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_DATE}"
 COPY --from=build /out/netbox-gitops /out/yamlcheck /usr/local/bin/
 # Definitions and inventory are mounted in; --data-dir defaults to the CWD.
 WORKDIR /data

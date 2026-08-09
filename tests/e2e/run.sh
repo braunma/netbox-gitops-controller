@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # End-to-end test: drive the built binary against a real NetBox and assert the
 # properties that unit tests with an in-memory fake cannot see.
 #

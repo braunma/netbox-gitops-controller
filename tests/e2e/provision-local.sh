@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# SPDX-License-Identifier: Apache-2.0
 # Bring up a throwaway NetBox from source on the local machine, for running
 # tests/e2e/run.sh without a container runtime.
 #

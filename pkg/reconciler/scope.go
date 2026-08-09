@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package reconciler
 
 import "github.com/braunma/netbox-gitops-controller/pkg/utils"

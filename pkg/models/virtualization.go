@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package models
 
 // ClusterType represents a NetBox cluster type (virtualization app), e.g.

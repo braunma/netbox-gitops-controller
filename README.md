@@ -519,3 +519,13 @@ To see the examples in action:
 ```
 
 **Note**: The examples create a complete test infrastructure suitable for learning and development. For production use, customize the files to match your actual environment.
+
+-----
+
+## 📄 License
+
+Licensed under the [Apache License, Version 2.0](./LICENSE).
+
+Every source file carries an `SPDX-License-Identifier: Apache-2.0` line, so
+licence scanners in a CI pipeline can identify the project without parsing the
+full text.

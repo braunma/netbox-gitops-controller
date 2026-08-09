@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // yamlcheck validates the syntax of all YAML files under the given
 // directories and additionally runs the typed model validation (required
 // fields, cross-field constraints) for standard definitions/inventory

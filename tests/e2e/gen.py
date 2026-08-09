@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Generate a random but valid netbox-gitops dataset using Dell hardware.
 
 Device types are split at random between the project's native format

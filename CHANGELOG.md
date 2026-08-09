@@ -14,6 +14,11 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **Apache License 2.0.** The full licence text is in `LICENSE`, and every
+  source file carries an `SPDX-License-Identifier: Apache-2.0` line so licence
+  scanners can identify the project without parsing it. `make lint` fails if a
+  Go file is missing the header, and the container image carries the standard
+  OCI annotations including `org.opencontainers.image.licenses`.
 - **Pre-flight validation of NetBox choices and field lengths.** Statuses,
   `face`, `subdevice_role`, `airflow` and `weight_unit` are checked against the
   choice sets NetBox actually publishes, and names, serials, asset tags and

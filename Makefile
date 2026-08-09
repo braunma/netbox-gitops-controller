@@ -24,9 +24,11 @@ test: ## Run unit tests with race detection and coverage
 	$(GO) test ./... -race -coverprofile=coverage.out -covermode=atomic
 	$(GO) tool cover -func=coverage.out | tail -1
 
-lint: ## Format check and vet
+lint: ## Format check, vet, and SPDX headers
 	@test -z "$$(gofmt -l . )" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
 	$(GO) vet ./...
+	@missing=$$(git ls-files '*.go' | xargs grep -L 'SPDX-License-Identifier'); \
+	 test -z "$$missing" || { echo "missing SPDX header:"; echo "$$missing"; exit 1; }
 
 check: lint test ## Everything that does not need a NetBox
 	$(GO) run ./cmd/yamlcheck
