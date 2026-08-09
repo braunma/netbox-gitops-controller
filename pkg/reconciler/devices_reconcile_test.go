@@ -571,3 +571,72 @@ func TestReconcileDevicesBayMountedDeviceGetsNoRack(t *testing.T) {
 	}
 	f.requireMutationCount(t, 0)
 }
+
+// TestReconcileInterfacesBindsLAGMembers covers a feature that was declared in
+// the model and advertised in the README but never read by any reconciler:
+// `members` silently did nothing, so a bond was created with no legs.
+func TestReconcileInterfacesBindsLAGMembers(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	seedDeviceFoundation(t, f, c)
+
+	// The LAG is declared after its members on purpose.
+	dev := testDevice("srv-01", withInterfaces(
+		testInterface("NIC1", "25gbase-x-sfp28"),
+		testInterface("NIC2", "25gbase-x-sfp28"),
+		models.InterfaceConfig{Name: "bond0", Type: "lag", Members: []string{"NIC1", "NIC2"}},
+	))
+
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{dev}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+
+	byName := map[string]client.Object{}
+	for _, i := range f.objects("dcim", "interfaces") {
+		name, _ := i["name"].(string)
+		byName[name] = i
+	}
+	bondID := utils.GetIDFromObject(byName["bond0"])
+	if bondID == 0 {
+		t.Fatal("bond0 was not created")
+	}
+	for _, member := range []string{"NIC1", "NIC2"} {
+		if got := utils.GetIDFromObject(byName[member]["lag"]); got != bondID {
+			t.Errorf("%s lag = %v, want bond0 (%d)", member, byName[member]["lag"], bondID)
+		}
+	}
+
+	// Binding must not re-PATCH on a converged run.
+	f.resetMutations()
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{dev}); err != nil {
+		t.Fatalf("ReconcileDevices() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
+}
+
+// TestReconcileInterfacesReportsMissingLAGMember: a bond missing a leg is a
+// real difference from the declaration, so it must not pass silently.
+func TestReconcileInterfacesReportsMissingLAGMember(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	seedDeviceFoundation(t, f, c)
+
+	dev := testDevice("srv-01", withInterfaces(
+		testInterface("NIC1", "25gbase-x-sfp28"),
+		models.InterfaceConfig{Name: "bond0", Type: "lag", Members: []string{"NIC1", "ghost0"}},
+	))
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{dev}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v; a missing member must not abort the run", err)
+	}
+
+	// The present member is still bound...
+	for _, i := range f.objects("dcim", "interfaces") {
+		if i["name"] == "NIC1" && utils.GetIDFromObject(i["lag"]) == 0 {
+			t.Error("NIC1 was not bound into the LAG")
+		}
+	}
+	// ...and no interface was invented for the missing member.
+	for _, i := range f.objects("dcim", "interfaces") {
+		if i["name"] == "ghost0" {
+			t.Error("a missing LAG member must not be created implicitly")
+		}
+	}
+}

@@ -241,10 +241,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 
 	// B. Build device payload
 	// Default status to "active" if not provided
-	status := device.Status
-	if status == "" {
-		status = "active"
-	}
+	status := defaultStatus(device.Status)
 
 	payload := map[string]interface{}{
 		"name":        device.Name,
@@ -438,7 +435,67 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 		}
 	}
 
+	// LAG membership runs after the loop: a member points at the LAG by ID, so
+	// the LAG interface must already exist, and it may be declared after its
+	// members in the YAML.
+	if err := dr.reconcileLAGMembers(deviceID, device); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// reconcileLAGMembers binds each interface listed under a LAG's `members` to
+// that LAG. Members are interfaces on the same device; one that does not exist
+// is reported rather than skipped silently, since a bond missing a leg is a
+// real difference from what the YAML asked for.
+func (dr *DeviceReconciler) reconcileLAGMembers(deviceID int, device *models.DeviceConfig) error {
+	for _, iface := range device.Interfaces {
+		if len(iface.Members) == 0 {
+			continue
+		}
+
+		lagID, ok := dr.lookupDeviceInterface(deviceID, iface.Name)
+		if !ok {
+			if dr.client.IsDryRun() {
+				dr.logger.Warning("      LAG %s is only planned in this run; skipping member binding in dry-run", iface.Name)
+				dr.client.MarkReconcileIncomplete("dcim", "interfaces")
+				continue
+			}
+			return fmt.Errorf("LAG interface %s not found on device %s", iface.Name, device.Name)
+		}
+
+		for _, member := range iface.Members {
+			if _, ok := dr.lookupDeviceInterface(deviceID, member); !ok {
+				dr.logger.Warning("      LAG %s lists member %s, which does not exist on %s; not bound",
+					iface.Name, member, device.Name)
+				dr.client.MarkReconcileIncomplete("dcim", "interfaces")
+				continue
+			}
+			dr.logger.Debug("      LAG %s ← member %s", iface.Name, member)
+			if _, err := dr.client.Apply("dcim", "interfaces",
+				map[string]interface{}{"device_id": deviceID, "name": member},
+				map[string]interface{}{"device": deviceID, "name": member, "lag": lagID},
+			); err != nil {
+				return fmt.Errorf("failed to bind %s into LAG %s: %w", member, iface.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// lookupDeviceInterface resolves an interface by name on a device.
+func (dr *DeviceReconciler) lookupDeviceInterface(deviceID int, name string) (int, bool) {
+	found, err := dr.client.Filter("dcim", "interfaces", map[string]interface{}{
+		"device_id": deviceID,
+		"name":      name,
+	})
+	if err != nil || len(found) == 0 {
+		return 0, false
+	}
+	id := utils.GetIDFromObject(found[0])
+	return id, id > 0
 }
 
 // reconcileIPAddress reconciles an IP address for an interface

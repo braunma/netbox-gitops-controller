@@ -30,7 +30,7 @@ func (fr *FoundationReconciler) ReconcileSites(sites []*models.Site) error {
 		payload := map[string]interface{}{
 			"name":   site.Name,
 			"slug":   site.Slug,
-			"status": site.Status,
+			"status": defaultStatus(site.Status),
 		}
 
 		if site.Region != "" {
@@ -93,7 +93,7 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 		payload := map[string]interface{}{
 			"name":   rack.Name,
 			"site":   siteID,
-			"status": rack.Status,
+			"status": defaultStatus(rack.Status),
 		}
 
 		if rack.Width > 0 {
@@ -321,4 +321,15 @@ func (fr *FoundationReconciler) ReconcileTags(tags []*models.Tag) error {
 	}
 
 	return nil
+}
+
+// defaultStatus returns NetBox's default status when a declaration leaves it
+// unset. NetBox rejects an empty status with "This field may not be blank"
+// rather than applying its own default, so an object whose YAML simply omits
+// the field would fail the whole run.
+func defaultStatus(status string) string {
+	if status == "" {
+		return "active"
+	}
+	return status
 }

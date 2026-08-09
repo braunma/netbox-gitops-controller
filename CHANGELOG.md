@@ -61,6 +61,17 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **An object declaring no `status` no longer fails the run.** NetBox rejects
+  an empty status with "This field may not be blank" instead of applying its
+  own default, and sites, racks, VLANs and prefixes sent the field
+  unconditionally — so omitting `status`, which the schema marks optional,
+  aborted the sync. All four now default to `active`, as devices already did.
+- **LAG `members` is implemented.** The field existed in the model and the
+  README advertised automatic LAG configuration, but no reconciler ever read
+  it: a bond was created with no legs and nothing said so. Members are now
+  bound to their LAG after all of a device's interfaces exist, so the LAG may
+  be declared before or after them, and a member that does not exist is
+  reported rather than passed over.
 - **Front ports are wired correctly on NetBox 4.6+.** That release replaced a
   front port's singular `rear_port`/`rear_port_position` fields with a
   `rear_ports` list of `{position, rear_port, rear_port_position}` mappings,

@@ -142,7 +142,7 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			"name":   vlan.Name,
 			"vid":    vlan.VID,
 			"site":   siteID,
-			"status": vlan.Status,
+			"status": defaultStatus(vlan.Status),
 		}
 
 		if vlan.GroupSlug != "" {
@@ -198,7 +198,7 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 	for _, prefix := range prefixes {
 		payload := map[string]interface{}{
 			"prefix":  prefix.Prefix,
-			"status":  prefix.Status,
+			"status":  defaultStatus(prefix.Status),
 			"is_pool": prefix.IsPool,
 		}
 
