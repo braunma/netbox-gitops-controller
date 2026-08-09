@@ -46,3 +46,4 @@ bin/
 
 # Test coverage output (make test / CI)
 coverage.out
+__pycache__/

@@ -170,6 +170,18 @@ func (cm *CacheManager) loadResource(resource, path string, filters map[string]i
 		} else if label, ok := obj["label"].(string); ok {
 			storeKey(label)
 		}
+
+		// Types are identified by manufacturer and model together, and a module
+		// type has no slug at all, so index a manufacturer-qualified key as well.
+		// It is what lets a reference stay unambiguous when two vendors ship the
+		// same model name; the bare keys above remain for the common case.
+		if model, ok := obj["model"].(string); ok {
+			if mfg, ok := obj["manufacturer"].(map[string]interface{}); ok {
+				if mfgSlug, ok := mfg["slug"].(string); ok && mfgSlug != "" {
+					storeKey(mfgSlug + "/" + utils.Slugify(model))
+				}
+			}
+		}
 	}
 
 	return nil
@@ -199,6 +211,23 @@ func (cm *CacheManager) Register(resource string, id int, identifiers ...string)
 			continue
 		}
 		cm.cache[resource][identifier] = id
+	}
+}
+
+// Unregister drops identifiers from a resource's cache. It exists for keys that
+// are known to be ambiguous — the same identifier legitimately naming more than
+// one object — where resolving to an arbitrary one of them is worse than not
+// resolving at all. Removing the key turns a silent mis-resolution into a plain
+// "not found", which the caller reports against the reference that caused it.
+func (cm *CacheManager) Unregister(resource string, identifiers ...string) {
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.cache[resource] == nil {
+		return
+	}
+	for _, identifier := range identifiers {
+		delete(cm.cache[resource], identifier)
 	}
 }
 

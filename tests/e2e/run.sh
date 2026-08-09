@@ -69,7 +69,7 @@ log "==> NetBox: $(api status/ | python3 -c 'import json,sys; print(json.load(sy
 for seed in ${SEEDS}; do
   DIR="${WORK}/data-${seed}"
   log "==> seed ${seed}"
-  python3 tests/e2e/gen.py "${DIR}" "${seed}" >/dev/null || { fail "generate" "seed ${seed}"; continue; }
+  python3 tests/e2e/gen.py "${DIR}" "${seed}" >"${WORK}/gen-${seed}.json" || { fail "generate" "seed ${seed}"; continue; }
   wipe
 
   # 1. every generated dataset must pass model validation
@@ -95,6 +95,28 @@ for seed in ${SEEDS}; do
   else
     fail "apply" "$(grep -iE '✗|Error:' "${WORK}/apply1-${seed}.log" | head -1)"
     continue
+  fi
+
+  # 3b. everything the dataset declares must actually be in NetBox.
+  # Idempotency alone does not prove this: several reconcile paths report an
+  # unresolvable reference with a warning and carry on — most notably modules,
+  # which skip when their type or bay is missing. A regression there creates
+  # nothing, errors nothing, and converges perfectly on the second run, so
+  # without this check the suite would stay green while the feature was gone.
+  declared() { python3 -c "import json;print(json.load(open('${WORK}/gen-${seed}.json'))['$1'])"; }
+  missing=""
+  for pair in "module_types:dcim/module-types" "modules:dcim/modules" \
+              "device_types:dcim/device-types" "devices:dcim/devices" \
+              "vlans:ipam/vlans" "prefixes:ipam/prefixes" \
+              "vms:virtualization/virtual-machines"; do
+    key="${pair%%:*}"; ep="${pair#*:}"
+    want="$(declared "${key}")"; got="$(count "${ep}")"
+    [ "${want}" = "${got}" ] || missing="${missing} ${key}(declared ${want}, found ${got})"
+  done
+  if [ -z "${missing}" ]; then
+    ok "declared objects exist" "incl. $(declared module_types) module types, $(declared modules) modules"
+  else
+    fail "declared objects exist" "${missing}"
   fi
 
   # 4. THE invariant: a second apply must have nothing to do

@@ -120,6 +120,16 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **A module type reference could silently resolve to the wrong vendor's
+  module.** NetBox identifies a module type by manufacturer and model together
+  and gives it no slug, so two vendors may ship the same model name — but the
+  reference cache is keyed by name alone, and the second one reconciled
+  overwrote the first. A device asking for that name got whichever won the
+  race. Module types are now also registered under a manufacturer-qualified
+  key (`<manufacturer-slug>/<model-slug>`), which `module_type_slug` accepts;
+  when a bare name is genuinely ambiguous it is no longer registered at all, so
+  the reference reports "not found" instead of installing the wrong hardware,
+  and a warning names the qualified keys to use.
 - **The device type library import accepted only a fraction of the real
   library.** Strict decoding rejected any file using `label`, `description`,
   `color`, `enabled`, `poe_mode`, `poe_type`, `bridge`, `rf_role`,

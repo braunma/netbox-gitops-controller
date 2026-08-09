@@ -4,6 +4,8 @@ package reconciler
 
 import (
 	"fmt"
+	"sort"
+	"strings"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
@@ -96,9 +98,63 @@ type componentTemplates struct {
 	ModuleBays         []models.ModuleBayTemplate
 }
 
+// ambiguousModuleTypeSlugs returns the slugs that more than one manufacturer
+// claims. NetBox identifies a module type by manufacturer and model together
+// and gives it no slug of its own, so two vendors may legitimately ship the
+// same model name — but the reference cache is a flat map, and registering
+// both under the bare slug would let `module_type_slug` silently resolve to
+// whichever happened to be reconciled last. Those slugs are registered only in
+// their manufacturer-qualified form instead, so an ambiguous reference fails
+// loudly rather than installing the wrong module.
+func ambiguousModuleTypeSlugs(moduleTypes []*models.ModuleType) map[string][]string {
+	owners := make(map[string]map[string]bool, len(moduleTypes))
+	for _, mt := range moduleTypes {
+		if owners[mt.Slug] == nil {
+			owners[mt.Slug] = make(map[string]bool, 1)
+		}
+		owners[mt.Slug][mt.Manufacturer] = true
+	}
+
+	ambiguous := make(map[string][]string)
+	for slug, manufacturers := range owners {
+		if len(manufacturers) < 2 {
+			continue
+		}
+		qualified := make([]string, 0, len(manufacturers))
+		for mfg := range manufacturers {
+			qualified = append(qualified, qualifiedModuleTypeSlug(mfg, slug))
+		}
+		sort.Strings(qualified)
+		ambiguous[slug] = qualified
+	}
+	return ambiguous
+}
+
+// qualifiedModuleTypeSlug is the manufacturer-scoped cache key for a module
+// type, and the form `module_type_slug` accepts to disambiguate.
+func qualifiedModuleTypeSlug(manufacturer, slug string) string {
+	return utils.Slugify(manufacturer) + "/" + slug
+}
+
 // ReconcileModuleTypes reconciles module type definitions
 func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.ModuleType) error {
 	dtr.logger.Info("Reconciling %d module types...", len(moduleTypes))
+
+	ambiguous := ambiguousModuleTypeSlugs(moduleTypes)
+	for slug, qualified := range ambiguous {
+		dtr.logger.Warning(
+			"Module type slug %q is claimed by %d manufacturers; reference these by their qualified slug (%s), a bare %q will not resolve",
+			slug, len(qualified), strings.Join(qualified, ", "), slug)
+	}
+	// A previous run left these module types in NetBox, so the cache loaded at
+	// startup already holds the colliding bare keys — indexed by the raw model
+	// string, not the slug. Drop both, or the warning above would be advice the
+	// tool itself does not follow.
+	for _, mt := range moduleTypes {
+		if _, clash := ambiguous[mt.Slug]; clash {
+			dtr.client.Cache().Unregister("module_types", mt.Slug, mt.Model)
+		}
+	}
 
 	for _, mt := range moduleTypes {
 		// Get manufacturer ID
@@ -166,8 +222,16 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 			return fmt.Errorf("failed to reconcile module type %s: %w", mt.Model, err)
 		}
 		mtID := utils.GetIDFromObject(mtObj)
-		// Register so the device phase can resolve a module type created this run.
-		dtr.client.Cache().Register("module_types", mtID, mt.Slug, mt.Model)
+		// Register so the device phase can resolve a module type created this
+		// run. The qualified key is always available; the bare slug and model
+		// are withheld when another manufacturer claims the same name, so that
+		// an ambiguous reference reports "not found" instead of resolving to an
+		// arbitrary vendor's module.
+		identifiers := []string{qualifiedModuleTypeSlug(mt.Manufacturer, mt.Slug)}
+		if _, clash := ambiguous[mt.Slug]; !clash {
+			identifiers = append(identifiers, mt.Slug, mt.Model)
+		}
+		dtr.client.Cache().Register("module_types", mtID, identifiers...)
 		if mtID == 0 {
 			// --dry-run: nothing was written, so there is no owner to hang the
 			// component templates off yet.

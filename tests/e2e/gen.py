@@ -8,7 +8,7 @@ community device type library layout (definitions/device_type_library/
 Dell/<model>.yaml, one document per file, hyphenated keys), so both loader
 paths and their merge are exercised on every seed.
 """
-import os, random, shutil, sys, yaml
+import json, os, random, re, shutil, sys, yaml
 
 IFACE = ["1000base-t","10gbase-t","25gbase-x-sfp28","10gbase-x-sfpp","100gbase-x-qsfp28"]
 PORTT = ["8p8c","lc","sc","mpo"]
@@ -40,10 +40,22 @@ def w(path, data):
     with open(path,"w") as f:
         yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True, default_flow_style=False)
 
-def to_library(dt):
-    """Translate a native device type dict into the community library shape."""
-    out = {"manufacturer": dt["manufacturer"], "model": dt["model"], "slug": dt["slug"]}
-    for k in ("part_number","u_height","is_full_depth","subdevice_role","airflow"):
+def slugify(s):
+    """Mirror of utils.Slugify, for predicting a library module type's key."""
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", s.lower())).strip("-")
+
+def to_library(dt, kind="device"):
+    """Translate a native type dict into the community library shape.
+
+    Module types have no slug in the library schema — NetBox gives them none,
+    and the loader derives the local reference key from the model — so it is
+    dropped here rather than emitted as a field a strict reader would reject.
+    """
+    out = {"manufacturer": dt["manufacturer"], "model": dt["model"]}
+    if kind == "device":
+        out["slug"] = dt["slug"]
+    for k in ("part_number","u_height","is_full_depth","subdevice_role","airflow",
+              "description","comments","weight","weight_unit"):
         if k in dt: out[k] = dt[k]
     for native, hyphen in (("interfaces","interfaces"),("console_ports","console-ports"),
                            ("power_ports","power-ports"),("power_outlets","power-outlets"),
@@ -99,14 +111,19 @@ def gen(root, seed):
 
     # ---- Dell device types ------------------------------------------------
     dts=[]
-    for model,part,uh,ifaces in rnd.sample(DELL_SERVERS, rnd.randint(2,4)):
+    # The first server type always gets module bays: which types get them is
+    # otherwise random, and a seed that gave none would silently drop module
+    # coverage — the module path fails by warning and skipping, so an empty
+    # result still looks like a clean, idempotent run.
+    for idx,(model,part,uh,ifaces) in enumerate(rnd.sample(DELL_SERVERS, rnd.randint(2,4))):
         dt={"model":model,"slug":"dell-"+part.lower(),"manufacturer":"Dell","part_number":part,
             "u_height":uh,"is_full_depth":True,"airflow":"front-to-rear",
             "interfaces":[{"name":n,"type":t,**({"mgmt_only":True} if m else {})} for n,t,m in ifaces],
             "console_ports":[{"name":"Serial","type":"rj-45"}],
             "power_ports":[{"name":f"PSU{i}","type":"iec-60320-c14","maximum_draw":rnd.choice([750,1100])} for i in (1,2)]}
-        if rnd.random()<0.4:
-            dt["module_bays"]=[{"name":f"OCP-{i}","position":str(i)} for i in (1,2)]
+        if idx==0 or rnd.random()<0.4:
+            dt["module_bays"]=([{"name":f"OCP-{i}","position":str(i)} for i in (1,2)]
+                               +[{"name":f"PSU-BAY-{i}","position":str(i)} for i in (1,2)])
         dts.append(dt)
     for model,part,uh,nports,itype in rnd.sample(DELL_SWITCHES, rnd.randint(1,3)):
         dts.append({"model":model,"slug":"dell-"+part.lower(),"manufacturer":"Dell","part_number":part,
@@ -129,8 +146,42 @@ def gen(root, seed):
     npp = rnd.randint(4,10)
     dts.append({"model":pm,"slug":"dell-"+pp.lower(),"manufacturer":"Dell","part_number":pp,"u_height":pu})
 
-    module_types=[{"model":"Dell OCP 25GbE Mezz","slug":"dell-ocp-25g","manufacturer":"Dell"}]
-    w(f"{D}/module_types/module_types.yaml", module_types)
+    # ---- Dell module types -------------------------------------------------
+    # Components carry the literal "{module}" placeholder that NetBox expands to
+    # the bay position at install time; it must survive the round trip verbatim.
+    module_types=[
+        {"model":"Dell OCP 25GbE Mezz","slug":"dell-ocp-25g","manufacturer":"Dell",
+         "part_number":"OCP-25G-2P","weight":0.3,"weight_unit":"kg",
+         "interfaces":[{"name":f"{{module}}-25GbE-{i}","type":"25gbase-x-sfp28"} for i in range(2)]},
+        {"model":"Dell OCP 10GbE Mezz","slug":"dell-ocp-10g","manufacturer":"Dell",
+         "part_number":"OCP-10G-4P","description":"Quad-port OCP 3.0 mezzanine",
+         "interfaces":[{"name":f"{{module}}-10GbE-{i}","type":"10gbase-x-sfpp",
+                        **({"enabled":False} if i==3 else {})} for i in range(4)]},
+        {"model":"Dell PSU 1100W","slug":"dell-psu-1100","manufacturer":"Dell",
+         "part_number":"PSU-1100-AC","airflow":"front-to-rear",
+         "power_ports":[{"name":"{module}-Input","type":"iec-60320-c14","maximum_draw":1100}],
+         "power_outlets":[{"name":"{module}-Output","type":"iec-60320-c13","power_port":"{module}-Input"}]},
+    ]
+    # Split module types across the native format and the community library
+    # layout, exactly as the device types are, so both readers stay covered.
+    rnd.shuffle(module_types)
+    msplit = rnd.randint(1, len(module_types)-1)
+    mt_native, mt_library = module_types[:msplit], module_types[msplit:]
+    w(f"{D}/module_types/module_types.yaml", mt_native)
+    for mt in mt_library:
+        w(f"{D}/module_type_library/Dell/{mt['slug']}.yaml", to_library(mt, "module"))
+    # A native module type is referenced by its declared slug; a library one by
+    # the slug the loader derives from the model. Devices must use the right key
+    # for the format the type actually came from.
+    def mt_key(mt):
+        return mt["slug"] if mt in mt_native else slugify(mt["model"])
+    module_slugs=[mt_key(mt) for mt in module_types]
+    # Bays are filled with a module that plausibly belongs in them, so the
+    # fixture stays readable as hardware rather than as a random pairing.
+    mt_slug_by_kind={
+        "psu":[mt_key(mt) for mt in module_types if "PSU" in mt["model"]],
+        "ocp":[mt_key(mt) for mt in module_types if "OCP" in mt["model"]],
+    }
 
     # Split between the native format and the community library layout.
     rnd.shuffle(dts)
@@ -184,6 +235,20 @@ def gen(root, seed):
                 if rnd.random()<0.3: cfg["mtu"]=rnd.choice([1500,9000])
                 if len(cfg)>1: ifs.append(cfg)
             if ifs: dev["interfaces"]=ifs
+            # Install modules into whatever module bays this type declares. The
+            # module's name is the bay it goes into; its components arrive from
+            # the module type with "{module}" expanded to the bay position.
+            bays=dt.get("module_bays") or []
+            if bays and rnd.random()<0.7:
+                mods=[]
+                for b in bays:
+                    if rnd.random()>=0.8: continue
+                    kind = "psu" if b["name"].startswith("PSU") else "ocp"
+                    choices = mt_slug_by_kind[kind] or module_slugs
+                    m={"name":b["name"],"module_type_slug":rnd.choice(choices)}
+                    if rnd.random()<0.5: m["serial"]=f"MZ{rnd.randrange(10**6):06d}"
+                    mods.append(m)
+                if mods: dev["modules"]=mods
             devices.append(dev); n+=1
 
         if rnd.random()<0.7:
@@ -205,6 +270,15 @@ def gen(root, seed):
                 devices.append({"name":f"panel-{s}","site_slug":f"site-{s}","role_slug":"patch-panel",
                                 "device_type_slug":"dell-"+pp.lower(),"rack_slug":rack["slug"],
                                 "position":pos,"face":"front","rear_ports":rp,"front_ports":fp})
+
+    # Same reasoning as the bays above: make sure at least one device really
+    # installs a module, whatever the seed rolled.
+    if not any(d.get("modules") for d in devices):
+        for d in devices:
+            bays=by_slug.get(d.get("device_type_slug"),{}).get("module_bays") or []
+            if bays:
+                d["modules"]=[{"name":bays[0]["name"],"module_type_slug":rnd.choice(module_slugs)}]
+                break
 
     panels=[d for d in devices if d["name"].startswith("panel-")]
     if panels:
@@ -236,7 +310,9 @@ def gen(root, seed):
 
     return dict(sites=len(sites),racks=len(racks),device_types=len(dts),
                 native=len(native),library=len(library),devices=len(devices),
+                module_types=len(module_types),mt_native=len(mt_native),mt_library=len(mt_library),
+                modules=sum(len(d.get('modules',[])) for d in devices),
                 vlans=len(vlans),prefixes=len(prefixes),vms=len(vms))
 
 if __name__=="__main__":
-    print(gen(sys.argv[1], int(sys.argv[2])))
+    print(json.dumps(gen(sys.argv[1], int(sys.argv[2]))))

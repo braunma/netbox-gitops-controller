@@ -15,7 +15,9 @@ type InterfaceTemplate struct {
 	PoEMode string `yaml:"poe_mode,omitempty" json:"poe_mode,omitempty"`
 	PoEType string `yaml:"poe_type,omitempty" json:"poe_type,omitempty"`
 	RFRole  string `yaml:"rf_role,omitempty" json:"rf_role,omitempty"`
-	LAGName string `yaml:"lag_name,omitempty" json:"lag_name,omitempty"`
+	// There is deliberately no LAG field here. NetBox has no LAG concept on an
+	// interface *template* — a LAG is an interface on a concrete device, so
+	// membership is declared on the device's interfaces via `members`.
 }
 
 // PortTemplate represents a port template for patch panels (Front/Rear).

@@ -311,3 +311,57 @@ func TestReconcileModuleTypeComponents(t *testing.T) {
 	}
 	f.requireMutationCount(t, 0)
 }
+
+// Two manufacturers may legitimately ship the same model name: NetBox keys a
+// module type on manufacturer and model together and gives it no slug. The
+// reference cache is flat, so the bare slug must not resolve to an arbitrary
+// one of them.
+func TestReconcileModuleTypesDisambiguatesSharedModelName(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	dtr := NewDeviceTypeReconciler(c)
+
+	moduleTypes := []*models.ModuleType{
+		{Model: "SFP-10G-SR", Slug: "sfp-10g-sr", Manufacturer: "Dell"},
+		{Model: "SFP-10G-SR", Slug: "sfp-10g-sr", Manufacturer: "Cisco"},
+	}
+	if err := dtr.ReconcileModuleTypes(moduleTypes); err != nil {
+		t.Fatalf("ReconcileModuleTypes() error = %v", err)
+	}
+
+	// Both are distinct objects in NetBox.
+	if mts := f.objects("dcim", "module-types"); len(mts) != 2 {
+		t.Fatalf("expected 2 module types, got %d: %+v", len(mts), mts)
+	}
+
+	// Each resolves under its qualified slug, and to a different object.
+	dellID, ok := c.Cache().GetGlobalID("module_types", "dell/sfp-10g-sr")
+	if !ok {
+		t.Fatal("dell/sfp-10g-sr did not resolve")
+	}
+	ciscoID, ok := c.Cache().GetGlobalID("module_types", "cisco/sfp-10g-sr")
+	if !ok {
+		t.Fatal("cisco/sfp-10g-sr did not resolve")
+	}
+	if dellID == ciscoID {
+		t.Errorf("qualified slugs both resolved to %d", dellID)
+	}
+
+	// The ambiguous bare forms resolve to neither, rather than to whichever was
+	// reconciled last.
+	for _, bare := range []string{"sfp-10g-sr", "SFP-10G-SR"} {
+		if id, ok := c.Cache().GetGlobalID("module_types", bare); ok {
+			t.Errorf("ambiguous reference %q silently resolved to %d", bare, id)
+		}
+	}
+
+	// An unambiguous slug keeps working bare.
+	f.resetMutations()
+	if err := dtr.ReconcileModuleTypes([]*models.ModuleType{
+		{Model: "QSFP-100G", Slug: "qsfp-100g", Manufacturer: "Dell"},
+	}); err != nil {
+		t.Fatalf("ReconcileModuleTypes() error = %v", err)
+	}
+	if _, ok := c.Cache().GetGlobalID("module_types", "qsfp-100g"); !ok {
+		t.Error("unambiguous bare slug did not resolve")
+	}
+}

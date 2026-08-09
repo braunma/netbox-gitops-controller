@@ -10,7 +10,8 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
       * **Opt-in Pruning (`--prune`):** Objects removed from YAML are deleted only when you pass `--prune`, and only if they carry the `gitops` tag — manually created objects are never touched. Combine with `--dry-run` to preview. See the Pruning section below.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
-  * **Coverage:** Manages DCIM (sites, racks, device types, devices, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
+  * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
+  * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
   * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`docs/PLAN_YAML_VM_PIPELINE.md`](docs/PLAN_YAML_VM_PIPELINE.md) and [`terraform/README.md`](terraform/README.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
@@ -169,6 +170,35 @@ installed, so the same module type in two bays produces `1-1GbE-0` and
 > at once so you can park the unwanted file with `--ignore-file`. The published
 > library currently contains one (two Panduit part numbers sharing a model
 > name).
+
+#### Referring to a module type
+
+A device installs a module by naming its bay and the module type:
+
+```yaml
+modules:
+  - name: OCP-1                       # the module bay on the device
+    module_type_slug: dell-ocp-25g
+```
+
+The slug is a local reference key, not something NetBox stores:
+
+  * A module type defined **natively** uses the `slug` you gave it.
+  * A module type read from a **library** has no slug in the file, so the key
+    is derived from its model — `Dell OCP 25GbE Mezz` becomes
+    `dell-ocp-25gbe-mezz`.
+
+Different vendors may legitimately ship the same model name. When that happens
+the bare name is ambiguous and is **not** accepted; use the
+manufacturer-qualified form, which always works:
+
+```yaml
+    module_type_slug: dell/sfp-10g-sr
+```
+
+A run that detects the ambiguity warns and lists the qualified keys to use, so
+an ambiguous reference fails with "module type not found" rather than quietly
+installing another vendor's hardware.
 
 ### Step 2: Create Device Instances (Server/Switch)
 
