@@ -680,3 +680,40 @@ func TestUnresolvedReference(t *testing.T) {
 		t.Error("unresolvedReference() = true for a lookup with no reference")
 	}
 }
+
+// TestTrimStringValues covers a phantom update found importing the community
+// library: its `comments` use a YAML block scalar, which ends in a newline.
+// Django REST Framework strips whitespace from character fields on write, so
+// the stored value never matched the payload and the object was re-PATCHed on
+// every run.
+func TestTrimStringValues(t *testing.T) {
+	got := trimStringValues(map[string]interface{}{
+		"comments":    "Dell 750W Power Supply\n",
+		"description": "  padded  ",
+		"model":       "R650",
+		"u_height":    1.0,
+		"tags":        []int{1, 2},
+		"nested":      map[string]interface{}{"keep": " untouched "},
+	})
+
+	if got["comments"] != "Dell 750W Power Supply" {
+		t.Errorf("comments = %q, want the trailing newline removed", got["comments"])
+	}
+	if got["description"] != "padded" {
+		t.Errorf("description = %q, want it trimmed", got["description"])
+	}
+	if got["model"] != "R650" {
+		t.Errorf("model = %q, want it unchanged", got["model"])
+	}
+	// Non-string values pass through untouched, including nested maps: only
+	// top-level strings are what NetBox trims on the fields we send.
+	if got["u_height"] != 1.0 {
+		t.Errorf("u_height = %v, want it unchanged", got["u_height"])
+	}
+	if _, ok := got["tags"].([]int); !ok {
+		t.Errorf("tags = %T, want the slice unchanged", got["tags"])
+	}
+	if nested, ok := got["nested"].(map[string]interface{}); !ok || nested["keep"] != " untouched " {
+		t.Errorf("nested = %v, want nested values left alone", got["nested"])
+	}
+}

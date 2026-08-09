@@ -14,6 +14,26 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **Module types are managed as fully as device types.** `ModuleType` gained
+  the component templates NetBox supports on it — interfaces, console and
+  console server ports, power ports and outlets, front and rear ports, and
+  module bays — plus `part_number`, `airflow`, `comments` and
+  `weight`/`weight_unit`. Previously a module type was created as a bare name
+  and any hardware it declared was silently dropped.
+- **Community module type library import** (`--moduletype-library`,
+  `MODULETYPE_LIBRARY`, else `definitions/module_type_library/`), reading the
+  `module-types/` tree that ships alongside `device-types/` in the same
+  library. Component names containing the `{module}` placeholder are passed
+  through verbatim, so NetBox can substitute the bay position at installation
+  and the same module type in two bays does not collide. Because NetBox
+  requires a module type's manufacturer and model to be unique together and
+  module types have no slug, two files claiming the same pair are rejected —
+  with every conflict reported at once.
+- **Component template fields the published library actually uses**: `label`,
+  `description`, `color`, `enabled`, `poe_mode`, `poe_type` and `rf_role`, all
+  verified writable against a live NetBox. Library-only metadata (elevation
+  image flags, module type profiles, `_is_power_source`) is accepted so a real
+  file parses, and not sent.
 - **Apache License 2.0.** The full licence text is in `LICENSE`, and every
   source file carries an `SPDX-License-Identifier: Apache-2.0` line so licence
   scanners can identify the project without parsing it. `make lint` fails if a
@@ -100,6 +120,19 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **The device type library import accepted only a fraction of the real
+  library.** Strict decoding rejected any file using `label`, `description`,
+  `color`, `enabled`, `poe_mode`, `poe_type`, `bridge`, `rf_role`,
+  `_is_power_source`, `front_image`, `rear_image` or `is_powered` — which is
+  most of them. Verified by parsing the published library: all 5,980 device
+  types and 1,949 module types now load. Decoding stays strict, so a
+  native-format file dropped into a library root is still caught.
+- **Values ending in whitespace no longer produce a phantom update on every
+  run.** Django REST Framework strips whitespace from character fields on
+  write, so a `comments` value from a YAML block scalar — which ends in a
+  newline, as the community library's do — was stored trimmed and never
+  matched the payload. String values are now trimmed to match what NetBox
+  will store.
 - **Pruning no longer deletes an object that is still in use.** An orphan was
   decided purely by "carries the managed tag and was not reconciled this run",
   so removing a site from YAML while a VLAN still declared it made the site

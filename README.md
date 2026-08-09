@@ -132,6 +132,44 @@ reported rather than dropped silently.
 
 See `example/definitions/device_type_library/` for a working example.
 
+#### Module types from the same library
+
+The library ships a `module-types/` tree alongside `device-types/`, covering
+the hardware that goes *into* module bays — line cards, NIC mezzanines,
+transceivers, power supplies. It is consumed the same way:
+
+```bash
+./netbox-gitops --moduletype-library ../devicetype-library/module-types
+export MODULETYPE_LIBRARY=../devicetype-library/module-types
+```
+
+With neither set, `definitions/module_type_library/` inside the data directory
+is used if it exists. A module type carries the same component templates as a
+device type (interfaces, console and power ports, front/rear ports, module
+bays — everything except device bays, which NetBox allows only on a device
+type).
+
+Component names in this library commonly contain the literal `{module}`
+placeholder:
+
+```yaml
+interfaces:
+  - name: '{module}-1GbE-0'
+    label: '1'
+    type: 1000base-t
+```
+
+NetBox substitutes it with the module bay position when the module is
+installed, so the same module type in two bays produces `1-1GbE-0` and
+`2-1GbE-0` rather than colliding. The placeholder is passed through verbatim.
+
+> **Note:** NetBox requires a module type's manufacturer and model to be
+> unique together, and module types have no slug. Two library files claiming
+> the same pair cannot both be applied; the loader reports every such conflict
+> at once so you can park the unwanted file with `--ignore-file`. The published
+> library currently contains one (two Panduit part numbers sharing a model
+> name).
+
 ### Step 2: Create Device Instances (Server/Switch)
 
 File: `inventory/hardware/active/servers.yaml`

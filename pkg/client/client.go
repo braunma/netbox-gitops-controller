@@ -342,6 +342,8 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 		payload = c.tagManager.InjectTag(payload, c.managedTagID)
 	}
 
+	payload = trimStringValues(payload)
+
 	c.logger.Debug("  → Applying %s with lookup: %v", endpoint, lookup)
 	c.markReferenced(payload)
 
@@ -420,6 +422,27 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	}
 
 	return obj, nil
+}
+
+// trimStringValues returns a copy of the payload with leading and trailing
+// whitespace removed from its string values.
+//
+// Django REST Framework strips whitespace from character fields on write, so a
+// value ending in a newline — which a YAML block scalar produces, and which
+// the community library uses for `comments` — is stored trimmed. Sending the
+// untrimmed value therefore never matches what comes back, and the object is
+// re-PATCHed on every run. Trimming here makes the payload say what NetBox
+// will actually store; the whitespace could not have been preserved anyway.
+func trimStringValues(payload map[string]interface{}) map[string]interface{} {
+	trimmed := make(map[string]interface{}, len(payload))
+	for key, value := range payload {
+		if s, ok := value.(string); ok {
+			trimmed[key] = strings.TrimSpace(s)
+			continue
+		}
+		trimmed[key] = value
+	}
+	return trimmed
 }
 
 // unresolvedReference reports the first lookup key that scopes the query by a

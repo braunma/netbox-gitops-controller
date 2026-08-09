@@ -33,6 +33,7 @@ var (
 	prune            bool
 
 	deviceTypeLibrary   string
+	moduleTypeLibrary   string
 	ignoredFiles        []string
 	includeIgnoredFiles bool
 )
@@ -81,6 +82,7 @@ func main() {
 	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
 	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
 	rootCmd.Flags().StringVar(&deviceTypeLibrary, "devicetype-library", "", "Path to a community-format device type library (default: $DEVICETYPE_LIBRARY, else <data-dir>/definitions/device_type_library)")
+	rootCmd.Flags().StringVar(&moduleTypeLibrary, "moduletype-library", "", "Path to a community-format module type library (default: $MODULETYPE_LIBRARY, else <data-dir>/definitions/module_type_library)")
 	rootCmd.Flags().StringSliceVar(&ignoredFiles, "ignore-file", nil, fmt.Sprintf("Filename globs to skip while loading (default: %s)", strings.Join(loader.DefaultIgnorePatterns, ", ")))
 	rootCmd.Flags().BoolVar(&includeIgnoredFiles, "include-ignored-files", false, "Load files that an ignore pattern would otherwise skip")
 
@@ -435,6 +437,14 @@ func runDeviceTypes(c *client.NetBoxClient, dataLoader *loader.DataLoader, logge
 		logger.Error("Failed to load module types", err)
 		return err
 	}
+
+	libraryModuleTypes, err := dataLoader.LoadModuleTypeLibrary(resolveModuleTypeLibrary())
+	if err != nil {
+		logger.Error("Failed to load the module type library", err)
+		return err
+	}
+	moduleTypes = loader.MergeModuleTypes(moduleTypes, libraryModuleTypes, logger)
+
 	if err := deviceTypeReconciler.ReconcileModuleTypes(moduleTypes); err != nil {
 		logger.Error("Failed to reconcile module types", err)
 		return err
@@ -459,6 +469,20 @@ func runDeviceTypes(c *client.NetBoxClient, dataLoader *loader.DataLoader, logge
 	}
 
 	return nil
+}
+
+// resolveModuleTypeLibrary returns the root of the community-format module
+// type library: the --moduletype-library flag, else MODULETYPE_LIBRARY, else
+// the conventional path inside the data directory. In a library checkout this
+// is the module-types/ directory, the sibling of device-types/.
+func resolveModuleTypeLibrary() string {
+	if moduleTypeLibrary != "" {
+		return moduleTypeLibrary
+	}
+	if env := os.Getenv("MODULETYPE_LIBRARY"); env != "" {
+		return env
+	}
+	return filepath.Join(dataDir, "definitions", "module_type_library")
 }
 
 // resolveIgnorePatterns returns the filename globs to skip while loading:

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -50,44 +51,82 @@ type dtlDeviceType struct {
 	// Carried only so their presence can be reported; NetBox inventory item
 	// templates are not reconciled by this project.
 	InventoryItems []map[string]interface{} `yaml:"inventory-items"`
+
+	// Library-only metadata: flags saying an elevation image ships alongside
+	// the file, and whether the device draws power. Accepted so a real library
+	// file parses; not sent to NetBox.
+	FrontImage *bool `yaml:"front_image"`
+	RearImage  *bool `yaml:"rear_image"`
+	IsPowered  *bool `yaml:"is_powered"`
 }
 
+// The component structs below accept every field that appears anywhere in the
+// published library, verified by scanning all 5,980 device type and 1,950
+// module type files. KnownFields decoding stays strict — it is what catches a
+// native-format file dropped into a library root — so a field the library uses
+// but this project does not reconcile must still be declared here, and is
+// simply not mapped through.
+
 type dtlNamedType struct {
-	Name string `yaml:"name"`
-	Type string `yaml:"type"`
+	Name        string `yaml:"name"`
+	Type        string `yaml:"type"`
+	Label       string `yaml:"label"`
+	Description string `yaml:"description"`
+	// Library-only hint on some console/rear ports; not a NetBox field.
+	IsPowerSource *bool `yaml:"_is_power_source"`
 }
 
 type dtlPowerPort struct {
 	Name          string `yaml:"name"`
 	Type          string `yaml:"type"`
+	Label         string `yaml:"label"`
+	Description   string `yaml:"description"`
 	MaximumDraw   int    `yaml:"maximum_draw"`
 	AllocatedDraw int    `yaml:"allocated_draw"`
 }
 
 type dtlPowerOutlet struct {
-	Name      string `yaml:"name"`
-	Type      string `yaml:"type"`
-	PowerPort string `yaml:"power_port"`
-	FeedLeg   string `yaml:"feed_leg"`
+	Name        string `yaml:"name"`
+	Type        string `yaml:"type"`
+	Label       string `yaml:"label"`
+	Description string `yaml:"description"`
+	PowerPort   string `yaml:"power_port"`
+	FeedLeg     string `yaml:"feed_leg"`
 }
 
 type dtlInterface struct {
-	Name     string `yaml:"name"`
-	Type     string `yaml:"type"`
-	MgmtOnly bool   `yaml:"mgmt_only"`
+	Name        string `yaml:"name"`
+	Type        string `yaml:"type"`
+	Label       string `yaml:"label"`
+	Description string `yaml:"description"`
+	MgmtOnly    bool   `yaml:"mgmt_only"`
+	Enabled     *bool  `yaml:"enabled"`
+	PoEMode     string `yaml:"poe_mode"`
+	PoEType     string `yaml:"poe_type"`
+	RFRole      string `yaml:"rf_role"`
+	// A bridge names another interface on the same type; resolving it needs a
+	// second pass this project does not do, so it is accepted and not mapped.
+	Bridge string `yaml:"bridge"`
 }
 
 type dtlFrontPort struct {
 	Name             string `yaml:"name"`
 	Type             string `yaml:"type"`
+	Label            string `yaml:"label"`
+	Description      string `yaml:"description"`
+	Color            string `yaml:"color"`
 	RearPort         string `yaml:"rear_port"`
 	RearPortPosition int    `yaml:"rear_port_position"`
 }
 
 type dtlRearPort struct {
-	Name      string `yaml:"name"`
-	Type      string `yaml:"type"`
-	Positions int    `yaml:"positions"`
+	Name          string `yaml:"name"`
+	Type          string `yaml:"type"`
+	Label         string `yaml:"label"`
+	Description   string `yaml:"description"`
+	Color         string `yaml:"color"`
+	Positions     int    `yaml:"positions"`
+	IsPowerSource *bool  `yaml:"_is_power_source"`
 }
 
 type dtlBay struct {
@@ -245,37 +284,13 @@ func (d *dtlDeviceType) toModel() (*models.DeviceType, error) {
 		WeightUnit:    d.WeightUnit,
 	}
 
-	for _, i := range d.Interfaces {
-		dt.Interfaces = append(dt.Interfaces, models.InterfaceTemplate{
-			Name: i.Name, Type: i.Type, MgmtOnly: i.MgmtOnly,
-		})
-	}
-	for _, p := range d.ConsolePorts {
-		dt.ConsolePorts = append(dt.ConsolePorts, models.ConsolePortTemplate{Name: p.Name, Type: p.Type})
-	}
-	for _, p := range d.ConsoleServerPorts {
-		dt.ConsoleServerPorts = append(dt.ConsoleServerPorts, models.ConsolePortTemplate{Name: p.Name, Type: p.Type})
-	}
-	for _, p := range d.PowerPorts {
-		dt.PowerPorts = append(dt.PowerPorts, models.PowerPortTemplate{
-			Name: p.Name, Type: p.Type, MaximumDraw: p.MaximumDraw, AllocatedDraw: p.AllocatedDraw,
-		})
-	}
-	for _, o := range d.PowerOutlets {
-		dt.PowerOutlets = append(dt.PowerOutlets, models.PowerOutletTemplate{
-			Name: o.Name, Type: o.Type, PowerPort: o.PowerPort, FeedLeg: o.FeedLeg,
-		})
-	}
-	for _, p := range d.RearPorts {
-		dt.RearPorts = append(dt.RearPorts, models.PortTemplate{
-			Name: p.Name, Type: p.Type, Positions: p.Positions,
-		})
-	}
-	for _, p := range d.FrontPorts {
-		dt.FrontPorts = append(dt.FrontPorts, models.PortTemplate{
-			Name: p.Name, Type: p.Type, RearPort: p.RearPort, RearPortPosition: p.RearPortPosition,
-		})
-	}
+	dt.Interfaces = toInterfaceTemplates(d.Interfaces)
+	dt.ConsolePorts = toConsolePortTemplates(d.ConsolePorts)
+	dt.ConsoleServerPorts = toConsolePortTemplates(d.ConsoleServerPorts)
+	dt.PowerPorts = toPowerPortTemplates(d.PowerPorts)
+	dt.PowerOutlets = toPowerOutletTemplates(d.PowerOutlets)
+	dt.RearPorts = toRearPortTemplates(d.RearPorts)
+	dt.FrontPorts = toFrontPortTemplates(d.FrontPorts)
 	for _, b := range d.ModuleBays {
 		dt.ModuleBays = append(dt.ModuleBays, models.ModuleBayTemplate{
 			Name: b.Name, Label: b.Label, Description: b.Description, Position: b.Position,
@@ -310,4 +325,261 @@ func MergeDeviceTypes(native, library []*models.DeviceType, logger *utils.Logger
 		merged = append(merged, dt)
 	}
 	return merged
+}
+
+// dtlModuleType is one module type as published by the community library's
+// module-types/ tree. It shares the hyphenated component keys with the device
+// type schema but has no slug, u_height, is_full_depth or subdevice_role:
+// NetBox identifies a module type by manufacturer and model, and a module has
+// no rack presence of its own.
+type dtlModuleType struct {
+	Manufacturer string  `yaml:"manufacturer"`
+	Model        string  `yaml:"model"`
+	PartNumber   string  `yaml:"part_number"`
+	Airflow      string  `yaml:"airflow"`
+	Description  string  `yaml:"description"`
+	Comments     string  `yaml:"comments"`
+	Weight       float64 `yaml:"weight"`
+	WeightUnit   string  `yaml:"weight_unit"`
+
+	ConsolePorts       []dtlNamedType   `yaml:"console-ports"`
+	ConsoleServerPorts []dtlNamedType   `yaml:"console-server-ports"`
+	PowerPorts         []dtlPowerPort   `yaml:"power-ports"`
+	PowerOutlets       []dtlPowerOutlet `yaml:"power-outlets"`
+	Interfaces         []dtlInterface   `yaml:"interfaces"`
+	FrontPorts         []dtlFrontPort   `yaml:"front-ports"`
+	RearPorts          []dtlRearPort    `yaml:"rear-ports"`
+	ModuleBays         []dtlBay         `yaml:"module-bays"`
+
+	// NetBox 4.x module type profiles and their attribute payload. Applying
+	// one means resolving a profile by name, which this project does not do;
+	// accepted so a real library file parses, and reported when present.
+	Profile       string                 `yaml:"profile"`
+	AttributeData map[string]interface{} `yaml:"attribute_data"`
+}
+
+// LoadModuleTypeLibrary reads a community-format module type library rooted at
+// root (the library's module-types/ directory) and returns the module types in
+// the native model. As with the device type library, a root that does not
+// exist is not an error: the library is optional.
+func (dl *DataLoader) LoadModuleTypeLibrary(root string) ([]*models.ModuleType, error) {
+	if root == "" {
+		return nil, nil
+	}
+	if _, err := os.Stat(root); os.IsNotExist(err) {
+		dl.logger.Warning("Module type library %s not found, skipping", root)
+		return nil, nil
+	}
+
+	files, err := dl.findYAMLFiles(root)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find YAML files in %s: %w", root, err)
+	}
+	files = dl.filterIgnored(files)
+	if len(files) == 0 {
+		dl.logger.Warning("No module type files found in %s", root)
+		return nil, nil
+	}
+
+	moduleTypes := make([]*models.ModuleType, 0, len(files))
+	// NetBox enforces uniqueness on manufacturer and model together, so that
+	// pair is the identity; the same model name from two vendors is fine.
+	sourceByIdentity := make(map[string]string, len(files))
+	var conflicts []string
+
+	for _, path := range files {
+		parsed, err := dl.loadModuleTypeLibraryFile(path)
+		if err != nil {
+			return nil, err
+		}
+		for _, mt := range parsed {
+			identity := mt.Manufacturer + "/" + mt.Model
+			if previous, clash := sourceByIdentity[identity]; clash {
+				// Report every conflict rather than stopping at the first: a
+				// published library can contain one (two part numbers sharing a
+				// model name), and finding them one run at a time is painful.
+				conflicts = append(conflicts, fmt.Sprintf("%q declared in both %s and %s", identity, previous, path))
+				continue
+			}
+			sourceByIdentity[identity] = path
+			moduleTypes = append(moduleTypes, mt)
+		}
+	}
+
+	if len(conflicts) > 0 {
+		return nil, fmt.Errorf(
+			"%d module type(s) share a manufacturer and model, which NetBox requires to be unique;"+
+				" park the unwanted file with --ignore-file or remove it:\n  %s",
+			len(conflicts), strings.Join(conflicts, "\n  "))
+	}
+
+	dl.logger.Info("Loaded %d module type(s) from library %s", len(moduleTypes), root)
+	return moduleTypes, nil
+}
+
+// loadModuleTypeLibraryFile parses one library module type file.
+func (dl *DataLoader) loadModuleTypeLibraryFile(path string) ([]*models.ModuleType, error) {
+	content, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+	}
+
+	dec := yaml.NewDecoder(bytes.NewReader(content))
+	dec.KnownFields(true)
+
+	var moduleTypes []*models.ModuleType
+	for docIndex := 1; ; docIndex++ {
+		var dtl dtlModuleType
+		err := dec.Decode(&dtl)
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse module type library file %s (document %d): %w", path, docIndex, err)
+		}
+
+		mt, err := dtl.toModel()
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if err := mt.Validate(); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		moduleTypes = append(moduleTypes, mt)
+	}
+
+	if len(moduleTypes) == 0 {
+		dl.logger.Warning("%s contains no module type, skipping", path)
+	}
+	return moduleTypes, nil
+}
+
+// toModel translates the library module type schema into the native model.
+func (d *dtlModuleType) toModel() (*models.ModuleType, error) {
+	if d.Manufacturer == "" {
+		return nil, fmt.Errorf("manufacturer is required")
+	}
+	if d.Model == "" {
+		return nil, fmt.Errorf("model is required")
+	}
+
+	mt := &models.ModuleType{
+		Model:        d.Model,
+		Manufacturer: d.Manufacturer,
+		// NetBox module types have no slug; this one is a local cache key only,
+		// so it is derived from the model rather than read from the file.
+		Slug:        utils.Slugify(d.Model),
+		PartNumber:  d.PartNumber,
+		Airflow:     d.Airflow,
+		Description: d.Description,
+		Comments:    d.Comments,
+		Weight:      d.Weight,
+		WeightUnit:  d.WeightUnit,
+	}
+
+	mt.Interfaces = toInterfaceTemplates(d.Interfaces)
+	mt.ConsolePorts = toConsolePortTemplates(d.ConsolePorts)
+	mt.ConsoleServerPorts = toConsolePortTemplates(d.ConsoleServerPorts)
+	mt.PowerPorts = toPowerPortTemplates(d.PowerPorts)
+	mt.PowerOutlets = toPowerOutletTemplates(d.PowerOutlets)
+	mt.RearPorts = toRearPortTemplates(d.RearPorts)
+	mt.FrontPorts = toFrontPortTemplates(d.FrontPorts)
+	for _, b := range d.ModuleBays {
+		mt.ModuleBays = append(mt.ModuleBays, models.ModuleBayTemplate{
+			Name: b.Name, Label: b.Label, Description: b.Description, Position: b.Position,
+		})
+	}
+
+	return mt, nil
+}
+
+// MergeModuleTypes combines natively defined module types with library ones.
+// A native definition wins over a library entry with the same
+// manufacturer/model, so a vendored library can be customised locally; each
+// override is logged so the shadowing is never silent.
+func MergeModuleTypes(native, library []*models.ModuleType, logger *utils.Logger) []*models.ModuleType {
+	byIdentity := make(map[string]bool, len(native))
+	for _, mt := range native {
+		byIdentity[mt.Manufacturer+"/"+mt.Model] = true
+	}
+
+	merged := make([]*models.ModuleType, 0, len(native)+len(library))
+	merged = append(merged, native...)
+	for _, mt := range library {
+		identity := mt.Manufacturer + "/" + mt.Model
+		if byIdentity[identity] {
+			logger.Warning("Module type %q from the library is overridden by a local definition", identity)
+			continue
+		}
+		merged = append(merged, mt)
+	}
+	return merged
+}
+
+// Translators shared by the device type and module type library schemas.
+
+func toInterfaceTemplates(in []dtlInterface) []models.InterfaceTemplate {
+	out := make([]models.InterfaceTemplate, 0, len(in))
+	for _, i := range in {
+		out = append(out, models.InterfaceTemplate{
+			Name: i.Name, Type: i.Type, Label: i.Label, Description: i.Description,
+			MgmtOnly: i.MgmtOnly, Enabled: i.Enabled,
+			PoEMode: i.PoEMode, PoEType: i.PoEType, RFRole: i.RFRole,
+		})
+	}
+	return out
+}
+
+func toConsolePortTemplates(in []dtlNamedType) []models.ConsolePortTemplate {
+	out := make([]models.ConsolePortTemplate, 0, len(in))
+	for _, p := range in {
+		out = append(out, models.ConsolePortTemplate{
+			Name: p.Name, Type: p.Type, Label: p.Label, Description: p.Description,
+		})
+	}
+	return out
+}
+
+func toPowerPortTemplates(in []dtlPowerPort) []models.PowerPortTemplate {
+	out := make([]models.PowerPortTemplate, 0, len(in))
+	for _, p := range in {
+		out = append(out, models.PowerPortTemplate{
+			Name: p.Name, Type: p.Type, Label: p.Label, Description: p.Description,
+			MaximumDraw: p.MaximumDraw, AllocatedDraw: p.AllocatedDraw,
+		})
+	}
+	return out
+}
+
+func toPowerOutletTemplates(in []dtlPowerOutlet) []models.PowerOutletTemplate {
+	out := make([]models.PowerOutletTemplate, 0, len(in))
+	for _, o := range in {
+		out = append(out, models.PowerOutletTemplate{
+			Name: o.Name, Type: o.Type, Label: o.Label, Description: o.Description,
+			PowerPort: o.PowerPort, FeedLeg: o.FeedLeg,
+		})
+	}
+	return out
+}
+
+func toRearPortTemplates(in []dtlRearPort) []models.PortTemplate {
+	out := make([]models.PortTemplate, 0, len(in))
+	for _, p := range in {
+		out = append(out, models.PortTemplate{
+			Name: p.Name, Type: p.Type, Label: p.Label, Description: p.Description,
+			Color: p.Color, Positions: p.Positions,
+		})
+	}
+	return out
+}
+
+func toFrontPortTemplates(in []dtlFrontPort) []models.PortTemplate {
+	out := make([]models.PortTemplate, 0, len(in))
+	for _, p := range in {
+		out = append(out, models.PortTemplate{
+			Name: p.Name, Type: p.Type, Label: p.Label, Description: p.Description,
+			Color: p.Color, RearPort: p.RearPort, RearPortPosition: p.RearPortPosition,
+		})
+	}
+	return out
 }

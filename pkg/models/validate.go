@@ -128,6 +128,64 @@ func (m *ModuleType) Validate() error {
 		"model":        m.Model,
 		"manufacturer": m.Manufacturer,
 	})
+	errs = appendNonNil(errs,
+		validateChoice("airflow", m.Airflow, DeviceTypeAirflows),
+		validateChoice("weight_unit", m.WeightUnit, WeightUnits),
+		validateLength("model", m.Model, MaxNameLength),
+		validateLength("part_number", m.PartNumber, MaxPartNumberLength),
+	)
+
+	// Component names may contain the "{module}" placeholder, which NetBox
+	// expands to the bay position on installation, so they are not checked
+	// against a length limit here: the expanded name is what NetBox measures.
+	for i, iface := range m.Interfaces {
+		if iface.Name == "" {
+			errs = append(errs, fmt.Errorf("interface %d: name is required", i+1))
+		}
+		if iface.Type == "" {
+			errs = append(errs, fmt.Errorf("interface %q: type is required", iface.Name))
+		}
+	}
+	for i, rp := range m.RearPorts {
+		if rp.Name == "" {
+			errs = append(errs, fmt.Errorf("rear port %d: name is required", i+1))
+		}
+		if rp.Type == "" {
+			errs = append(errs, fmt.Errorf("rear port %q: type is required", rp.Name))
+		}
+	}
+	for i, fp := range m.FrontPorts {
+		if fp.Name == "" {
+			errs = append(errs, fmt.Errorf("front port %d: name is required", i+1))
+		}
+		if fp.Type == "" {
+			errs = append(errs, fmt.Errorf("front port %q: type is required", fp.Name))
+		}
+		if fp.RearPort == "" {
+			errs = append(errs, fmt.Errorf("front port %q: rear_port is required", fp.Name))
+		}
+	}
+	for i, cp := range m.ConsolePorts {
+		if cp.Name == "" {
+			errs = append(errs, fmt.Errorf("console port %d: name is required", i+1))
+		}
+	}
+	for i, cp := range m.ConsoleServerPorts {
+		if cp.Name == "" {
+			errs = append(errs, fmt.Errorf("console server port %d: name is required", i+1))
+		}
+	}
+	for i, pp := range m.PowerPorts {
+		if pp.Name == "" {
+			errs = append(errs, fmt.Errorf("power port %d: name is required", i+1))
+		}
+	}
+	for i, po := range m.PowerOutlets {
+		if po.Name == "" {
+			errs = append(errs, fmt.Errorf("power outlet %d: name is required", i+1))
+		}
+	}
+
 	return wrap("module type", m.Model, errs)
 }
 

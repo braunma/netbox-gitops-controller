@@ -24,6 +24,78 @@ func NewDeviceTypeReconciler(c *client.NetBoxClient) *DeviceTypeReconciler {
 	}
 }
 
+// templateOwner identifies what a component template belongs to. NetBox hangs
+// the same template endpoints off either a device type or a module type,
+// differing only in which owner field carries the ID.
+type templateOwner struct {
+	field  string // payload key:  "device_type" or "module_type"
+	filter string // lookup key:   "device_type_id" or "module_type_id"
+	id     int
+}
+
+func deviceTypeOwner(id int) templateOwner {
+	return templateOwner{field: "device_type", filter: "device_type_id", id: id}
+}
+
+func moduleTypeOwner(id int) templateOwner {
+	return templateOwner{field: "module_type", filter: "module_type_id", id: id}
+}
+
+// payload seeds a component template payload with its owner.
+func (o templateOwner) payload(name string) map[string]interface{} {
+	return map[string]interface{}{o.field: o.id, "name": name}
+}
+
+// lookup builds the filter that finds an existing template by name.
+func (o templateOwner) lookup(name string) map[string]interface{} {
+	return map[string]interface{}{o.filter: o.id, "name": name}
+}
+
+// reconcileComponentTemplates applies every component template a device type
+// or module type declares, in the order NetBox's own references require: rear
+// ports before the front ports that terminate on them, and power ports before
+// the outlets they feed.
+func (dtr *DeviceTypeReconciler) reconcileComponentTemplates(owner templateOwner, c componentTemplates, label string) error {
+	if err := dtr.reconcileRearPortTemplates(owner, c.RearPorts); err != nil {
+		return fmt.Errorf("failed to reconcile rear port templates for %s: %w", label, err)
+	}
+	if err := dtr.reconcileFrontPortTemplates(owner, c.FrontPorts); err != nil {
+		return fmt.Errorf("failed to reconcile front port templates for %s: %w", label, err)
+	}
+	if err := dtr.reconcileInterfaceTemplates(owner, c.Interfaces); err != nil {
+		return fmt.Errorf("failed to reconcile interface templates for %s: %w", label, err)
+	}
+	if err := dtr.reconcileConsolePortTemplates(owner, "console-port-templates", c.ConsolePorts); err != nil {
+		return fmt.Errorf("failed to reconcile console port templates for %s: %w", label, err)
+	}
+	if err := dtr.reconcileConsolePortTemplates(owner, "console-server-port-templates", c.ConsoleServerPorts); err != nil {
+		return fmt.Errorf("failed to reconcile console server port templates for %s: %w", label, err)
+	}
+	if err := dtr.reconcilePowerPortTemplates(owner, c.PowerPorts); err != nil {
+		return fmt.Errorf("failed to reconcile power port templates for %s: %w", label, err)
+	}
+	if err := dtr.reconcilePowerOutletTemplates(owner, c.PowerOutlets); err != nil {
+		return fmt.Errorf("failed to reconcile power outlet templates for %s: %w", label, err)
+	}
+	if err := dtr.reconcileModuleBayTemplates(owner, c.ModuleBays); err != nil {
+		return fmt.Errorf("failed to reconcile module bay templates for %s: %w", label, err)
+	}
+	return nil
+}
+
+// componentTemplates is the set of templates shared by device types and module
+// types. Device bays are absent: NetBox only allows them on a device type.
+type componentTemplates struct {
+	Interfaces         []models.InterfaceTemplate
+	FrontPorts         []models.PortTemplate
+	RearPorts          []models.PortTemplate
+	ConsolePorts       []models.ConsolePortTemplate
+	ConsoleServerPorts []models.ConsolePortTemplate
+	PowerPorts         []models.PowerPortTemplate
+	PowerOutlets       []models.PowerOutletTemplate
+	ModuleBays         []models.ModuleBayTemplate
+}
+
 // ReconcileModuleTypes reconciles module type definitions
 func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.ModuleType) error {
 	dtr.logger.Info("Reconciling %d module types...", len(moduleTypes))
@@ -59,6 +131,25 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 		if mt.Description != "" {
 			payload["description"] = mt.Description
 		}
+		if mt.PartNumber != "" {
+			payload["part_number"] = mt.PartNumber
+		}
+		if mt.Airflow != "" {
+			payload["airflow"] = mt.Airflow
+		}
+		if mt.Comments != "" {
+			payload["comments"] = mt.Comments
+		}
+		// NetBox rejects a weight without its unit, so only send the pair.
+		switch {
+		case mt.Weight != 0 && mt.WeightUnit != "":
+			payload["weight"] = mt.Weight
+			payload["weight_unit"] = mt.WeightUnit
+		case mt.Weight != 0:
+			dtr.logger.Warning("Module type %s declares weight %v without weight_unit; not setting a weight", mt.Model, mt.Weight)
+		case mt.WeightUnit != "":
+			dtr.logger.Warning("Module type %s declares weight_unit %q without a weight; not setting a weight", mt.Model, mt.WeightUnit)
+		}
 
 		// Match on the real NetBox identity for a module type (manufacturer +
 		// model); there is no slug to filter on.
@@ -74,8 +165,31 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 		if err != nil {
 			return fmt.Errorf("failed to reconcile module type %s: %w", mt.Model, err)
 		}
+		mtID := utils.GetIDFromObject(mtObj)
 		// Register so the device phase can resolve a module type created this run.
-		dtr.client.Cache().Register("module_types", utils.GetIDFromObject(mtObj), mt.Slug, mt.Model)
+		dtr.client.Cache().Register("module_types", mtID, mt.Slug, mt.Model)
+		if mtID == 0 {
+			// --dry-run: nothing was written, so there is no owner to hang the
+			// component templates off yet.
+			continue
+		}
+
+		// A module type carries the same components as a device type. Their
+		// names may contain the literal "{module}" placeholder, which NetBox
+		// substitutes with the bay position when the module is installed, so
+		// they are sent through unchanged.
+		if err := dtr.reconcileComponentTemplates(moduleTypeOwner(mtID), componentTemplates{
+			Interfaces:         mt.Interfaces,
+			FrontPorts:         mt.FrontPorts,
+			RearPorts:          mt.RearPorts,
+			ConsolePorts:       mt.ConsolePorts,
+			ConsoleServerPorts: mt.ConsoleServerPorts,
+			PowerPorts:         mt.PowerPorts,
+			PowerOutlets:       mt.PowerOutlets,
+			ModuleBays:         mt.ModuleBays,
+		}, mt.Model); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -152,44 +266,21 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 			continue
 		}
 
-		// CRITICAL: Order matters!
-		// 1. REAR PORTS FIRST - they must exist before front ports
-		if err := dtr.reconcileRearPortTemplates(dtID, dt.RearPorts); err != nil {
-			return fmt.Errorf("failed to reconcile rear port templates for %s: %w", dt.Model, err)
+		owner := deviceTypeOwner(dtID)
+		if err := dtr.reconcileComponentTemplates(owner, componentTemplates{
+			Interfaces:         dt.Interfaces,
+			FrontPorts:         dt.FrontPorts,
+			RearPorts:          dt.RearPorts,
+			ConsolePorts:       dt.ConsolePorts,
+			ConsoleServerPorts: dt.ConsoleServerPorts,
+			PowerPorts:         dt.PowerPorts,
+			PowerOutlets:       dt.PowerOutlets,
+			ModuleBays:         dt.ModuleBays,
+		}, dt.Model); err != nil {
+			return err
 		}
 
-		// 2. FRONT PORTS SECOND - they reference rear ports by ID
-		if err := dtr.reconcileFrontPortTemplates(dtID, dt.FrontPorts); err != nil {
-			return fmt.Errorf("failed to reconcile front port templates for %s: %w", dt.Model, err)
-		}
-
-		// 3. INTERFACES LAST
-		if err := dtr.reconcileInterfaceTemplates(dtID, dt.Interfaces); err != nil {
-			return fmt.Errorf("failed to reconcile interface templates for %s: %w", dt.Model, err)
-		}
-
-		if err := dtr.reconcileConsolePortTemplates(dtID, "console-port-templates", dt.ConsolePorts); err != nil {
-			return fmt.Errorf("failed to reconcile console port templates for %s: %w", dt.Model, err)
-		}
-
-		if err := dtr.reconcileConsolePortTemplates(dtID, "console-server-port-templates", dt.ConsoleServerPorts); err != nil {
-			return fmt.Errorf("failed to reconcile console server port templates for %s: %w", dt.Model, err)
-		}
-
-		// Power ports before outlets: an outlet names the port that feeds it.
-		if err := dtr.reconcilePowerPortTemplates(dtID, dt.PowerPorts); err != nil {
-			return fmt.Errorf("failed to reconcile power port templates for %s: %w", dt.Model, err)
-		}
-
-		if err := dtr.reconcilePowerOutletTemplates(dtID, dt.PowerOutlets); err != nil {
-			return fmt.Errorf("failed to reconcile power outlet templates for %s: %w", dt.Model, err)
-		}
-
-		if err := dtr.reconcileModuleBayTemplates(dtID, dt.ModuleBays); err != nil {
-			return fmt.Errorf("failed to reconcile module bay templates for %s: %w", dt.Model, err)
-		}
-
-		if err := dtr.reconcileDeviceBayTemplates(dtID, dt.DeviceBays); err != nil {
+		if err := dtr.reconcileDeviceBayTemplates(owner, dt.DeviceBays); err != nil {
 			return fmt.Errorf("failed to reconcile device bay templates for %s: %w", dt.Model, err)
 		}
 	}
@@ -198,19 +289,21 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 }
 
 // reconcileInterfaceTemplates reconciles interface templates for a device type
-func (dtr *DeviceTypeReconciler) reconcileInterfaceTemplates(deviceTypeID int, templates []models.InterfaceTemplate) error {
+func (dtr *DeviceTypeReconciler) reconcileInterfaceTemplates(owner templateOwner, templates []models.InterfaceTemplate) error {
 	for _, tmpl := range templates {
-		payload := map[string]interface{}{
-			"device_type": deviceTypeID,
-			"name":        tmpl.Name,
-			"type":        tmpl.Type,
-			"mgmt_only":   tmpl.MgmtOnly,
+		payload := owner.payload(tmpl.Name)
+		payload["type"] = tmpl.Type
+		payload["mgmt_only"] = tmpl.MgmtOnly
+		setIfPresent(payload, map[string]string{
+			"label": tmpl.Label, "description": tmpl.Description,
+			"poe_mode": tmpl.PoEMode, "poe_type": tmpl.PoEType, "rf_role": tmpl.RFRole,
+		})
+		// NetBox defaults enabled to true, so only send an explicit choice.
+		if tmpl.Enabled != nil {
+			payload["enabled"] = *tmpl.Enabled
 		}
 
-		lookup := map[string]interface{}{
-			"device_type_id": deviceTypeID,
-			"name":           tmpl.Name,
-		}
+		lookup := owner.lookup(tmpl.Name)
 
 		// Remove tags from templates (they don't support tags)
 		delete(payload, "tags")
@@ -225,21 +318,18 @@ func (dtr *DeviceTypeReconciler) reconcileInterfaceTemplates(deviceTypeID int, t
 }
 
 // reconcileFrontPortTemplates reconciles front port templates
-func (dtr *DeviceTypeReconciler) reconcileFrontPortTemplates(deviceTypeID int, templates []models.PortTemplate) error {
+func (dtr *DeviceTypeReconciler) reconcileFrontPortTemplates(owner templateOwner, templates []models.PortTemplate) error {
 	// First, we need rear ports to exist
 	for _, tmpl := range templates {
-		payload := map[string]interface{}{
-			"device_type": deviceTypeID,
-			"name":        tmpl.Name,
-			"type":        tmpl.Type,
-		}
+		payload := owner.payload(tmpl.Name)
+		payload["type"] = tmpl.Type
+		setIfPresent(payload, map[string]string{
+			"label": tmpl.Label, "description": tmpl.Description, "color": tmpl.Color,
+		})
 
 		if tmpl.RearPort != "" {
 			// Find rear port
-			rearPorts, err := dtr.client.Filter("dcim", "rear-port-templates", map[string]interface{}{
-				"device_type_id": deviceTypeID,
-				"name":           tmpl.RearPort,
-			})
+			rearPorts, err := dtr.client.Filter("dcim", "rear-port-templates", owner.lookup(tmpl.RearPort))
 			if err == nil && len(rearPorts) > 0 {
 				// A multi-position rear port (e.g. an MPO trunk broken out to
 				// several front ports) needs the specific position; single
@@ -249,10 +339,7 @@ func (dtr *DeviceTypeReconciler) reconcileFrontPortTemplates(deviceTypeID int, t
 			}
 		}
 
-		lookup := map[string]interface{}{
-			"device_type_id": deviceTypeID,
-			"name":           tmpl.Name,
-		}
+		lookup := owner.lookup(tmpl.Name)
 
 		delete(payload, "tags")
 
@@ -266,19 +353,16 @@ func (dtr *DeviceTypeReconciler) reconcileFrontPortTemplates(deviceTypeID int, t
 }
 
 // reconcileRearPortTemplates reconciles rear port templates
-func (dtr *DeviceTypeReconciler) reconcileRearPortTemplates(deviceTypeID int, templates []models.PortTemplate) error {
+func (dtr *DeviceTypeReconciler) reconcileRearPortTemplates(owner templateOwner, templates []models.PortTemplate) error {
 	for _, tmpl := range templates {
-		payload := map[string]interface{}{
-			"device_type": deviceTypeID,
-			"name":        tmpl.Name,
-			"type":        tmpl.Type,
-			"positions":   defaultPosition(tmpl.Positions),
-		}
+		payload := owner.payload(tmpl.Name)
+		payload["type"] = tmpl.Type
+		payload["positions"] = defaultPosition(tmpl.Positions)
+		setIfPresent(payload, map[string]string{
+			"label": tmpl.Label, "description": tmpl.Description, "color": tmpl.Color,
+		})
 
-		lookup := map[string]interface{}{
-			"device_type_id": deviceTypeID,
-			"name":           tmpl.Name,
-		}
+		lookup := owner.lookup(tmpl.Name)
 
 		delete(payload, "tags")
 
@@ -312,6 +396,16 @@ func setFrontPortTermination(c *client.NetBoxClient, payload map[string]interfac
 	payload["rear_port_position"] = rearPortPosition
 }
 
+// setIfPresent copies the non-empty optional fields shared by every component
+// template onto a payload.
+func setIfPresent(payload map[string]interface{}, fields map[string]string) {
+	for key, value := range fields {
+		if value != "" {
+			payload[key] = value
+		}
+	}
+}
+
 // defaultPosition maps an unset (zero) position to NetBox's default of 1.
 func defaultPosition(p int) int {
 	if p <= 0 {
@@ -323,20 +417,15 @@ func defaultPosition(p int) int {
 // reconcileConsolePortTemplates reconciles console port or console server port
 // templates, which share an identical payload shape and differ only by
 // endpoint.
-func (dtr *DeviceTypeReconciler) reconcileConsolePortTemplates(deviceTypeID int, endpoint string, templates []models.ConsolePortTemplate) error {
+func (dtr *DeviceTypeReconciler) reconcileConsolePortTemplates(owner templateOwner, endpoint string, templates []models.ConsolePortTemplate) error {
 	for _, tmpl := range templates {
-		payload := map[string]interface{}{
-			"device_type": deviceTypeID,
-			"name":        tmpl.Name,
-		}
+		payload := owner.payload(tmpl.Name)
 		if tmpl.Type != "" {
 			payload["type"] = tmpl.Type
 		}
+		setIfPresent(payload, map[string]string{"label": tmpl.Label, "description": tmpl.Description})
 
-		lookup := map[string]interface{}{
-			"device_type_id": deviceTypeID,
-			"name":           tmpl.Name,
-		}
+		lookup := owner.lookup(tmpl.Name)
 
 		if _, err := dtr.client.Apply("dcim", endpoint, lookup, payload); err != nil {
 			return fmt.Errorf("failed to reconcile %s %s: %w", endpoint, tmpl.Name, err)
@@ -347,15 +436,13 @@ func (dtr *DeviceTypeReconciler) reconcileConsolePortTemplates(deviceTypeID int,
 }
 
 // reconcilePowerPortTemplates reconciles power port (inlet) templates.
-func (dtr *DeviceTypeReconciler) reconcilePowerPortTemplates(deviceTypeID int, templates []models.PowerPortTemplate) error {
+func (dtr *DeviceTypeReconciler) reconcilePowerPortTemplates(owner templateOwner, templates []models.PowerPortTemplate) error {
 	for _, tmpl := range templates {
-		payload := map[string]interface{}{
-			"device_type": deviceTypeID,
-			"name":        tmpl.Name,
-		}
+		payload := owner.payload(tmpl.Name)
 		if tmpl.Type != "" {
 			payload["type"] = tmpl.Type
 		}
+		setIfPresent(payload, map[string]string{"label": tmpl.Label, "description": tmpl.Description})
 		if tmpl.MaximumDraw > 0 {
 			payload["maximum_draw"] = tmpl.MaximumDraw
 		}
@@ -363,10 +450,7 @@ func (dtr *DeviceTypeReconciler) reconcilePowerPortTemplates(deviceTypeID int, t
 			payload["allocated_draw"] = tmpl.AllocatedDraw
 		}
 
-		lookup := map[string]interface{}{
-			"device_type_id": deviceTypeID,
-			"name":           tmpl.Name,
-		}
+		lookup := owner.lookup(tmpl.Name)
 
 		if _, err := dtr.client.Apply("dcim", "power-port-templates", lookup, payload); err != nil {
 			return fmt.Errorf("failed to reconcile power port template %s: %w", tmpl.Name, err)
@@ -379,24 +463,18 @@ func (dtr *DeviceTypeReconciler) reconcilePowerPortTemplates(deviceTypeID int, t
 // reconcilePowerOutletTemplates reconciles power outlet templates. An outlet
 // may name the power port template that feeds it; that port is resolved by
 // name on the same device type, so power ports must be reconciled first.
-func (dtr *DeviceTypeReconciler) reconcilePowerOutletTemplates(deviceTypeID int, templates []models.PowerOutletTemplate) error {
+func (dtr *DeviceTypeReconciler) reconcilePowerOutletTemplates(owner templateOwner, templates []models.PowerOutletTemplate) error {
 	for _, tmpl := range templates {
-		payload := map[string]interface{}{
-			"device_type": deviceTypeID,
-			"name":        tmpl.Name,
-		}
+		payload := owner.payload(tmpl.Name)
 		if tmpl.Type != "" {
 			payload["type"] = tmpl.Type
 		}
-		if tmpl.FeedLeg != "" {
-			payload["feed_leg"] = tmpl.FeedLeg
-		}
+		setIfPresent(payload, map[string]string{
+			"label": tmpl.Label, "description": tmpl.Description, "feed_leg": tmpl.FeedLeg,
+		})
 
 		if tmpl.PowerPort != "" {
-			powerPorts, err := dtr.client.Filter("dcim", "power-port-templates", map[string]interface{}{
-				"device_type_id": deviceTypeID,
-				"name":           tmpl.PowerPort,
-			})
+			powerPorts, err := dtr.client.Filter("dcim", "power-port-templates", owner.lookup(tmpl.PowerPort))
 			if err != nil {
 				return fmt.Errorf("failed to look up power port %s for outlet %s: %w", tmpl.PowerPort, tmpl.Name, err)
 			}
@@ -407,10 +485,7 @@ func (dtr *DeviceTypeReconciler) reconcilePowerOutletTemplates(deviceTypeID int,
 			}
 		}
 
-		lookup := map[string]interface{}{
-			"device_type_id": deviceTypeID,
-			"name":           tmpl.Name,
-		}
+		lookup := owner.lookup(tmpl.Name)
 
 		if _, err := dtr.client.Apply("dcim", "power-outlet-templates", lookup, payload); err != nil {
 			return fmt.Errorf("failed to reconcile power outlet template %s: %w", tmpl.Name, err)
@@ -421,12 +496,9 @@ func (dtr *DeviceTypeReconciler) reconcilePowerOutletTemplates(deviceTypeID int,
 }
 
 // reconcileModuleBayTemplates reconciles module bay templates
-func (dtr *DeviceTypeReconciler) reconcileModuleBayTemplates(deviceTypeID int, templates []models.ModuleBayTemplate) error {
+func (dtr *DeviceTypeReconciler) reconcileModuleBayTemplates(owner templateOwner, templates []models.ModuleBayTemplate) error {
 	for _, tmpl := range templates {
-		payload := map[string]interface{}{
-			"device_type": deviceTypeID,
-			"name":        tmpl.Name,
-		}
+		payload := owner.payload(tmpl.Name)
 
 		if tmpl.Label != "" {
 			payload["label"] = tmpl.Label
@@ -438,10 +510,7 @@ func (dtr *DeviceTypeReconciler) reconcileModuleBayTemplates(deviceTypeID int, t
 			payload["position"] = tmpl.Position
 		}
 
-		lookup := map[string]interface{}{
-			"device_type_id": deviceTypeID,
-			"name":           tmpl.Name,
-		}
+		lookup := owner.lookup(tmpl.Name)
 
 		delete(payload, "tags")
 
@@ -455,12 +524,10 @@ func (dtr *DeviceTypeReconciler) reconcileModuleBayTemplates(deviceTypeID int, t
 }
 
 // reconcileDeviceBayTemplates reconciles device bay templates
-func (dtr *DeviceTypeReconciler) reconcileDeviceBayTemplates(deviceTypeID int, templates []models.DeviceBayTemplate) error {
+// Device bays exist only on device types; NetBox rejects module_type here.
+func (dtr *DeviceTypeReconciler) reconcileDeviceBayTemplates(owner templateOwner, templates []models.DeviceBayTemplate) error {
 	for _, tmpl := range templates {
-		payload := map[string]interface{}{
-			"device_type": deviceTypeID,
-			"name":        tmpl.Name,
-		}
+		payload := owner.payload(tmpl.Name)
 
 		if tmpl.Label != "" {
 			payload["label"] = tmpl.Label
@@ -469,10 +536,7 @@ func (dtr *DeviceTypeReconciler) reconcileDeviceBayTemplates(deviceTypeID int, t
 			payload["description"] = tmpl.Description
 		}
 
-		lookup := map[string]interface{}{
-			"device_type_id": deviceTypeID,
-			"name":           tmpl.Name,
-		}
+		lookup := owner.lookup(tmpl.Name)
 
 		delete(payload, "tags")
 

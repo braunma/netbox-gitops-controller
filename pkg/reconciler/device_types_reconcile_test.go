@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
@@ -231,4 +232,82 @@ func TestReconcileDeviceTypesMultiPositionPorts(t *testing.T) {
 	if got := byName["breakout-2"]["rear_port_position"]; got != float64(1) {
 		t.Errorf("breakout-2 rear_port_position = %v, want the default 1", got)
 	}
+}
+
+// TestReconcileModuleTypeComponents covers module type component templates,
+// which NetBox hangs off the same endpoints as device type templates using
+// module_type instead of device_type. Before this, a module type was created
+// as a bare name and its hardware was silently dropped.
+func TestReconcileModuleTypeComponents(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	dtr := NewDeviceTypeReconciler(c)
+
+	enabled := false
+	moduleTypes := []*models.ModuleType{{
+		Model:        "Broadcom 5720 rNIC",
+		Slug:         "broadcom-5720-rnic",
+		Manufacturer: "Dell",
+		PartNumber:   "0FM487",
+		Interfaces: []models.InterfaceTemplate{
+			// The {module} placeholder must reach NetBox untouched.
+			{Name: "{module}-1GbE-0", Type: "1000base-t", Label: "1"},
+			{Name: "{module}-1GbE-1", Type: "1000base-t", Label: "2", Enabled: &enabled},
+		},
+		PowerPorts: []models.PowerPortTemplate{
+			{Name: "PSU-{module}", Type: "iec-60320-c14", MaximumDraw: 750},
+		},
+	}}
+	if err := dtr.ReconcileModuleTypes(moduleTypes); err != nil {
+		t.Fatalf("ReconcileModuleTypes() error = %v", err)
+	}
+
+	mts := f.objects("dcim", "module-types")
+	if len(mts) != 1 || mts[0]["part_number"] != "0FM487" {
+		t.Fatalf("module types = %+v", mts)
+	}
+	mtID := utils.GetIDFromObject(mts[0])
+
+	ifs := f.objects("dcim", "interface-templates")
+	if len(ifs) != 2 {
+		t.Fatalf("expected 2 interface templates, got %d", len(ifs))
+	}
+	for _, i := range ifs {
+		// The owner must be the module type, not a device type.
+		if utils.GetIDFromObject(i["module_type"]) != mtID {
+			t.Errorf("interface template %v is not owned by the module type", i["name"])
+		}
+		if _, wrongOwner := i["device_type"]; wrongOwner {
+			t.Errorf("interface template %v also carries a device_type", i["name"])
+		}
+	}
+	byName := map[string]client.Object{}
+	for _, i := range ifs {
+		name, _ := i["name"].(string)
+		byName[name] = i
+	}
+	if _, ok := byName["{module}-1GbE-0"]; !ok {
+		t.Errorf("the {module} placeholder was rewritten: %v", byName)
+	}
+	if byName["{module}-1GbE-0"]["label"] != "1" {
+		t.Errorf("label = %v, want 1", byName["{module}-1GbE-0"]["label"])
+	}
+	// enabled defaults to true in NetBox, so it is only sent when declared.
+	if _, sent := byName["{module}-1GbE-0"]["enabled"]; sent {
+		t.Error("enabled was sent for an interface that did not declare it")
+	}
+	if byName["{module}-1GbE-1"]["enabled"] != false {
+		t.Errorf("enabled = %v, want the declared false", byName["{module}-1GbE-1"]["enabled"])
+	}
+
+	pps := f.objects("dcim", "power-port-templates")
+	if len(pps) != 1 || utils.GetIDFromObject(pps[0]["module_type"]) != mtID {
+		t.Errorf("power port templates = %+v", pps)
+	}
+
+	// A second run must be a no-op.
+	f.resetMutations()
+	if err := dtr.ReconcileModuleTypes(moduleTypes); err != nil {
+		t.Fatalf("ReconcileModuleTypes() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
 }
