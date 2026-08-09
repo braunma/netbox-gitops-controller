@@ -38,6 +38,20 @@ var (
 // validPhases are the values accepted by --only, in execution order.
 var validPhases = []string{"foundation", "network", "device-types", "devices", "virtualization"}
 
+// Build metadata, injected at link time:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags --always) \
+//	                   -X main.commit=$(git rev-parse --short HEAD) \
+//	                   -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+//
+// The defaults are what a plain `go build` produces, so an unstamped binary
+// says so rather than claiming a version it does not have.
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
+
 // exitCode is set by runSync (e.g. 2 for --detailed-exitcode with pending
 // changes) and applied after cobra finishes.
 var exitCode int
@@ -48,6 +62,10 @@ func main() {
 		Short: "NetBox GitOps Controller",
 		Long:  `Declarative infrastructure management for NetBox using YAML definitions`,
 		RunE:  runSync,
+		// Usage is for misuse of the CLI. A failure from a sync is not that,
+		// and printing the whole flag list after it buries the actual error.
+		SilenceUsage: true,
+		Version:      fmt.Sprintf("%s (commit %s, built %s)", version, commit, buildDate),
 	}
 
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate changes without applying them")

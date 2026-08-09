@@ -30,6 +30,11 @@ func (s *Site) Validate() error {
 		"name": s.Name,
 		"slug": s.Slug,
 	})
+	errs = appendNonNil(errs,
+		validateChoice("status", s.Status, SiteStatuses),
+		validateLength("name", s.Name, MaxNameLength),
+		validateLength("slug", s.Slug, MaxNameLength),
+	)
 	return wrap("site", s.Name, errs)
 }
 
@@ -39,6 +44,10 @@ func (r *Rack) Validate() error {
 		"name":      r.Name,
 		"site_slug": r.SiteSlug,
 	})
+	errs = appendNonNil(errs,
+		validateChoice("status", r.Status, RackStatuses),
+		validateLength("name", r.Name, MaxNameLength),
+	)
 	return wrap("rack", r.Name, errs)
 }
 
@@ -78,6 +87,10 @@ func (v *VLAN) Validate() error {
 	if v.VID < 1 || v.VID > 4094 {
 		errs = append(errs, fmt.Errorf("vid must be between 1 and 4094, got %d", v.VID))
 	}
+	errs = appendNonNil(errs,
+		validateChoice("status", v.Status, VLANStatuses),
+		validateLength("name", v.Name, MaxVLANNameLength),
+	)
 	return wrap("vlan", v.Name, errs)
 }
 
@@ -102,6 +115,7 @@ func (v *VRF) Validate() error {
 // Validate checks required fields of a Prefix.
 func (p *Prefix) Validate() error {
 	errs := requireFields(map[string]string{"prefix": p.Prefix})
+	errs = appendNonNil(errs, validateChoice("status", p.Status, PrefixStatuses))
 	return wrap("prefix", p.Prefix, errs)
 }
 
@@ -124,6 +138,14 @@ func (d *DeviceType) Validate() error {
 		"slug":         d.Slug,
 		"manufacturer": d.Manufacturer,
 	})
+	errs = appendNonNil(errs,
+		validateChoice("subdevice_role", d.SubdeviceRole, SubdeviceRoles),
+		validateChoice("airflow", d.Airflow, DeviceTypeAirflows),
+		validateChoice("weight_unit", d.WeightUnit, WeightUnits),
+		validateLength("model", d.Model, MaxNameLength),
+		validateLength("slug", d.Slug, MaxNameLength),
+		validateLength("part_number", d.PartNumber, MaxPartNumberLength),
+	)
 
 	for i, iface := range d.Interfaces {
 		if iface.Name == "" {
@@ -201,6 +223,13 @@ func (d *DeviceConfig) Validate() error {
 	if d.DeviceBay != "" && d.ParentDevice == "" {
 		errs = append(errs, errors.New("parent_device is required when device_bay is set"))
 	}
+	errs = appendNonNil(errs,
+		validateChoice("status", d.Status, DeviceStatuses),
+		validateChoice("face", d.Face, DeviceFaces),
+		validateLength("name", d.Name, MaxDeviceNameLength),
+		validateLength("serial", d.Serial, MaxSerialLength),
+		validateLength("asset_tag", d.AssetTag, MaxAssetTagLength),
+	)
 
 	for i, iface := range d.Interfaces {
 		if iface.Name == "" {
@@ -323,6 +352,10 @@ func (v *VMConfig) Validate() error {
 	if v.Cluster == "" && v.SiteSlug == "" {
 		errs = append(errs, errors.New("one of cluster or site_slug is required"))
 	}
+	errs = appendNonNil(errs,
+		validateChoice("status", v.Status, VMStatuses),
+		validateLength("name", v.Name, MaxDeviceNameLength),
+	)
 
 	// When a VM opts into Proxmox provisioning, the facts Terraform needs must
 	// be present up front so the error surfaces in --dry-run/yamlcheck rather

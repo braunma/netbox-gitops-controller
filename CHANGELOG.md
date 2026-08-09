@@ -14,6 +14,20 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **Pre-flight validation of NetBox choices and field lengths.** Statuses,
+  `face`, `subdevice_role`, `airflow` and `weight_unit` are checked against the
+  choice sets NetBox actually publishes, and names, serials, asset tags and
+  part numbers against its length limits. These were previously rejected by
+  the API partway through a sync, after earlier objects had already been
+  written; they now fail in `yamlcheck` and `--dry-run` before anything is
+  touched. Lengths are counted in runes, so a name of non-ASCII characters is
+  not rejected early. A release that adds a choice can be accommodated by
+  extending the sets in `pkg/models/choices.go`.
+- **`--version`**, reporting the version, commit and build date stamped at link
+  time. `make build` and the CI build job stamp it; an unstamped binary reports
+  `dev` rather than claiming a version it does not have.
+- **A `Dockerfile`** building a static binary onto a distroless base, with the
+  build and runtime images overridable by `--build-arg` for on-prem registries.
 - **NetBox v2 API token support.** NetBox 4.5 introduced peppered "v2" tokens,
   sent as `Authorization: Bearer nbt_<key>.<secret>`; the older v1 token is
   sent as `Authorization: Token <key>`. The controller now picks the header
@@ -81,6 +95,21 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **Pruning no longer deletes an object that is still in use.** An orphan was
+  decided purely by "carries the managed tag and was not reconciled this run",
+  so removing a site from YAML while a VLAN still declared it made the site
+  look orphaned. Deleting it was either refused by NetBox with a 409 — after
+  other objects had already been deleted — or, for a nullable foreign key,
+  would have silently unlinked the referring object. References made during
+  the run are now tracked, and a referenced object is kept with an explanation
+  instead of deleted.
+- **A failed prune reports what it already deleted.** Pruning stopped at the
+  first error, leaving deletions applied and no account of them. It now
+  continues past a failure, deletes what it safely can, says plainly when
+  NetBox has been left partially pruned, and reports every failure at the end.
+- **A runtime failure no longer prints the whole flag list after the error**
+  (`SilenceUsage`), which had buried the actual message under 14 lines of
+  usage text.
 - **An object declaring no `status` no longer fails the run.** NetBox rejects
   an empty status with "This field may not be blank" instead of applying its
   own default, and sites, racks, VLANs and prefixes sent the field

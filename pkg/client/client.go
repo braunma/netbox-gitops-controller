@@ -42,6 +42,10 @@ type NetBoxClient struct {
 	seenMu     sync.Mutex
 	seen       map[string]map[int]bool
 	incomplete map[string]bool
+	// referenced records objects that something reconciled this run points at,
+	// keyed by "app/endpoint". Prune refuses to delete them: an object still in
+	// use is not an orphan, whatever the YAML no longer says about it.
+	referenced map[string]map[int]bool
 }
 
 // NewClient creates a new NetBox API client
@@ -337,6 +341,7 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	}
 
 	c.logger.Debug("  → Applying %s with lookup: %v", endpoint, lookup)
+	c.markReferenced(payload)
 
 	// A lookup scoped by a reference that does not exist yet cannot match
 	// anything, so skip the query and plan a create. This happens in --dry-run
@@ -427,6 +432,109 @@ func unresolvedReference(lookup map[string]interface{}) (string, bool) {
 		}
 	}
 	return "", false
+}
+
+// referenceFieldEndpoints maps the payload fields that carry an object
+// reference to the endpoint that object lives at. Only unambiguous fields are
+// listed: mis-attributing a reference would make Prune skip a genuine orphan,
+// which is worse than missing one and letting NetBox's own foreign-key check
+// catch it. Fields whose target depends on context ("group", "parent") are
+// deliberately absent.
+var referenceFieldEndpoints = map[string]string{
+	"site":            "dcim/sites",
+	"rack":            "dcim/racks",
+	"device":          "dcim/devices",
+	"device_type":     "dcim/device-types",
+	"module_type":     "dcim/module-types",
+	"platform":        "dcim/platforms",
+	"manufacturer":    "dcim/manufacturers",
+	"role":            "dcim/device-roles",
+	"tenant":          "tenancy/tenants",
+	"vrf":             "ipam/vrfs",
+	"vlan":            "ipam/vlans",
+	"untagged_vlan":   "ipam/vlans",
+	"tagged_vlans":    "ipam/vlans",
+	"cluster":         "virtualization/clusters",
+	"virtual_machine": "virtualization/virtual-machines",
+	"lag":             "dcim/interfaces",
+	"rear_port":       "dcim/rear-ports",
+}
+
+// markReferenced records every object reference carried by an outgoing
+// payload. A string value is ignored: some fields (a prefix's `role`) are sent
+// as a name rather than an ID.
+func (c *NetBoxClient) markReferenced(payload map[string]interface{}) {
+	for key, value := range payload {
+		endpoint, ok := referenceFieldEndpoints[key]
+		if !ok {
+			continue
+		}
+		for _, id := range referenceIDs(value) {
+			c.markReferencedID(endpoint, id)
+		}
+	}
+
+	// rear_ports (NetBox 4.6 front port terminations) nests its references one
+	// level down, as {position, rear_port, rear_port_position}.
+	if mappings, ok := payload["rear_ports"].([]interface{}); ok {
+		for _, m := range mappings {
+			entry, ok := m.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for _, id := range referenceIDs(entry["rear_port"]) {
+				c.markReferencedID("dcim/rear-ports", id)
+			}
+		}
+	}
+}
+
+// referenceIDs extracts the object IDs a payload value refers to, covering the
+// scalar and list forms the reconcilers send.
+func referenceIDs(value interface{}) []int {
+	switch v := value.(type) {
+	case int:
+		if v > 0 {
+			return []int{v}
+		}
+	case []int:
+		out := make([]int, 0, len(v))
+		for _, id := range v {
+			if id > 0 {
+				out = append(out, id)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]int, 0, len(v))
+		for _, item := range v {
+			if id := utils.GetIDFromObject(item); id > 0 {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func (c *NetBoxClient) markReferencedID(endpoint string, id int) {
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	if c.referenced == nil {
+		c.referenced = make(map[string]map[int]bool)
+	}
+	if c.referenced[endpoint] == nil {
+		c.referenced[endpoint] = make(map[int]bool)
+	}
+	c.referenced[endpoint][id] = true
+}
+
+// isReferenced reports whether something reconciled this run points at the
+// given object.
+func (c *NetBoxClient) isReferenced(app, endpoint string, id int) bool {
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	return c.referenced[app+"/"+endpoint][id]
 }
 
 // formatLookup formats lookup criteria for display
