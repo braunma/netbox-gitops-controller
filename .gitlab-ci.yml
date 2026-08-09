@@ -221,6 +221,8 @@ e2e:
   script:
     - echo "🔁 Running end-to-end tests against ${NETBOX_URL}..."
     - tests/e2e/run.sh
+    - echo "🔁 Verifying that renames edit objects instead of duplicating them..."
+    - tests/e2e/rename.sh
   rules:
     - if: $RUN_E2E != "true"
       when: never

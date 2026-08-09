@@ -37,6 +37,11 @@ type dtlDeviceType struct {
 	Comments      string   `yaml:"comments"`
 	Weight        float64  `yaml:"weight"`
 	WeightUnit    string   `yaml:"weight_unit"`
+	// RenameFrom is not part of the published library schema; it is accepted
+	// because a curated library tree is still yours to correct, and rejecting
+	// it there would mean the rename has to be done from a local override
+	// instead. Upstream files never carry it.
+	RenameFrom string `yaml:"rename_from"`
 
 	ConsolePorts       []dtlNamedType   `yaml:"console-ports"`
 	ConsoleServerPorts []dtlNamedType   `yaml:"console-server-ports"`
@@ -273,6 +278,7 @@ func (d *dtlDeviceType) toModel() (*models.DeviceType, error) {
 		Model:         d.Model,
 		Slug:          slug,
 		Manufacturer:  d.Manufacturer,
+		RenameFrom:    d.RenameFrom,
 		PartNumber:    d.PartNumber,
 		UHeight:       uHeight,
 		IsFullDepth:   isFullDepth,
@@ -341,6 +347,11 @@ type dtlModuleType struct {
 	Comments     string  `yaml:"comments"`
 	Weight       float64 `yaml:"weight"`
 	WeightUnit   string  `yaml:"weight_unit"`
+	// RenameFrom is not part of the published library schema; it is accepted
+	// because a curated library tree is still yours to correct, and rejecting
+	// it there would mean the rename has to be done from a local override
+	// instead. Upstream files never carry it.
+	RenameFrom string `yaml:"rename_from"`
 
 	ConsolePorts       []dtlNamedType   `yaml:"console-ports"`
 	ConsoleServerPorts []dtlNamedType   `yaml:"console-server-ports"`
@@ -465,6 +476,7 @@ func (d *dtlModuleType) toModel() (*models.ModuleType, error) {
 
 	mt := &models.ModuleType{
 		Model:        d.Model,
+		RenameFrom:   d.RenameFrom,
 		Manufacturer: d.Manufacturer,
 		// NetBox module types have no slug; this one is a local cache key only,
 		// so it is derived from the model rather than read from the file.

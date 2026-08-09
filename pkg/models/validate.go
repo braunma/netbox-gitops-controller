@@ -5,6 +5,8 @@ package models
 import (
 	"errors"
 	"fmt"
+	"strconv"
+	"strings"
 )
 
 // Validator is implemented by all YAML models so the loader can reject
@@ -36,6 +38,7 @@ func (s *Site) Validate() error {
 		validateChoice("status", s.Status, SiteStatuses),
 		validateLength("name", s.Name, MaxNameLength),
 		validateLength("slug", s.Slug, MaxNameLength),
+		validateRename("slug", s.RenameFrom, s.Slug),
 	)
 	return wrap("site", s.Name, errs)
 }
@@ -49,6 +52,7 @@ func (r *Rack) Validate() error {
 	errs = appendNonNil(errs,
 		validateChoice("status", r.Status, RackStatuses),
 		validateLength("name", r.Name, MaxNameLength),
+		validateRename("name", r.RenameFrom, r.Name),
 	)
 	return wrap("rack", r.Name, errs)
 }
@@ -59,6 +63,7 @@ func (r *Role) Validate() error {
 		"name": r.Name,
 		"slug": r.Slug,
 	})
+	errs = appendNonNil(errs, validateRename("slug", r.RenameFrom, r.Slug))
 	return wrap("role", r.Name, errs)
 }
 
@@ -68,6 +73,7 @@ func (t *Tag) Validate() error {
 		"name": t.Name,
 		"slug": t.Slug,
 	})
+	errs = appendNonNil(errs, validateRename("slug", t.RenameFrom, t.Slug))
 	return wrap("tag", t.Name, errs)
 }
 
@@ -77,6 +83,7 @@ func (m *Manufacturer) Validate() error {
 		"name": m.Name,
 		"slug": m.Slug,
 	})
+	errs = appendNonNil(errs, validateRename("slug", m.RenameFrom, m.Slug))
 	return wrap("manufacturer", m.Name, errs)
 }
 
@@ -92,6 +99,7 @@ func (v *VLAN) Validate() error {
 	errs = appendNonNil(errs,
 		validateChoice("status", v.Status, VLANStatuses),
 		validateLength("name", v.Name, MaxVLANNameLength),
+		validateRenameVID(v.RenameFrom, v.VID),
 	)
 	return wrap("vlan", v.Name, errs)
 }
@@ -105,19 +113,24 @@ func (g *VLANGroup) Validate() error {
 	if g.MinVID > 0 && g.MaxVID > 0 && g.MinVID > g.MaxVID {
 		errs = append(errs, fmt.Errorf("min_vid (%d) must not exceed max_vid (%d)", g.MinVID, g.MaxVID))
 	}
+	errs = appendNonNil(errs, validateRename("slug", g.RenameFrom, g.Slug))
 	return wrap("vlan group", g.Name, errs)
 }
 
 // Validate checks required fields of a VRF.
 func (v *VRF) Validate() error {
 	errs := requireFields(map[string]string{"name": v.Name})
+	errs = appendNonNil(errs, validateRename("name", v.RenameFrom, v.Name))
 	return wrap("vrf", v.Name, errs)
 }
 
 // Validate checks required fields of a Prefix.
 func (p *Prefix) Validate() error {
 	errs := requireFields(map[string]string{"prefix": p.Prefix})
-	errs = appendNonNil(errs, validateChoice("status", p.Status, PrefixStatuses))
+	errs = appendNonNil(errs,
+		validateChoice("status", p.Status, PrefixStatuses),
+		validateRename("prefix", p.RenameFrom, p.Prefix),
+	)
 	return wrap("prefix", p.Prefix, errs)
 }
 
@@ -131,6 +144,7 @@ func (m *ModuleType) Validate() error {
 	errs = appendNonNil(errs,
 		validateChoice("airflow", m.Airflow, DeviceTypeAirflows),
 		validateChoice("weight_unit", m.WeightUnit, WeightUnits),
+		validateRename("model", m.RenameFrom, m.Model),
 		validateLength("model", m.Model, MaxNameLength),
 		validateLength("part_number", m.PartNumber, MaxPartNumberLength),
 	)
@@ -202,6 +216,7 @@ func (d *DeviceType) Validate() error {
 		validateChoice("subdevice_role", d.SubdeviceRole, SubdeviceRoles),
 		validateChoice("airflow", d.Airflow, DeviceTypeAirflows),
 		validateChoice("weight_unit", d.WeightUnit, WeightUnits),
+		validateRename("slug", d.RenameFrom, d.Slug),
 		validateLength("model", d.Model, MaxNameLength),
 		validateLength("slug", d.Slug, MaxNameLength),
 		validateLength("part_number", d.PartNumber, MaxPartNumberLength),
@@ -286,6 +301,7 @@ func (d *DeviceConfig) Validate() error {
 	errs = appendNonNil(errs,
 		validateChoice("status", d.Status, DeviceStatuses),
 		validateChoice("face", d.Face, DeviceFaces),
+		validateRename("name", d.RenameFrom, d.Name),
 		validateLength("name", d.Name, MaxDeviceNameLength),
 		validateLength("serial", d.Serial, MaxSerialLength),
 		validateLength("asset_tag", d.AssetTag, MaxAssetTagLength),
@@ -301,6 +317,9 @@ func (d *DeviceConfig) Validate() error {
 		}
 		if iface.IP != nil && iface.IP.Address == "" {
 			errs = append(errs, fmt.Errorf("interface %q: ip.address is required", iface.Name))
+		}
+		if err := validateRename("name", iface.RenameFrom, iface.Name); err != nil {
+			errs = append(errs, fmt.Errorf("interface %q: %w", iface.Name, err))
 		}
 	}
 	for i, fp := range d.FrontPorts {
@@ -343,6 +362,7 @@ func (p *Platform) Validate() error {
 		"name": p.Name,
 		"slug": p.Slug,
 	})
+	errs = appendNonNil(errs, validateRename("slug", p.RenameFrom, p.Slug))
 	return wrap("platform", p.Name, errs)
 }
 
@@ -352,6 +372,7 @@ func (g *TenantGroup) Validate() error {
 		"name": g.Name,
 		"slug": g.Slug,
 	})
+	errs = appendNonNil(errs, validateRename("slug", g.RenameFrom, g.Slug))
 	return wrap("tenant group", g.Name, errs)
 }
 
@@ -364,6 +385,7 @@ func (c *CustomField) Validate() error {
 	if len(c.ObjectTypes) == 0 {
 		errs = append(errs, errors.New("object_types must list at least one content type (e.g. virtualization.virtualmachine)"))
 	}
+	errs = appendNonNil(errs, validateRename("name", c.RenameFrom, c.Name))
 	return wrap("custom field", c.Name, errs)
 }
 
@@ -373,6 +395,7 @@ func (t *Tenant) Validate() error {
 		"name": t.Name,
 		"slug": t.Slug,
 	})
+	errs = appendNonNil(errs, validateRename("slug", t.RenameFrom, t.Slug))
 	return wrap("tenant", t.Name, errs)
 }
 
@@ -382,6 +405,7 @@ func (c *ClusterType) Validate() error {
 		"name": c.Name,
 		"slug": c.Slug,
 	})
+	errs = appendNonNil(errs, validateRename("slug", c.RenameFrom, c.Slug))
 	return wrap("cluster type", c.Name, errs)
 }
 
@@ -391,6 +415,7 @@ func (c *ClusterGroup) Validate() error {
 		"name": c.Name,
 		"slug": c.Slug,
 	})
+	errs = appendNonNil(errs, validateRename("slug", c.RenameFrom, c.Slug))
 	return wrap("cluster group", c.Name, errs)
 }
 
@@ -400,6 +425,7 @@ func (c *Cluster) Validate() error {
 		"name":      c.Name,
 		"type_slug": c.TypeSlug,
 	})
+	errs = appendNonNil(errs, validateRename("name", c.RenameFrom, c.Name))
 	return wrap("cluster", c.Name, errs)
 }
 
@@ -414,6 +440,7 @@ func (v *VMConfig) Validate() error {
 	}
 	errs = appendNonNil(errs,
 		validateChoice("status", v.Status, VMStatuses),
+		validateRename("name", v.RenameFrom, v.Name),
 		validateLength("name", v.Name, MaxDeviceNameLength),
 	)
 
@@ -439,6 +466,9 @@ func (v *VMConfig) Validate() error {
 		}
 		if iface.IP != nil && iface.IP.Address == "" {
 			errs = append(errs, fmt.Errorf("interface %q: ip.address is required", iface.Name))
+		}
+		if err := validateRename("name", iface.RenameFrom, iface.Name); err != nil {
+			errs = append(errs, fmt.Errorf("interface %q: %w", iface.Name, err))
 		}
 	}
 
@@ -468,4 +498,51 @@ func wrap(kind, name string, errs []error) error {
 		name = "<unnamed>"
 	}
 	return fmt.Errorf("%s %q: %w", kind, name, errors.Join(errs...))
+}
+
+// validateRename checks a declared rename_from against the identity it is meant
+// to replace.
+//
+// The value must name what the object used to be called, so declaring the
+// value it already has is always a mistake: it reads as "rename this to
+// itself", does nothing, and usually means the field was filled in after the
+// rename had already been applied instead of being deleted. Saying so at
+// validation time is better than a silent no-op, because the user is expecting
+// a rename to happen.
+//
+// field names the identifying attribute for this object type, so the message
+// can say which one rename_from refers to — they differ per object (slug, name,
+// model, prefix, vid).
+func validateRename(field, renameFrom, current string) error {
+	if renameFrom == "" {
+		return nil
+	}
+	if renameFrom == current {
+		return fmt.Errorf(
+			"rename_from is the same as the current %s (%q); it must be the previous %s, or be removed",
+			field, current, field)
+	}
+	return nil
+}
+
+// validateRenameVID checks a rename_from that carries a VLAN's previous VID.
+// VLANs are identified by VID rather than by name, so the declaration is a
+// number in string form and has to be a VID NetBox could have held.
+func validateRenameVID(renameFrom string, current int) error {
+	if renameFrom == "" {
+		return nil
+	}
+	vid, err := strconv.Atoi(strings.TrimSpace(renameFrom))
+	if err != nil {
+		return fmt.Errorf(
+			"rename_from must be the previous vid (a number), got %q; a VLAN is identified by its vid,"+
+				" and correcting only its name needs no rename_from", renameFrom)
+	}
+	if vid < 1 || vid > 4094 {
+		return fmt.Errorf("rename_from must be a vid between 1 and 4094, got %d", vid)
+	}
+	if vid == current {
+		return fmt.Errorf("rename_from is the same as the current vid (%d); it must be the previous vid, or be removed", current)
+	}
+	return nil
 }

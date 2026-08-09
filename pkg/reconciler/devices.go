@@ -287,6 +287,11 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		"site_id": siteID,
 	}
 
+	lookup, err := dr.client.RenamedLookup("dcim", "devices", device.Name, lookup, "name", nonEmpty(device.RenameFrom))
+	if err != nil {
+		return err
+	}
+
 	deviceObj, err := dr.client.Apply("dcim", "devices", lookup, payload)
 	if err != nil {
 		return fmt.Errorf("failed to apply device: %w", err)
@@ -408,6 +413,10 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 			"name":      iface.Name,
 		}
 
+		lookup, err := dr.client.RenamedLookup("dcim", "interfaces", iface.Name, lookup, "name", nonEmpty(iface.RenameFrom))
+		if err != nil {
+			return err
+		}
 		ifaceObj, err := dr.client.Apply("dcim", "interfaces", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to apply interface %s: %w", iface.Name, err)

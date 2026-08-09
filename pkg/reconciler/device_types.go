@@ -217,6 +217,10 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 		// just planned. NetBox rejects manufacturer_id=0 as an invalid choice,
 		// which used to abort the very first dry-run against an empty NetBox;
 		// matching on model alone is enough to plan against.
+		lookup, err := dtr.client.RenamedLookup("dcim", "module-types", mt.Model, lookup, "model", nonEmpty(mt.RenameFrom))
+		if err != nil {
+			return err
+		}
 		mtObj, err := dtr.client.Apply("dcim", "module-types", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile module type %s: %w", mt.Model, err)
@@ -316,6 +320,10 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 		}
 
 		lookup := map[string]interface{}{"slug": dt.Slug}
+		lookup, err := dtr.client.RenamedLookup("dcim", "device-types", dt.Model, lookup, "slug", client.SlugifiedRename(dt.RenameFrom))
+		if err != nil {
+			return err
+		}
 		dtObj, err := dtr.client.Apply("dcim", "device-types", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile device type %s: %w", dt.Model, err)

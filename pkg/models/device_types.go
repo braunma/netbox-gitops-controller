@@ -90,16 +90,20 @@ type DeviceBayTemplate struct {
 // same module type in two bays does not produce colliding interface names.
 // Names are therefore passed through verbatim and never slugified.
 type ModuleType struct {
-	Model        string   `yaml:"model" json:"model" validate:"required"`
-	Slug         string   `yaml:"slug,omitempty" json:"slug,omitempty"`
-	Manufacturer string   `yaml:"manufacturer" json:"manufacturer" validate:"required"`
-	PartNumber   string   `yaml:"part_number,omitempty" json:"part_number,omitempty"`
-	Airflow      string   `yaml:"airflow,omitempty" json:"airflow,omitempty"`
-	Description  string   `yaml:"description,omitempty" json:"description,omitempty"`
-	Comments     string   `yaml:"comments,omitempty" json:"comments,omitempty"`
-	Weight       float64  `yaml:"weight,omitempty" json:"weight,omitempty"`
-	WeightUnit   string   `yaml:"weight_unit,omitempty" json:"weight_unit,omitempty"`
-	Tags         []string `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Model        string `yaml:"model" json:"model" validate:"required"`
+	Slug         string `yaml:"slug,omitempty" json:"slug,omitempty"`
+	Manufacturer string `yaml:"manufacturer" json:"manufacturer" validate:"required"`
+	// RenameFrom is this object's previous model. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom  string   `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
+	PartNumber  string   `yaml:"part_number,omitempty" json:"part_number,omitempty"`
+	Airflow     string   `yaml:"airflow,omitempty" json:"airflow,omitempty"`
+	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
+	Comments    string   `yaml:"comments,omitempty" json:"comments,omitempty"`
+	Weight      float64  `yaml:"weight,omitempty" json:"weight,omitempty"`
+	WeightUnit  string   `yaml:"weight_unit,omitempty" json:"weight_unit,omitempty"`
+	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 
 	Interfaces         []InterfaceTemplate   `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
 	FrontPorts         []PortTemplate        `yaml:"front_ports,omitempty" json:"front_ports,omitempty"`
@@ -116,7 +120,11 @@ type DeviceType struct {
 	Model        string `yaml:"model" json:"model" validate:"required"`
 	Slug         string `yaml:"slug" json:"slug" validate:"required"`
 	Manufacturer string `yaml:"manufacturer" json:"manufacturer" validate:"required"`
-	PartNumber   string `yaml:"part_number,omitempty" json:"part_number,omitempty"`
+	// RenameFrom is this object's previous slug. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom string `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
+	PartNumber string `yaml:"part_number,omitempty" json:"part_number,omitempty"`
 	// UHeight is fractional in NetBox: half-height (0.5U) device types are
 	// common in the community library, and child devices use 0.
 	UHeight       float64  `yaml:"u_height,omitempty" json:"u_height,omitempty"`

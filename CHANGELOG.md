@@ -14,6 +14,29 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`rename_from`: correcting an identifying field now renames the object
+  instead of duplicating it.** Every object is matched against NetBox by an
+  identifying field — a slug, name, model, prefix or VID — so editing that field
+  used to mean the old value stopped matching: the object was created a second
+  time and the original left behind, still holding every reference that pointed
+  at it, with the run reporting success either way. Declaring the previous value
+  finds the object where it actually is and renames it through the ordinary
+  diff, so `--dry-run` reports it as the update it is, `--prune` does not reap
+  it, and the declaration becomes a no-op once applied and can be removed.
+
+  Supported on all 21 declarable object types: sites, racks, device roles,
+  platforms, tenants, tenant groups, tags, custom fields, VRFs, VLAN groups,
+  VLANs, prefixes, device types, module types, devices, device interfaces,
+  cluster types, cluster groups, clusters, virtual machines and VM interfaces.
+  Which field `rename_from` refers to is per object type and documented in the
+  README; for slug-identified objects, changing only the display name still
+  needs no declaration.
+
+  Renaming is restricted to objects carrying the `gitops` tag, because
+  `rename_from` asserts something about an object's past rather than matching
+  its current identity, and a typo in it could otherwise seize an unrelated
+  object. A declaration that matches several objects fails; one that matches
+  objects under both the old and new identity renames nothing and warns.
 - **Module types are managed as fully as device types.** `ModuleType` gained
   the component templates NetBox supports on it — interfaces, console and
   console server ports, power ports and outlets, front and rear ports, and

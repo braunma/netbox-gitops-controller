@@ -42,6 +42,10 @@ func (nr *NetworkReconciler) ReconcileVRFs(vrfs []*models.VRF) error {
 		}
 
 		lookup := map[string]interface{}{"name": vrf.Name}
+		lookup, err := nr.client.RenamedLookup("ipam", "vrfs", vrf.Name, lookup, "name", nonEmpty(vrf.RenameFrom))
+		if err != nil {
+			return err
+		}
 		vrfObj, err := nr.client.Apply("ipam", "vrfs", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VRF %s: %w", vrf.Name, err)
@@ -88,6 +92,10 @@ func (nr *NetworkReconciler) ReconcileVLANGroups(groups []*models.VLANGroup) err
 		}
 
 		lookup := map[string]interface{}{"slug": group.Slug}
+		lookup, err := nr.client.RenamedLookup("ipam", "vlan-groups", group.Name, lookup, "slug", client.SlugifiedRename(group.RenameFrom))
+		if err != nil {
+			return err
+		}
 		groupObj, err := nr.client.Apply("ipam", "vlan-groups", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN group %s: %w", group.Name, err)
@@ -174,6 +182,12 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			"vid":     vlan.VID,
 		}
 
+		// A VLAN is identified by its VID, so rename_from carries the previous
+		// VID; correcting the *name* alone needs no declaration.
+		lookup, err = nr.client.RenamedLookup("ipam", "vlans", vlan.Name, lookup, "vid", nonEmpty(vlan.RenameFrom))
+		if err != nil {
+			return err
+		}
 		vlanObj, err := nr.client.Apply("ipam", "vlans", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN %s: %w", vlan.Name, err)
@@ -256,7 +270,13 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 			}
 		}
 
-		_, err := nr.client.Apply("ipam", "prefixes", lookup, payload)
+		// A prefix is identified by the prefix itself, so rename_from carries
+		// the previous CIDR — the case where the network was typed wrong.
+		lookup, err := nr.client.RenamedLookup("ipam", "prefixes", prefix.Prefix, lookup, "prefix", nonEmpty(prefix.RenameFrom))
+		if err != nil {
+			return err
+		}
+		_, err = nr.client.Apply("ipam", "prefixes", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile prefix %s: %w", prefix.Prefix, err)
 		}

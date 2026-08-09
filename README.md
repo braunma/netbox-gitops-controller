@@ -10,6 +10,7 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
       * **Opt-in Pruning (`--prune`):** Objects removed from YAML are deleted only when you pass `--prune`, and only if they carry the `gitops` tag — manually created objects are never touched. Combine with `--dry-run` to preview. See the Pruning section below.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
+  * **Renames, not duplicates (`rename_from`):** Correcting a typo in a name, slug or other identifying field renames the existing object instead of creating a second one and orphaning the first. Supported on every managed object type. See the Renaming section below.
   * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
   * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
   * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`docs/PLAN_YAML_VM_PIPELINE.md`](docs/PLAN_YAML_VM_PIPELINE.md) and [`terraform/README.md`](terraform/README.md).
@@ -283,6 +284,63 @@ File: `inventory/hardware/active/switches.yaml`
 -----
 
 ## ⚠️ Important Concepts & Troubleshooting
+
+### Renaming an Object (Fixing a Typo)
+
+Every object is matched against NetBox by an **identifying field**. That is what
+makes the sync idempotent — and it is also why editing that field is not an
+ordinary change. The old value stops matching anything, so the object is created
+a *second* time and the original is left behind, still holding every reference
+that pointed at it. Nothing errors; you just quietly end up with two.
+
+Declare where the object came from and it is renamed in place instead:
+
+```yaml
+- name: Rack 01          # was "Rakc 01"
+  slug: rack-01
+  site_slug: frankfurt
+  rename_from: Rakc 01   # ← the previous identity
+```
+
+Once the sync has run, NetBox holds the new value, the declaration becomes a
+no-op, and you can delete the line. Leaving it in place is harmless.
+
+**Which field is the identity?** It differs per object type, because NetBox
+does. `rename_from` always holds the previous value of *that* field:
+
+| Object | Identified by | `rename_from` holds |
+|---|---|---|
+| Site, device role, platform, tenant, tenant group, tag, VLAN group, cluster type, cluster group, device type | `slug` | the old slug |
+| Rack, device, interface, VM, VM interface, cluster, VRF, custom field | `name` | the old name |
+| Module type | `model` | the old model |
+| VLAN | `vid` | the old VID, quoted (`"201"`) |
+| Prefix | `prefix` | the old CIDR |
+
+Two consequences worth knowing:
+
+  * For a slug-identified object, changing only the **name** needs no
+    declaration — the slug still matches, so it is a plain update. The same goes
+    for a VLAN's name, since a VLAN is identified by its VID.
+  * A rename changes *what an object is called*, not where it lives. The scope
+    (site, device, cluster) is carried over unchanged; moving an object between
+    scopes is a different operation and is not what this does.
+
+**Safety.** `rename_from` describes an object's past, which is weaker evidence
+than a plain identity match — a typo in it can name a real object that has
+nothing to do with your declaration. So:
+
+  * Only objects carrying the `gitops` tag can be renamed. To bring an existing
+    unmanaged object under management, declare it under the name it *already*
+    has; the next sync adopts and tags it, and it can be renamed after that.
+  * If `rename_from` matches more than one object, the sync fails rather than
+    guessing.
+  * If objects exist under **both** the old and the new identity, nothing is
+    renamed and you get a warning — which one survives is your call, not the
+    tool's.
+  * A `rename_from` that matches nothing is not an error; that is simply what it
+    looks like once it has been applied.
+
+`--dry-run` reports a rename as the update it is, without writing.
 
 ### Parking a File (Ignored Files)
 
