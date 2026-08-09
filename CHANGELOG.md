@@ -14,6 +14,26 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **NetBox v2 API token support.** NetBox 4.5 introduced peppered "v2" tokens,
+  sent as `Authorization: Bearer nbt_<key>.<secret>`; the older v1 token is
+  sent as `Authorization: Token <key>`. The controller now picks the header
+  from the token's own prefix, so either works with no extra configuration.
+  This is required for containerised deployments: the official NetBox image's
+  bootstrap only ever creates a v2 token, so the controller could not
+  authenticate against a default container install at all. NetBox 4.7 removes
+  v1 tokens entirely.
+- **End-to-end tests against a real NetBox** (`tests/e2e/`, `make e2e`).
+  Randomly generated but valid Dell inventories are driven through the full
+  lifecycle: model validation, a dry run that must write nothing, an apply, a
+  second apply that must have nothing to do, drift detection, and a prune that
+  must delete nothing — plus a check that an object the controller does not
+  manage survives a prune. Device types are split at random between the native
+  format and the community library layout, so both loader paths run on every
+  seed. Runs in GitLab CI as the opt-in `e2e` job (`RUN_E2E=true`) with
+  NetBox, PostgreSQL and Redis as CI services; `tests/e2e/provision-local.sh`
+  covers machines with no container runtime.
+- **A `Makefile`** with `build`, `test`, `lint`, `check`, `e2e` and
+  `e2e-local` targets.
 - **Community device type library support.** Device types published in the
   community library layout (`<library>/<Manufacturer>/<model>.yaml`, one
   document per file, hyphenated component keys) can now be consumed unchanged.

@@ -121,7 +121,7 @@ func (c *NetBoxClient) doWithRetry(method, requestURL string, jsonBody []byte) (
 		if err != nil {
 			return 0, nil, fmt.Errorf("failed to create request: %w", err)
 		}
-		req.Header.Set("Authorization", "Token "+c.token)
+		req.Header.Set("Authorization", c.authHeader())
 		req.Header.Set("Accept", "application/json")
 		if jsonBody != nil {
 			req.Header.Set("Content-Type", "application/json")
@@ -154,6 +154,25 @@ func (c *NetBoxClient) doWithRetry(method, requestURL string, jsonBody []byte) (
 	}
 
 	return 0, nil, fmt.Errorf("giving up after %d attempts: %w", maxRetries+1, lastErr)
+}
+
+// netboxV2TokenPrefix marks a NetBox 4.5+ "v2" API token. Such a token is
+// presented whole as "Bearer nbt_<key>.<secret>", while the older v1 token is
+// sent as "Token <key>". The prefix on the token itself is what tells them
+// apart, so an operator can paste whichever their NetBox issued without
+// configuring anything else.
+//
+// This matters for containerised deployments: the official NetBox image's
+// bootstrap only ever creates a v2 token, and v1 tokens are removed entirely
+// in NetBox 4.7.
+const netboxV2TokenPrefix = "nbt_"
+
+// authHeader returns the Authorization header value for the configured token.
+func (c *NetBoxClient) authHeader() string {
+	if strings.HasPrefix(c.token, netboxV2TokenPrefix) {
+		return "Bearer " + c.token
+	}
+	return "Token " + c.token
 }
 
 // Request makes an HTTP request to the NetBox API

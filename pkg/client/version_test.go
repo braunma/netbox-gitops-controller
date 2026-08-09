@@ -156,3 +156,29 @@ func TestCheckVersionToleratesUnavailableStatus(t *testing.T) {
 		})
 	}
 }
+
+// TestAuthHeaderPicksTokenVersion covers NetBox 4.5+ "v2" tokens. They are
+// sent whole as "Bearer nbt_<key>.<secret>" while older v1 tokens are sent as
+// "Token <key>", and the prefix on the token itself is the only thing that
+// distinguishes them. This is not optional for containerised deployments: the
+// official NetBox image's bootstrap only ever creates a v2 token, and v1
+// tokens are removed in NetBox 4.7.
+func TestAuthHeaderPicksTokenVersion(t *testing.T) {
+	tests := []struct {
+		name, token, want string
+	}{
+		{"v2 token", "nbt_abcdefghijkl.0123456789abcdef", "Bearer nbt_abcdefghijkl.0123456789abcdef"},
+		{"v1 token", "0123456789abcdef0123456789abcdef01234567", "Token 0123456789abcdef0123456789abcdef01234567"},
+		// A v1 token merely containing the letters is still a v1 token.
+		{"v1 token containing nbt_", "abcnbt_def", "Token abcnbt_def"},
+		{"empty", "", "Token "},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := &NetBoxClient{token: tt.token}
+			if got := c.authHeader(); got != tt.want {
+				t.Errorf("authHeader() = %q, want %q", got, tt.want)
+			}
+		})
+	}
+}
