@@ -43,3 +43,7 @@ bin/
 # under inventory/virtual/<env>/). They contain no secrets — credentials come
 # from CI variables, not the YAML.
 !/inventory/virtual/
+
+# Test coverage output (make test / CI)
+coverage.out
+__pycache__/

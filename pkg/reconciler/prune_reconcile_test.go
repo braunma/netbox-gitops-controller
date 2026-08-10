@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package reconciler
 
 import (
@@ -227,5 +229,51 @@ func TestPruneDeviceChildrenEndToEnd(t *testing.T) {
 	}
 	if !addrs["10.0.0.1/24"] {
 		t.Errorf("declared IP was wrongly pruned: %v", addrs)
+	}
+}
+
+// TestPruneKeepsStillReferencedObject covers a hazard found against a real
+// NetBox: removing a site from YAML while a VLAN still declares it made the
+// site look like an orphan. Deleting it was either refused by NetBox with a
+// 409 — after other objects had already been deleted — or, for a nullable
+// foreign key, would have silently unlinked the referring object.
+func TestPruneKeepsStillReferencedObject(t *testing.T) {
+	f, c := newFakeNetBox(t)
+
+	// A site that is no longer declared, but that a declared VLAN points at.
+	site := f.seed("dcim", "sites", client.Object{
+		"name": "Test Lab", "slug": "test-lab", "status": "active",
+		"tags": managedTags(c),
+	})
+	// A genuinely orphaned site nothing points at.
+	f.seed("dcim", "sites", client.Object{
+		"name": "Abandoned", "slug": "abandoned", "status": "active",
+		"tags": managedTags(c),
+	})
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	// Reconciling the VLAN records a reference to the site.
+	vlans := []*models.VLAN{{Name: "Lab VLAN", VID: 100, SiteSlug: "test-lab"}}
+	if err := NewNetworkReconciler(c).ReconcileVLANs(vlans); err != nil {
+		t.Fatalf("ReconcileVLANs() error = %v", err)
+	}
+
+	if err := c.Prune([]client.PruneTarget{{App: "dcim", Endpoint: "sites"}}); err != nil {
+		t.Fatalf("Prune() error = %v", err)
+	}
+
+	slugs := map[string]bool{}
+	for _, s := range f.objects("dcim", "sites") {
+		slug, _ := s["slug"].(string)
+		slugs[slug] = true
+	}
+	if !slugs["test-lab"] {
+		t.Errorf("the referenced site was pruned; it is still in use by a declared VLAN (id %d)",
+			utils.GetIDFromObject(site))
+	}
+	if slugs["abandoned"] {
+		t.Error("a genuinely orphaned site survived; the reference check must not keep everything")
 	}
 }

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package loader
 
 import (
@@ -6,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"sync"
 
 	"gopkg.in/yaml.v3"
 
@@ -13,18 +16,98 @@ import (
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
+// DefaultIgnorePatterns are the filename globs skipped unless the caller asks
+// for them. The underscore prefix is a parking convention: a file that is kept
+// in the repository for reference, or is owned by another system, can be taken
+// out of the sync without deleting or moving it.
+var DefaultIgnorePatterns = []string{"_*.yaml", "_*.yml"}
+
 // DataLoader handles loading and validating YAML configuration files
 type DataLoader struct {
 	basePath string
 	logger   *utils.Logger
+
+	// ignorePatterns are matched against each file's basename. Empty means
+	// nothing is skipped.
+	ignorePatterns []string
+
+	// ignored accumulates the files skipped by those patterns, so a caller can
+	// report them before doing something destructive. Loading is sequential
+	// today; the mutex keeps that an implementation detail.
+	ignoredMu sync.Mutex
+	ignored   []string
 }
 
-// NewDataLoader creates a new data loader
+// NewDataLoader creates a new data loader applying DefaultIgnorePatterns.
 func NewDataLoader(basePath string, logger *utils.Logger) *DataLoader {
 	return &DataLoader{
-		basePath: basePath,
-		logger:   logger,
+		basePath:       basePath,
+		logger:         logger,
+		ignorePatterns: DefaultIgnorePatterns,
 	}
+}
+
+// SetIgnorePatterns replaces the filename globs that are skipped while
+// loading. Passing no patterns disables skipping entirely, so every file that
+// would otherwise be parked is loaded.
+func (dl *DataLoader) SetIgnorePatterns(patterns []string) {
+	dl.ignorePatterns = patterns
+}
+
+// ValidateIgnorePatterns reports the first pattern that is not a valid glob,
+// so a typo in configuration fails at startup rather than silently matching
+// nothing.
+func ValidateIgnorePatterns(patterns []string) error {
+	for _, p := range patterns {
+		if _, err := filepath.Match(p, "probe"); err != nil {
+			return fmt.Errorf("invalid ignore pattern %q: %w", p, err)
+		}
+	}
+	return nil
+}
+
+// isIgnored reports whether a file's basename matches any ignore pattern.
+func (dl *DataLoader) isIgnored(path string) bool {
+	base := filepath.Base(path)
+	for _, pattern := range dl.ignorePatterns {
+		// A malformed pattern is rejected by ValidateIgnorePatterns at
+		// startup; here a match error can only mean "no match".
+		if ok, err := filepath.Match(pattern, base); err == nil && ok {
+			return true
+		}
+	}
+	return false
+}
+
+// filterIgnored drops the files matching an ignore pattern, reporting each one
+// so a parked file never goes unnoticed.
+func (dl *DataLoader) filterIgnored(files []string) []string {
+	if len(dl.ignorePatterns) == 0 {
+		return files
+	}
+
+	kept := make([]string, 0, len(files))
+	for _, f := range files {
+		if dl.isIgnored(f) {
+			dl.logger.Info("Ignoring %s (matches an ignore pattern; use --include-ignored-files to load it)", f)
+			dl.ignoredMu.Lock()
+			dl.ignored = append(dl.ignored, f)
+			dl.ignoredMu.Unlock()
+			continue
+		}
+		kept = append(kept, f)
+	}
+	return kept
+}
+
+// IgnoredFiles returns the files skipped so far by an ignore pattern. It lets
+// the caller warn before a destructive operation: objects declared only in a
+// parked file are invisible to this run, so pruning would treat any that this
+// controller previously created as orphans.
+func (dl *DataLoader) IgnoredFiles() []string {
+	dl.ignoredMu.Lock()
+	defer dl.ignoredMu.Unlock()
+	return append([]string(nil), dl.ignored...)
 }
 
 // LoadSites loads site definitions from a folder
@@ -251,6 +334,7 @@ func (dl *DataLoader) loadFromFolder(folder string, target interface{}) error {
 	if err != nil {
 		return fmt.Errorf("failed to find YAML files in %s: %w", targetDir, err)
 	}
+	yamlFiles = dl.filterIgnored(yamlFiles)
 
 	if len(yamlFiles) == 0 {
 		dl.logger.Warning("No YAML files found in %s", folder)

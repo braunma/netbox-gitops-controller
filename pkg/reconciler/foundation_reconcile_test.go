@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package reconciler
 
 import (
@@ -309,5 +311,48 @@ func TestReconcileTagsCreatesTags(t *testing.T) {
 	}
 	if found["color"] != "00ff00" {
 		t.Errorf("tag color = %v, expected 3-digit color expanded to \"00ff00\"", found["color"])
+	}
+}
+
+// TestDefaultStatus covers a class found with randomly generated data: NetBox
+// rejects an empty status with "This field may not be blank" rather than
+// applying its own default, so an object whose YAML simply omits the field
+// used to fail the whole run.
+func TestDefaultStatus(t *testing.T) {
+	if got := defaultStatus(""); got != "active" {
+		t.Errorf("defaultStatus(\"\") = %q, want active", got)
+	}
+	for _, explicit := range []string{"planned", "offline", "reserved", "deprecated"} {
+		if got := defaultStatus(explicit); got != explicit {
+			t.Errorf("defaultStatus(%q) = %q, want it preserved", explicit, got)
+		}
+	}
+}
+
+// TestReconcileRacksDefaultsStatus is the end-to-end form: a rack declared
+// without a status must still be created.
+func TestReconcileRacksDefaultsStatus(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	site := f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	racks := []*models.Rack{{Name: "Rack 01", Slug: "rack-01", SiteSlug: "berlin-dc", UHeight: 42}}
+	if err := NewFoundationReconciler(c).ReconcileRacks(racks); err != nil {
+		t.Fatalf("ReconcileRacks() error = %v", err)
+	}
+
+	got := f.objects("dcim", "racks")
+	if len(got) != 1 {
+		t.Fatalf("expected 1 rack, got %d", len(got))
+	}
+	if got[0]["status"] != "active" {
+		t.Errorf("rack status = %v, want the defaulted \"active\"", got[0]["status"])
+	}
+	// The rack must also be resolvable by its YAML slug, which NetBox does not
+	// store — devices reference it that way.
+	if _, ok := c.Cache().GetSiteID("racks", utils.GetIDFromObject(site), "rack-01"); !ok {
+		t.Error("rack is not resolvable by its YAML slug; devices would get no rack")
 	}
 }

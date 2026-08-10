@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // Package tfgen transforms the typed VM inventory models into a Terraform
 // variables document (tfvars.json) for Proxmox provisioning. It is pure and
 // deterministic so it can be unit-tested without any NetBox or Proxmox access.

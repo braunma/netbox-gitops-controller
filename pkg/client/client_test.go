@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package client
 
 import (
@@ -537,5 +539,181 @@ func TestVIDRangesEqual(t *testing.T) {
 		"vid_ranges": []interface{}{[]interface{}{1, 100}},
 	}); len(changes) == 0 {
 		t.Error("expected vid_ranges change to be detected for differing bounds")
+	}
+}
+
+// TestValuesEqualNumericStrings covers NetBox's decimal serialization: fields
+// such as u_height and weight come back as JSON strings when the serializer
+// coerces decimals, while the payload carries a number. Without a numeric
+// comparison every device type carrying one is re-PATCHed on every run.
+func TestValuesEqualNumericStrings(t *testing.T) {
+	equal := []struct {
+		name string
+		a, b interface{}
+	}{
+		{"string decimal vs float", "1.0", 1.0},
+		{"float vs string decimal", 1.0, "1.0"},
+		{"string decimal vs int", "2.0", 2},
+		{"int vs string decimal", 2, "2.0"},
+		{"fractional height", "0.5", 0.5},
+		{"weight", "19.40", 19.4},
+		{"zero", "0.0", 0},
+		{"padded by the serializer", " 4.0 ", 4.0},
+		// Pre-existing numeric conversions must keep working.
+		{"float vs int", 3.0, 3},
+		{"int vs float", 3, 3.0},
+		{"string vs string", "active", "active"},
+	}
+	for _, tt := range equal {
+		t.Run(tt.name, func(t *testing.T) {
+			if !valuesEqual(tt.a, tt.b) {
+				t.Errorf("valuesEqual(%#v, %#v) = false, want true", tt.a, tt.b)
+			}
+		})
+	}
+
+	// The numeric comparison must not collapse genuinely different values, and
+	// must not fire for strings that are not numbers.
+	notEqual := []struct {
+		name string
+		a, b interface{}
+	}{
+		{"different decimals", "1.0", 2.0},
+		{"different ints", 1, 2},
+		{"non-numeric string vs number", "active", 1.0},
+		{"empty string vs zero", "", 0},
+		{"number-ish word vs number", "one", 1},
+		{"different strings", "active", "offline"},
+		{"nil vs zero", nil, 0},
+		{"bool vs number", true, 1},
+	}
+	for _, tt := range notEqual {
+		t.Run(tt.name, func(t *testing.T) {
+			if valuesEqual(tt.a, tt.b) {
+				t.Errorf("valuesEqual(%#v, %#v) = true, want false", tt.a, tt.b)
+			}
+		})
+	}
+}
+
+// TestCalculateChangesToleratesStringifiedDecimals is the end-to-end form of
+// the above: an object whose decimals NetBox returns as strings must produce
+// no changes when the desired payload already matches.
+func TestCalculateChangesToleratesStringifiedDecimals(t *testing.T) {
+	c := &NetBoxClient{}
+
+	existing := Object{"u_height": "1.0", "weight": "19.40", "model": "R650"}
+	desired := map[string]interface{}{"u_height": 1.0, "weight": 19.4, "model": "R650"}
+
+	if changes := c.calculateDiff(existing, desired); len(changes) != 0 {
+		t.Errorf("calculateDiff() = %v, want no changes for equal stringified decimals", changes)
+	}
+
+	// A real difference must still be detected.
+	changed := map[string]interface{}{"u_height": 2.0, "weight": 19.4, "model": "R650"}
+	if changes := c.calculateDiff(existing, changed); len(changes) != 1 {
+		t.Errorf("calculateDiff() = %v, want the changed u_height detected", changes)
+	}
+}
+
+// TestPortMappingsEqual covers NetBox 4.6 front port terminations, a list of
+// {position, rear_port, rear_port_position} maps. Entries carry no "id", so
+// the generic ID-set comparison reads both sides as empty and reports them
+// permanently equal — a changed mapping would never be written.
+func TestPortMappingsEqual(t *testing.T) {
+	mapping := func(pos, rear, rearPos interface{}) interface{} {
+		return map[string]interface{}{"position": pos, "rear_port": rear, "rear_port_position": rearPos}
+	}
+
+	// NetBox returns rear_port as a nested object and numbers as float64;
+	// the payload sends a plain ID and Go ints.
+	existing := []interface{}{mapping(1.0, map[string]interface{}{"id": 7.0}, 3.0)}
+	desired := []interface{}{mapping(1, 7, 3)}
+	if !portMappingsEqual(existing, desired) {
+		t.Error("portMappingsEqual() = false for equal mappings in NetBox's and our representations")
+	}
+
+	// Order must not matter.
+	twoA := []interface{}{mapping(1, 7, 1), mapping(2, 8, 1)}
+	twoB := []interface{}{mapping(2, 8, 1), mapping(1, 7, 1)}
+	if !portMappingsEqual(twoA, twoB) {
+		t.Error("portMappingsEqual() = false for the same set in a different order")
+	}
+
+	for _, tc := range []struct {
+		name             string
+		existing, desire []interface{}
+	}{
+		{"different rear port", []interface{}{mapping(1, 7, 1)}, []interface{}{mapping(1, 9, 1)}},
+		{"different position", []interface{}{mapping(1, 7, 1)}, []interface{}{mapping(2, 7, 1)}},
+		{"different rear position", []interface{}{mapping(1, 7, 1)}, []interface{}{mapping(1, 7, 4)}},
+		{"extra mapping", []interface{}{mapping(1, 7, 1)}, twoA},
+		{"empty vs one", nil, []interface{}{mapping(1, 7, 1)}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			if portMappingsEqual(tc.existing, tc.desire) {
+				t.Error("portMappingsEqual() = true, want the difference detected")
+			}
+		})
+	}
+}
+
+// TestUnresolvedReference covers the --dry-run bootstrap path: an object
+// planned but never written is registered with id 0, and NetBox rejects
+// "site_id=0" as an invalid choice rather than returning no results.
+func TestUnresolvedReference(t *testing.T) {
+	if _, ok := unresolvedReference(map[string]interface{}{"name": "sw-01", "site_id": 0}); !ok {
+		t.Error("unresolvedReference() = false for a zero reference id")
+	}
+	if key, _ := unresolvedReference(map[string]interface{}{"site_id": 0}); key != "site_id" {
+		t.Errorf("unresolvedReference() key = %q, want site_id", key)
+	}
+	if _, ok := unresolvedReference(map[string]interface{}{"name": "sw-01", "site_id": 4}); ok {
+		t.Error("unresolvedReference() = true for a resolved reference")
+	}
+	// A zero that is not a reference must not trigger it: 0 is a legitimate
+	// value for fields like vid or position.
+	if _, ok := unresolvedReference(map[string]interface{}{"vid": 0, "position": 0}); ok {
+		t.Error("unresolvedReference() = true for a non-reference zero")
+	}
+	if _, ok := unresolvedReference(map[string]interface{}{"slug": "berlin"}); ok {
+		t.Error("unresolvedReference() = true for a lookup with no reference")
+	}
+}
+
+// TestTrimStringValues covers a phantom update found importing the community
+// library: its `comments` use a YAML block scalar, which ends in a newline.
+// Django REST Framework strips whitespace from character fields on write, so
+// the stored value never matched the payload and the object was re-PATCHed on
+// every run.
+func TestTrimStringValues(t *testing.T) {
+	got := trimStringValues(map[string]interface{}{
+		"comments":    "Dell 750W Power Supply\n",
+		"description": "  padded  ",
+		"model":       "R650",
+		"u_height":    1.0,
+		"tags":        []int{1, 2},
+		"nested":      map[string]interface{}{"keep": " untouched "},
+	})
+
+	if got["comments"] != "Dell 750W Power Supply" {
+		t.Errorf("comments = %q, want the trailing newline removed", got["comments"])
+	}
+	if got["description"] != "padded" {
+		t.Errorf("description = %q, want it trimmed", got["description"])
+	}
+	if got["model"] != "R650" {
+		t.Errorf("model = %q, want it unchanged", got["model"])
+	}
+	// Non-string values pass through untouched, including nested maps: only
+	// top-level strings are what NetBox trims on the fields we send.
+	if got["u_height"] != 1.0 {
+		t.Errorf("u_height = %v, want it unchanged", got["u_height"])
+	}
+	if _, ok := got["tags"].([]int); !ok {
+		t.Errorf("tags = %T, want the slice unchanged", got["tags"])
+	}
+	if nested, ok := got["nested"].(map[string]interface{}); !ok || nested["keep"] != " untouched " {
+		t.Errorf("nested = %v, want nested values left alone", got["nested"])
 	}
 }

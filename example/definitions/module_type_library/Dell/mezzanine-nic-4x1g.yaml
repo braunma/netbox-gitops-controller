@@ -1,0 +1,25 @@
+---
+# Community module type library format: one module type per file, laid out as
+# <library>/<Manufacturer>/<model>.yaml, with hyphenated component keys.
+#
+# Point --moduletype-library (or MODULETYPE_LIBRARY) at the module-types/
+# directory of a library checkout, or vendor the files you need into a
+# directory like this one.
+#
+# Note the "{module}" placeholder in the component names: NetBox substitutes it
+# with the module bay position when the module is installed, so the same module
+# type in two bays does not produce colliding interface names. The placeholder
+# is passed through to NetBox verbatim.
+manufacturer: Dell
+model: Example 4x1GbE Mezzanine NIC
+part_number: EX-4X1G
+description: Example module type in the community library format
+interfaces:
+  - name: '{module}-1GbE-0'
+    label: '1'
+    type: 1000base-t
+    mgmt_only: false
+  - name: '{module}-1GbE-1'
+    label: '2'
+    type: 1000base-t
+    mgmt_only: false

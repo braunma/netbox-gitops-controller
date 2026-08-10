@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package reconciler
 
 import (
@@ -40,10 +42,20 @@ func (nr *NetworkReconciler) ReconcileVRFs(vrfs []*models.VRF) error {
 		}
 
 		lookup := map[string]interface{}{"name": vrf.Name}
-		_, err := nr.client.Apply("ipam", "vrfs", lookup, payload)
+		lookup, err := nr.client.RenamedLookup("ipam", "vrfs", vrf.Name, lookup, "name", nonEmpty(vrf.RenameFrom))
+		if err != nil {
+			return err
+		}
+		vrfObj, err := nr.client.Apply("ipam", "vrfs", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VRF %s: %w", vrf.Name, err)
 		}
+		// Register so a VRF created in this same run resolves for the prefixes
+		// and interfaces that reference it later. Without this, the global
+		// cache — loaded once, before any phase — still has no entry, so on a
+		// fresh NetBox a VRF-scoped prefix was created in the global table and
+		// the next run created a second, correctly scoped copy beside it.
+		nr.client.Cache().Register("vrfs", utils.GetIDFromObject(vrfObj), vrf.Name)
 	}
 
 	return nil
@@ -80,6 +92,10 @@ func (nr *NetworkReconciler) ReconcileVLANGroups(groups []*models.VLANGroup) err
 		}
 
 		lookup := map[string]interface{}{"slug": group.Slug}
+		lookup, err := nr.client.RenamedLookup("ipam", "vlan-groups", group.Name, lookup, "slug", client.SlugifiedRename(group.RenameFrom))
+		if err != nil {
+			return err
+		}
 		groupObj, err := nr.client.Apply("ipam", "vlan-groups", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN group %s: %w", group.Name, err)
@@ -136,7 +152,7 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			"name":   vlan.Name,
 			"vid":    vlan.VID,
 			"site":   siteID,
-			"status": vlan.Status,
+			"status": defaultStatus(vlan.Status),
 		}
 
 		if vlan.GroupSlug != "" {
@@ -166,6 +182,12 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			"vid":     vlan.VID,
 		}
 
+		// A VLAN is identified by its VID, so rename_from carries the previous
+		// VID; correcting the *name* alone needs no declaration.
+		lookup, err = nr.client.RenamedLookup("ipam", "vlans", vlan.Name, lookup, "vid", nonEmpty(vlan.RenameFrom))
+		if err != nil {
+			return err
+		}
 		vlanObj, err := nr.client.Apply("ipam", "vlans", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VLAN %s: %w", vlan.Name, err)
@@ -192,7 +214,7 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 	for _, prefix := range prefixes {
 		payload := map[string]interface{}{
 			"prefix":  prefix.Prefix,
-			"status":  prefix.Status,
+			"status":  defaultStatus(prefix.Status),
 			"is_pool": prefix.IsPool,
 		}
 
@@ -204,8 +226,9 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 		}
 
 		if prefix.VRFName != "" {
-			vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName)
-			if ok {
+			// A VRF registered during a --dry-run has id 0 (nothing was
+			// written), and NetBox rejects 0 both as a value and as a filter.
+			if vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName); ok && vrfID != 0 {
 				payload["vrf"] = vrfID
 			}
 		}
@@ -242,13 +265,18 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 
 		lookup := map[string]interface{}{"prefix": prefix.Prefix}
 		if prefix.VRFName != "" {
-			vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName)
-			if ok {
+			if vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName); ok && vrfID != 0 {
 				lookup["vrf_id"] = vrfID
 			}
 		}
 
-		_, err := nr.client.Apply("ipam", "prefixes", lookup, payload)
+		// A prefix is identified by the prefix itself, so rename_from carries
+		// the previous CIDR — the case where the network was typed wrong.
+		lookup, err := nr.client.RenamedLookup("ipam", "prefixes", prefix.Prefix, lookup, "prefix", nonEmpty(prefix.RenameFrom))
+		if err != nil {
+			return err
+		}
+		_, err = nr.client.Apply("ipam", "prefixes", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile prefix %s: %w", prefix.Prefix, err)
 		}

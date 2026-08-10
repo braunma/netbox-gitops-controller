@@ -10,7 +10,9 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
       * **Opt-in Pruning (`--prune`):** Objects removed from YAML are deleted only when you pass `--prune`, and only if they carry the `gitops` tag — manually created objects are never touched. Combine with `--dry-run` to preview. See the Pruning section below.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
-  * **Coverage:** Manages DCIM (sites, racks, device types, devices, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
+  * **Renames, not duplicates (`rename_from`):** Correcting a typo in a name, slug or other identifying field renames the existing object instead of creating a second one and orphaning the first. Supported on every managed object type. See the Renaming section below.
+  * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
+  * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
   * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`docs/PLAN_YAML_VM_PIPELINE.md`](docs/PLAN_YAML_VM_PIPELINE.md) and [`terraform/README.md`](terraform/README.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
@@ -88,8 +90,116 @@ Here we define the "blueprint" including all physical ports. NetBox copies these
       mgmt_only: true
     - name: "eth0"
       type: "25gbase-x-sfp28"
-  # Optional: Front/Rear Ports for Patch Panels
+  # Optional: console_ports, console_server_ports, power_ports, power_outlets,
+  # front_ports/rear_ports for patch panels, module_bays, device_bays
 ```
+
+#### Reusing the community device type library
+
+You do not have to hand-write a device type that already exists. The NetBox
+community publishes thousands of them in the
+[devicetype-library](https://github.com/netbox-community/devicetype-library),
+and that format is consumed **unchanged** — one device type per file, laid out
+as `<library>/<Manufacturer>/<model>.yaml`, with hyphenated component keys
+(`console-ports`, `power-ports`, …).
+
+Point the controller at a library checkout:
+
+```bash
+# Explicit path (a git submodule, a clone, or a directory of vendored files)
+./netbox-gitops --devicetype-library ../devicetype-library/device-types
+
+# Or via the environment
+export DEVICETYPE_LIBRARY=../devicetype-library/device-types
+```
+
+With neither set, `definitions/device_type_library/` inside the data directory
+is used if it exists — so vendoring just the models you need is as simple as
+copying the files in:
+
+```text
+definitions/
+├── device_types/              # Native format: a YAML list per file
+│   └── servers.yaml
+└── device_type_library/       # Community format: one device type per file
+    └── Dell/
+        └── poweredge-r650.yaml
+```
+
+Library entries are merged with your native definitions. If both define the
+same slug, **your local definition wins** and the override is logged, so a
+vendored library can be customised without editing the checkout. Fields the
+library carries but this project does not manage (inventory items) are
+reported rather than dropped silently.
+
+See `example/definitions/device_type_library/` for a working example.
+
+#### Module types from the same library
+
+The library ships a `module-types/` tree alongside `device-types/`, covering
+the hardware that goes *into* module bays — line cards, NIC mezzanines,
+transceivers, power supplies. It is consumed the same way:
+
+```bash
+./netbox-gitops --moduletype-library ../devicetype-library/module-types
+export MODULETYPE_LIBRARY=../devicetype-library/module-types
+```
+
+With neither set, `definitions/module_type_library/` inside the data directory
+is used if it exists. A module type carries the same component templates as a
+device type (interfaces, console and power ports, front/rear ports, module
+bays — everything except device bays, which NetBox allows only on a device
+type).
+
+Component names in this library commonly contain the literal `{module}`
+placeholder:
+
+```yaml
+interfaces:
+  - name: '{module}-1GbE-0'
+    label: '1'
+    type: 1000base-t
+```
+
+NetBox substitutes it with the module bay position when the module is
+installed, so the same module type in two bays produces `1-1GbE-0` and
+`2-1GbE-0` rather than colliding. The placeholder is passed through verbatim.
+
+> **Note:** NetBox requires a module type's manufacturer and model to be
+> unique together, and module types have no slug. Two library files claiming
+> the same pair cannot both be applied; the loader reports every such conflict
+> at once so you can park the unwanted file with `--ignore-file`. The published
+> library currently contains one (two Panduit part numbers sharing a model
+> name).
+
+#### Referring to a module type
+
+A device installs a module by naming its bay and the module type:
+
+```yaml
+modules:
+  - name: OCP-1                       # the module bay on the device
+    module_type_slug: dell-ocp-25g
+```
+
+The slug is a local reference key, not something NetBox stores:
+
+  * A module type defined **natively** uses the `slug` you gave it.
+  * A module type read from a **library** has no slug in the file, so the key
+    is derived from its model — `Dell OCP 25GbE Mezz` becomes
+    `dell-ocp-25gbe-mezz`.
+
+Different vendors may legitimately ship the same model name. When that happens
+the bare name is ambiguous and is **not** accepted; use the
+manufacturer-qualified form, which always works:
+
+```yaml
+    module_type_slug: dell/sfp-10g-sr
+```
+
+A run that detects the ambiguity warns and lists the qualified keys to use, so
+an ambiguous reference fails with "module type not found" rather than quietly
+installing another vendor's hardware.
 
 ### Step 2: Create Device Instances (Server/Switch)
 
@@ -174,6 +284,158 @@ File: `inventory/hardware/active/switches.yaml`
 -----
 
 ## ⚠️ Important Concepts & Troubleshooting
+
+### Renaming an Object (Fixing a Typo)
+
+Every object is matched against NetBox by an **identifying field**. That is what
+makes the sync idempotent — and it is also why editing that field is not an
+ordinary change. The old value stops matching anything, so the object is created
+a *second* time and the original is left behind, still holding every reference
+that pointed at it. Nothing errors; you just quietly end up with two.
+
+Declare where the object came from and it is renamed in place instead:
+
+```yaml
+- name: Rack 01          # was "Rakc 01"
+  slug: rack-01
+  site_slug: frankfurt
+  rename_from: Rakc 01   # ← the previous identity
+```
+
+Once the sync has run, NetBox holds the new value, the declaration becomes a
+no-op, and you can delete the line. Leaving it in place is harmless.
+
+**Which field is the identity?** It differs per object type, because NetBox
+does. `rename_from` always holds the previous value of *that* field:
+
+| Object | Identified by | `rename_from` holds |
+|---|---|---|
+| Site, device role, platform, tenant, tenant group, tag, VLAN group, cluster type, cluster group, device type | `slug` | the old slug |
+| Rack, device, interface, VM, VM interface, cluster, VRF, custom field | `name` | the old name |
+| Module type | `model` | the old model |
+| VLAN | `vid` | the old VID, quoted (`"201"`) |
+| Prefix | `prefix` | the old CIDR |
+
+Two consequences worth knowing:
+
+  * For a slug-identified object, changing only the **name** needs no
+    declaration — the slug still matches, so it is a plain update. The same goes
+    for a VLAN's name, since a VLAN is identified by its VID.
+  * A rename changes *what an object is called*, not where it lives. The scope
+    (site, device, cluster) is carried over unchanged; moving an object between
+    scopes is a different operation and is not what this does.
+
+**Safety.** `rename_from` describes an object's past, which is weaker evidence
+than a plain identity match — a typo in it can name a real object that has
+nothing to do with your declaration. So:
+
+  * Only objects carrying the `gitops` tag can be renamed. To bring an existing
+    unmanaged object under management, declare it under the name it *already*
+    has; the next sync adopts and tags it, and it can be renamed after that.
+  * If `rename_from` matches more than one object, the sync fails rather than
+    guessing.
+  * If objects exist under **both** the old and the new identity, nothing is
+    renamed and you get a warning — which one survives is your call, not the
+    tool's.
+  * A `rename_from` that matches nothing is not an error; that is simply what it
+    looks like once it has been applied.
+
+`--dry-run` reports a rename as the update it is, without writing.
+
+### Parking a File (Ignored Files)
+
+Not everything in the repository should be applied. Inventory owned by another
+system, a draft you are not ready to sync, a reference copy — all of these can
+stay in place and be skipped:
+
+```bash
+# Default: filenames starting with an underscore are skipped
+inventory/hardware/active/_imported-from-cmdb.yaml   # not applied
+
+# Override the patterns (globs, matched against the filename)
+./netbox-gitops --ignore-file '_*.yaml' --ignore-file 'imported-*.yaml'
+export IGNORED_FILES='_*.yaml,imported-*.yaml'
+
+# Apply everything, including parked files
+./netbox-gitops --include-ignored-files
+```
+
+Every skipped file is logged, so a parked file never goes unnoticed. Patterns
+match the **filename only**, not the path — a file inside a directory whose
+name matches a pattern is still loaded. An invalid glob fails at startup rather
+than silently matching nothing.
+
+> **⚠️ Pruning:** A parked file is invisible to the controller, so `--prune`
+> cannot tell its objects apart from orphans. Two cases, and only you can tell
+> them apart:
+>
+> - Objects **another system owns** were never created here, carry no `gitops`
+>   tag, and are safe — pruning never touches untagged objects.
+> - Objects **this controller previously created** from a file you have now
+>   parked still carry the tag and **will be deleted** as orphans.
+>
+> A run that both skips files and uses `--prune` warns and lists the skipped
+> files before deleting anything. Preview with `--dry-run --prune` first.
+
+### Front Ports Across NetBox Releases
+
+NetBox 4.6 replaced a front port's singular `rear_port` / `rear_port_position`
+fields with a `rear_ports` list of `{position, rear_port, rear_port_position}`
+mappings — and **accepts the old fields silently rather than rejecting them**,
+so sending the wrong shape leaves the port created but unwired.
+
+The controller picks the shape from the release reported by `/api/status/`, so
+patch panels wire correctly on both older releases and 4.6+. Nothing in your
+YAML changes; `rear_port` and `rear_port_position` stay as they are.
+
+### NetBox Version Compatibility
+
+On startup the controller reads `/api/status/`, logs the detected release, and
+refuses to run against NetBox older than **3.6** — the release that renamed the
+device `device_role` field to `role`. Without this check an unsupported server
+produces a scatter of `400 Bad Request` errors on individual fields rather than
+one clear message.
+
+A server whose version cannot be determined (no status endpoint, a proxy that
+rewrites it) is reported as a warning and the run continues: the check exists
+to explain failures, not to become a new way to fail.
+
+### Phase Order (Dependency Model)
+
+NetBox rejects an object whose references do not exist yet — a device needs its
+site, role and device type; a prefix needs its VRF. The controller therefore
+reconciles in a fixed order derived from the object types themselves, **not**
+from file or directory names. You never have to number or sort your YAML: the
+layout under `definitions/` and `inventory/` is free-form, and the same order
+runs every time.
+
+| # | Phase | Objects, in reconcile order |
+|---|-------|-----------------------------|
+| 1 | `foundation` | tags → roles → custom fields → platforms → tenant groups → tenants → sites → racks |
+| 2 | `network` | VRFs → VLAN groups → VLANs → prefixes |
+| 2 | `device-types` | manufacturers → device types (incl. interface/port/bay templates) → module types |
+| 3 | `devices` | per device: device → interfaces → IP addresses → primary IP → modules → device bays → front/rear ports; **then all cables** |
+| 4 | `virtualization` | cluster types → cluster groups → clusters → VMs → VM interfaces → VM IPs |
+
+Two orderings inside a phase are worth knowing about, because both solve
+problems that a "number your files" convention leaves to the user:
+
+  * **Cables run last, in a second pass.** A cable needs the ports on *both*
+    ends to exist, so every `link:` found while reconciling devices is queued
+    and applied only after all devices and their ports are in place. Peer order
+    in the YAML is irrelevant.
+  * **Parents are reconciled before their children.** A device with
+    `parent_device` is installed into a bay on that parent, so the parent must
+    exist first. The device list is topologically sorted before reconciliation,
+    at any nesting depth — a blade may be declared above its chassis, or in an
+    alphabetically earlier file, and the run still succeeds. A `parent_device`
+    that is not declared in the run is assumed to exist in NetBox already; a
+    cycle (`a` parented to `b` parented to `a`) is reported as an error before
+    any change is applied.
+
+The phase order is asserted by `TestValidPhasesCreationOrder`, and its mirror
+image — the reverse order used for `--prune` — by
+`TestPruneTargetsReverseDependencyOrder`.
 
 ### The `gitops` Tag
 
@@ -313,7 +575,9 @@ targeted hotfixes:
 Valid `--only` values: `foundation`, `network`, `device-types`, `devices`,
 `virtualization`. `--site` filters the device and virtualization phases by site
 slug; `--device` filters a single device; `--vm` filters a single virtual
-machine by name.
+machine by name. Selected phases always run in the fixed dependency order — see
+[Phase Order](#phase-order-dependency-model) — regardless of the order you list
+them in.
 
 > **Note:** Skipped phases are not validated — if you sync `--only devices`,
 > the referenced sites, roles and device types must already exist in NetBox.
@@ -359,7 +623,8 @@ few objects of each supported type:
 
 - 2 sites, 5 device roles, 2 platforms, 1 tenant (+ group)
 - 2 VRFs, 2 VLAN groups, 3 VLANs, 3 prefixes, 3 racks
-- 6 device types, 2 module types, 2 VM custom fields (`vmid`, `vm_template_id`)
+- 6 device types (native format) + 1 in the community library format,
+  2 module types, 2 VM custom fields (`vmid`, `vm_template_id`)
 - 8 hardware devices — including a blade chassis with two child blades, a GPU
   server, and a patch panel (front/rear ports)
 - 2 virtual machines (one provisioned in Proxmox, one NetBox documentation-only)
@@ -380,3 +645,13 @@ To see the examples in action:
 ```
 
 **Note**: The examples create a complete test infrastructure suitable for learning and development. For production use, customize the files to match your actual environment.
+
+-----
+
+## 📄 License
+
+Licensed under the [Apache License, Version 2.0](./LICENSE).
+
+Every source file carries an `SPDX-License-Identifier: Apache-2.0` line, so
+licence scanners in a CI pipeline can identify the project without parsing the
+full text.

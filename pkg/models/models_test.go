@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package models
 
 import (
+	"strings"
 	"testing"
 )
 
@@ -112,7 +115,7 @@ func TestDeviceTypeModel(t *testing.T) {
 	}
 
 	if dt.UHeight != 2 {
-		t.Errorf("DeviceType.UHeight = %d, expected %d", dt.UHeight, 2)
+		t.Errorf("DeviceType.UHeight = %v, expected %v", dt.UHeight, 2.0)
 	}
 
 	if !dt.IsFullDepth {
@@ -135,5 +138,34 @@ func TestLinkConfig(t *testing.T) {
 
 	if link.Length != 2.5 {
 		t.Errorf("LinkConfig.Length = %f, expected %f", link.Length, 2.5)
+	}
+}
+
+// TestDeviceTypeRequiresParentRoleForDeviceBays covers a constraint NetBox
+// enforces only at the API: it refuses device bay templates unless the device
+// type is a parent, and it does so after the device type itself has been
+// written. Catching it in validation keeps the failure in the YAML.
+func TestDeviceTypeRequiresParentRoleForDeviceBays(t *testing.T) {
+	base := DeviceType{Model: "Chassis", Slug: "chassis", Manufacturer: "Acme"}
+
+	withBays := base
+	withBays.DeviceBays = []DeviceBayTemplate{{Name: "Blade-1"}}
+	err := withBays.Validate()
+	if err == nil {
+		t.Fatal("Validate() = nil, want device_bays without subdevice_role rejected")
+	}
+	if !strings.Contains(err.Error(), "subdevice_role") {
+		t.Errorf("error = %q, want it to name subdevice_role", err)
+	}
+
+	parent := withBays
+	parent.SubdeviceRole = "parent"
+	if err := parent.Validate(); err != nil {
+		t.Errorf("Validate() error = %v, want a parent device type with bays accepted", err)
+	}
+
+	// A device type without bays is unaffected by the rule.
+	if err := base.Validate(); err != nil {
+		t.Errorf("Validate() error = %v, want a device type without bays accepted", err)
 	}
 }

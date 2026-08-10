@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // yamlcheck validates the syntax of all YAML files under the given
 // directories and additionally runs the typed model validation (required
 // fields, cross-field constraints) for standard definitions/inventory
@@ -114,6 +116,16 @@ func validateModels(base string) error {
 		func() error { _, err := dl.LoadPrefixes("definitions/prefixes"); return err },
 		func() error { _, err := dl.LoadModuleTypes("definitions/module_types"); return err },
 		func() error { _, err := dl.LoadDeviceTypes("definitions/device_types"); return err },
+		func() error {
+			// Community-format libraries at the conventional paths; one
+			// configured elsewhere is checked on the next sync instead.
+			_, err := dl.LoadDeviceTypeLibrary(filepath.Join(base, "definitions", "device_type_library"))
+			return err
+		},
+		func() error {
+			_, err := dl.LoadModuleTypeLibrary(filepath.Join(base, "definitions", "module_type_library"))
+			return err
+		},
 		// Match the reconciler's device folders so VM definitions under
 		// inventory/virtual are not mis-parsed as devices by a recursive scan.
 		func() error { _, err := dl.LoadDevices("inventory/hardware/active"); return err },

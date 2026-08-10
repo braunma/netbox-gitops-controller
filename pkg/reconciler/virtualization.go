@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package reconciler
 
 import (
@@ -38,6 +40,10 @@ func (vr *VirtualizationReconciler) ReconcileClusterTypes(types []*models.Cluste
 		}
 
 		lookup := map[string]interface{}{"slug": ct.Slug}
+		lookup, err := vr.client.RenamedLookup("virtualization", "cluster-types", ct.Name, lookup, "slug", client.SlugifiedRename(ct.RenameFrom))
+		if err != nil {
+			return err
+		}
 		ctObj, err := vr.client.Apply("virtualization", "cluster-types", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile cluster type %s: %w", ct.Name, err)
@@ -64,6 +70,10 @@ func (vr *VirtualizationReconciler) ReconcileClusterGroups(groups []*models.Clus
 		}
 
 		lookup := map[string]interface{}{"slug": cg.Slug}
+		lookup, err := vr.client.RenamedLookup("virtualization", "cluster-groups", cg.Name, lookup, "slug", client.SlugifiedRename(cg.RenameFrom))
+		if err != nil {
+			return err
+		}
 		cgObj, err := vr.client.Apply("virtualization", "cluster-groups", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile cluster group %s: %w", cg.Name, err)
@@ -132,6 +142,10 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 		}
 
 		lookup := map[string]interface{}{"name": cl.Name}
+		lookup, err := vr.client.RenamedLookup("virtualization", "clusters", cl.Name, lookup, "name", nonEmpty(cl.RenameFrom))
+		if err != nil {
+			return err
+		}
 		clObj, err := vr.client.Apply("virtualization", "clusters", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile cluster %s: %w", cl.Name, err)
@@ -239,6 +253,10 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 			lookup["cluster_id"] = clusterID
 		}
 
+		lookup, err := vr.client.RenamedLookup("virtualization", "virtual-machines", vm.Name, lookup, "name", nonEmpty(vm.RenameFrom))
+		if err != nil {
+			return err
+		}
 		vmObj, err := vr.client.Apply("virtualization", "virtual-machines", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to reconcile VM %s: %w", vm.Name, err)
@@ -321,6 +339,10 @@ func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *
 			"name":               iface.Name,
 		}
 
+		lookup, err := vr.client.RenamedLookup("virtualization", "interfaces", iface.Name, lookup, "name", nonEmpty(iface.RenameFrom))
+		if err != nil {
+			return err
+		}
 		ifaceObj, err := vr.client.Apply("virtualization", "interfaces", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to apply VM interface %s: %w", iface.Name, err)

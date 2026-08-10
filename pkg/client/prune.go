@@ -1,6 +1,9 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package client
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
@@ -28,12 +31,18 @@ type PruneTarget struct {
 // destructive request.
 func (c *NetBoxClient) Prune(targets []PruneTarget) error {
 	total := 0
+	var errs []error
+
 	for _, t := range targets {
+		// A failure at one endpoint does not make the others unsafe, and
+		// stopping at the first one left the caller with deletions already
+		// applied and no account of them. Keep going and report everything.
 		n, err := c.pruneTarget(t)
-		if err != nil {
-			return fmt.Errorf("failed to prune %s/%s: %w", t.App, t.Endpoint, err)
-		}
 		total += n
+		if err != nil {
+			c.logger.Error("Failed to prune %s/%s", err, t.App, t.Endpoint)
+			errs = append(errs, fmt.Errorf("%s/%s: %w", t.App, t.Endpoint, err))
+		}
 	}
 
 	switch {
@@ -43,6 +52,15 @@ func (c *NetBoxClient) Prune(targets []PruneTarget) error {
 		c.logger.Info("Prune plan: %d orphaned object(s) would be deleted", total)
 	default:
 		c.logger.Success("Pruned %d orphaned object(s)", total)
+	}
+
+	if len(errs) > 0 {
+		// Say plainly what was already deleted: pruning is not transactional,
+		// so a partial run has to be visible to whoever cleans up.
+		if total > 0 && !c.dryRun {
+			c.logger.Warning("Prune finished with errors after deleting %d object(s); NetBox is partially pruned", total)
+		}
+		return fmt.Errorf("pruning failed at %d endpoint(s): %w", len(errs), errors.Join(errs...))
 	}
 	return nil
 }
@@ -73,12 +91,22 @@ func (c *NetBoxClient) pruneTarget(t PruneTarget) (int, error) {
 	seen := c.seenIDs(t.App, t.Endpoint)
 
 	deleted := 0
+	var errs []error
 	for _, obj := range objects {
 		id := utils.GetIDFromObject(obj)
 		if id == 0 || seen[id] {
 			continue
 		}
 		if slug, ok := obj["slug"].(string); ok && keep[slug] {
+			continue
+		}
+		// An object something else reconciled this run points at is in use,
+		// whatever the YAML no longer says about it. Deleting it would either
+		// be refused by NetBox (a protected foreign key) or silently unlink
+		// the referring object (a nullable one) -- both worse than leaving it.
+		if c.isReferenced(t.App, t.Endpoint, id) {
+			c.logger.Warning("  ⚠ Keeping %s %s (ID: %d): no longer declared, but still referenced by an object reconciled this run",
+				t.Endpoint, pruneLabel(obj), id)
 			continue
 		}
 
@@ -91,7 +119,10 @@ func (c *NetBoxClient) pruneTarget(t PruneTarget) (int, error) {
 
 		path := fmt.Sprintf("/api/%s/%s/%d/", t.App, t.Endpoint, id)
 		if _, err := c.Request("DELETE", path, nil); err != nil {
-			return deleted, fmt.Errorf("failed to delete %s (ID: %d): %w", label, id, err)
+			// Keep going: one undeletable object should not hide the rest.
+			c.logger.Error("Failed to delete %s (ID: %d)", err, label, id)
+			errs = append(errs, fmt.Errorf("%s (ID: %d): %w", label, id, err))
+			continue
 		}
 		c.Recorder().Record(ChangeRecord{
 			Action: ActionDelete, App: t.App, Endpoint: t.Endpoint,
@@ -100,7 +131,7 @@ func (c *NetBoxClient) pruneTarget(t PruneTarget) (int, error) {
 		deleted++
 	}
 
-	return deleted, nil
+	return deleted, errors.Join(errs...)
 }
 
 // pruneLabel derives a human-readable identifier from a fetched object for

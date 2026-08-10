@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 // tfgen converts the virtual-machine inventory YAML (the same files the NetBox
 // reconciler consumes) into a Terraform variables file (tfvars.json) describing
 // the VMs to provision in Proxmox. It is the bridge that lets one YAML source

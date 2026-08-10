@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package main
 
 import (
@@ -5,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -28,10 +31,29 @@ var (
 	deviceFilter     string
 	vmFilter         string
 	prune            bool
+
+	deviceTypeLibrary   string
+	moduleTypeLibrary   string
+	ignoredFiles        []string
+	includeIgnoredFiles bool
 )
 
 // validPhases are the values accepted by --only, in execution order.
 var validPhases = []string{"foundation", "network", "device-types", "devices", "virtualization"}
+
+// Build metadata, injected at link time:
+//
+//	go build -ldflags "-X main.version=$(git describe --tags --always) \
+//	                   -X main.commit=$(git rev-parse --short HEAD) \
+//	                   -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+//
+// The defaults are what a plain `go build` produces, so an unstamped binary
+// says so rather than claiming a version it does not have.
+var (
+	version   = "dev"
+	commit    = "unknown"
+	buildDate = "unknown"
+)
 
 // exitCode is set by runSync (e.g. 2 for --detailed-exitcode with pending
 // changes) and applied after cobra finishes.
@@ -43,6 +65,10 @@ func main() {
 		Short: "NetBox GitOps Controller",
 		Long:  `Declarative infrastructure management for NetBox using YAML definitions`,
 		RunE:  runSync,
+		// Usage is for misuse of the CLI. A failure from a sync is not that,
+		// and printing the whole flag list after it buries the actual error.
+		SilenceUsage: true,
+		Version:      fmt.Sprintf("%s (commit %s, built %s)", version, commit, buildDate),
 	}
 
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate changes without applying them")
@@ -50,11 +76,15 @@ func main() {
 	rootCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Base directory for definitions and inventory (e.g., 'example' for test data)")
 	rootCmd.Flags().StringVar(&outputFormat, "output", "text", "Output format: 'text' or 'json' (json prints the plan to stdout and moves logs to stderr)")
 	rootCmd.Flags().BoolVar(&detailedExitcode, "detailed-exitcode", false, "Exit with code 2 when changes are pending (dry-run) or were applied; 0 means in sync")
-	rootCmd.Flags().StringSliceVar(&onlyPhases, "only", nil, fmt.Sprintf("Restrict the sync to specific phases (comma-separated or repeated): %s", strings.Join(validPhases, ", ")))
+	rootCmd.Flags().StringSliceVar(&onlyPhases, "only", nil, fmt.Sprintf("Restrict the sync to specific phases (comma-separated or repeated): %s. \"device-types\" covers module types too; \"devices\" covers the modules installed in them", strings.Join(validPhases, ", ")))
 	rootCmd.Flags().StringVar(&siteFilter, "site", "", "Restrict reconciliation to devices and VMs of a single site slug")
 	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
 	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
 	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
+	rootCmd.Flags().StringVar(&deviceTypeLibrary, "devicetype-library", "", "Path to a community-format device type library (default: $DEVICETYPE_LIBRARY, else <data-dir>/definitions/device_type_library)")
+	rootCmd.Flags().StringVar(&moduleTypeLibrary, "moduletype-library", "", "Path to a community-format module type library (default: $MODULETYPE_LIBRARY, else <data-dir>/definitions/module_type_library)")
+	rootCmd.Flags().StringSliceVar(&ignoredFiles, "ignore-file", nil, fmt.Sprintf("Filename globs to skip while loading (default: %s)", strings.Join(loader.DefaultIgnorePatterns, ", ")))
+	rootCmd.Flags().BoolVar(&includeIgnoredFiles, "include-ignored-files", false, "Load files that an ignore pattern would otherwise skip")
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -110,8 +140,20 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	// Fail fast and legibly on a NetBox too old for the API fields used below.
+	if err := c.CheckVersion(); err != nil {
+		logger.Error("Unsupported NetBox version", err)
+		return err
+	}
+
 	// Initialize data loader
 	dataLoader := loader.NewDataLoader(dataDir, logger)
+	patterns, err := resolveIgnorePatterns()
+	if err != nil {
+		logger.Error("Invalid ignore pattern", err)
+		return err
+	}
+	dataLoader.SetIgnorePatterns(patterns)
 
 	// =========================================================================
 	// LOAD GLOBAL CACHES (MUST BE BEFORE PHASE 1)
@@ -198,6 +240,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 		logger.Info("═══════════════════════════════════════════════════════")
 		logger.Info("Prune: removing orphaned gitops-managed objects")
 		logger.Info("═══════════════════════════════════════════════════════")
+
+		// A parked file's objects were never loaded, so they are not in the
+		// set of objects seen this run. Any of them this controller previously
+		// created still carries the managed tag and would be pruned as an
+		// orphan; objects owned by another system are untagged and are safe.
+		// The operator is the only one who can tell those apart.
+		if ignored := dataLoader.IgnoredFiles(); len(ignored) > 0 {
+			logger.Warning("Pruning with %d ignored file(s) skipped: any managed object declared only in them will be deleted as an orphan", len(ignored))
+			for _, f := range ignored {
+				logger.Warning("  ignored: %s", f)
+			}
+			logger.Warning("  re-run with --include-ignored-files if those objects should be kept")
+		}
 
 		if err := c.Prune(pruneTargets(phases)); err != nil {
 			logger.Error("Failed to prune orphaned objects", err)
@@ -382,6 +437,14 @@ func runDeviceTypes(c *client.NetBoxClient, dataLoader *loader.DataLoader, logge
 		logger.Error("Failed to load module types", err)
 		return err
 	}
+
+	libraryModuleTypes, err := dataLoader.LoadModuleTypeLibrary(resolveModuleTypeLibrary())
+	if err != nil {
+		logger.Error("Failed to load the module type library", err)
+		return err
+	}
+	moduleTypes = loader.MergeModuleTypes(moduleTypes, libraryModuleTypes, logger)
+
 	if err := deviceTypeReconciler.ReconcileModuleTypes(moduleTypes); err != nil {
 		logger.Error("Failed to reconcile module types", err)
 		return err
@@ -392,12 +455,76 @@ func runDeviceTypes(c *client.NetBoxClient, dataLoader *loader.DataLoader, logge
 		logger.Error("Failed to load device types", err)
 		return err
 	}
+
+	libraryTypes, err := dataLoader.LoadDeviceTypeLibrary(resolveDeviceTypeLibrary())
+	if err != nil {
+		logger.Error("Failed to load the device type library", err)
+		return err
+	}
+	deviceTypes = loader.MergeDeviceTypes(deviceTypes, libraryTypes, logger)
+
 	if err := deviceTypeReconciler.ReconcileDeviceTypes(deviceTypes); err != nil {
 		logger.Error("Failed to reconcile device types", err)
 		return err
 	}
 
 	return nil
+}
+
+// resolveModuleTypeLibrary returns the root of the community-format module
+// type library: the --moduletype-library flag, else MODULETYPE_LIBRARY, else
+// the conventional path inside the data directory. In a library checkout this
+// is the module-types/ directory, the sibling of device-types/.
+func resolveModuleTypeLibrary() string {
+	if moduleTypeLibrary != "" {
+		return moduleTypeLibrary
+	}
+	if env := os.Getenv("MODULETYPE_LIBRARY"); env != "" {
+		return env
+	}
+	return filepath.Join(dataDir, "definitions", "module_type_library")
+}
+
+// resolveIgnorePatterns returns the filename globs to skip while loading:
+// none when --include-ignored-files is set, else --ignore-file, else
+// IGNORED_FILES (comma-separated), else the defaults.
+func resolveIgnorePatterns() ([]string, error) {
+	if includeIgnoredFiles {
+		return nil, nil
+	}
+
+	patterns := ignoredFiles
+	if len(patterns) == 0 {
+		if env := os.Getenv("IGNORED_FILES"); env != "" {
+			for _, p := range strings.Split(env, ",") {
+				if trimmed := strings.TrimSpace(p); trimmed != "" {
+					patterns = append(patterns, trimmed)
+				}
+			}
+		}
+	}
+	if len(patterns) == 0 {
+		patterns = loader.DefaultIgnorePatterns
+	}
+
+	if err := loader.ValidateIgnorePatterns(patterns); err != nil {
+		return nil, err
+	}
+	return patterns, nil
+}
+
+// resolveDeviceTypeLibrary returns the root of the community-format device
+// type library: the --devicetype-library flag, else DEVICETYPE_LIBRARY, else
+// the conventional path inside the data directory. The default is optional —
+// LoadDeviceTypeLibrary skips a root that does not exist.
+func resolveDeviceTypeLibrary() string {
+	if deviceTypeLibrary != "" {
+		return deviceTypeLibrary
+	}
+	if env := os.Getenv("DEVICETYPE_LIBRARY"); env != "" {
+		return env
+	}
+	return filepath.Join(dataDir, "definitions", "device_type_library")
 }
 
 // runDevices loads the device inventory, applies the --site/--device

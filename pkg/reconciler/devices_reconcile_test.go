@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package reconciler
 
 import (
@@ -32,24 +34,21 @@ func TestReconcileDevicesFullFlow(t *testing.T) {
 	}
 
 	devices := []*models.DeviceConfig{
-		{
-			Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-			RackSlug: "R01", Position: 10, Face: "front",
-			Interfaces: []models.InterfaceConfig{{
-				Name: "eth0", Type: "1000base-t", MTU: 9000,
-				Mode: "access", UntaggedVLAN: "mgmt",
-				IP:          &models.IPConfig{Address: "10.0.0.1/24"},
-				AddressRole: "primary",
-				Link:        &models.LinkConfig{PeerDevice: "sw-02", PeerPort: "eth0", CableType: "cat6"},
-			}},
-		},
-		{
-			Name: "sw-02", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-			Interfaces: []models.InterfaceConfig{{
-				Name: "eth0", Type: "1000base-t",
-				Link: &models.LinkConfig{PeerDevice: "sw-01", PeerPort: "eth0", CableType: "cat6"},
-			}},
-		},
+		testDevice("sw-01",
+			inRack("R01", 10),
+			withInterfaces(testInterface("eth0", "1000base-t",
+				withMTU(9000),
+				inAccessVLAN("mgmt"),
+				withIP("10.0.0.1/24"),
+				asPrimaryIP(),
+				linkedTo("sw-02", "eth0", "cat6"),
+			)),
+		),
+		testDevice("sw-02",
+			withInterfaces(testInterface("eth0", "1000base-t",
+				linkedTo("sw-01", "eth0", "cat6"),
+			)),
+		),
 	}
 
 	dr := NewDeviceReconciler(c)
@@ -132,9 +131,7 @@ func TestReconcileDevicesErrorsOnUnresolvedReferences(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	dr := NewDeviceReconciler(c)
 
-	device := &models.DeviceConfig{
-		Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-	}
+	device := testDevice("sw-01")
 
 	err := dr.ReconcileDevices([]*models.DeviceConfig{device})
 	if err == nil || !strings.Contains(err.Error(), "site berlin-dc not found") {
@@ -187,9 +184,7 @@ func TestReconcileDeviceDryRunResolvesSameRunDependencies(t *testing.T) {
 		t.Fatalf("ReconcileDeviceTypes() error = %v", err)
 	}
 
-	device := &models.DeviceConfig{
-		Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-	}
+	device := testDevice("sw-01")
 	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{device}); err != nil {
 		t.Fatalf("ReconcileDevices() in dry-run = %v; a device referencing a same-run site/role/device-type must validate, not abort", err)
 	}
@@ -238,7 +233,7 @@ func TestDryRunFullOrderingResolvesNewSite(t *testing.T) {
 		t.Fatalf("LoadSite() in dry-run = %v; a site declared this run must not abort the devices phase", err)
 	}
 
-	device := &models.DeviceConfig{Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch"}
+	device := testDevice("sw-01")
 	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{device}); err != nil {
 		t.Fatalf("ReconcileDevices() in dry-run = %v", err)
 	}
@@ -255,12 +250,9 @@ func TestReconcileDeviceDryRunSkipsUnresolvedParentInBay(t *testing.T) {
 
 	devices := []*models.DeviceConfig{
 		// New parent chassis: in dry-run it is planned but not created.
-		{Name: "chassis-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch"},
+		testDevice("chassis-01"),
 		// Child placed into the not-yet-created parent's bay.
-		{
-			Name: "node-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-			ParentDevice: "chassis-01", DeviceBay: "bay-1",
-		},
+		testDevice("node-01", inBay("chassis-01", "bay-1")),
 	}
 	if err := NewDeviceReconciler(c).ReconcileDevices(devices); err != nil {
 		t.Fatalf("ReconcileDevices() in dry-run = %v; an unresolved same-run parent must be skipped, not abort", err)
@@ -284,10 +276,7 @@ func TestReconcileDevicesInstallsChildIntoBay(t *testing.T) {
 	parentID := utils.GetIDFromObject(parent)
 	bay := f.seed("dcim", "device-bays", client.Object{"name": "bay-1", "device": parentID})
 
-	child := &models.DeviceConfig{
-		Name: "node-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-		ParentDevice: "chassis-01", DeviceBay: "bay-1",
-	}
+	child := testDevice("node-01", inBay("chassis-01", "bay-1"))
 	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{child}); err != nil {
 		t.Fatalf("ReconcileDevices() error = %v", err)
 	}
@@ -297,13 +286,20 @@ func TestReconcileDevicesInstallsChildIntoBay(t *testing.T) {
 		t.Fatalf("expected 3 mutations (create child, detach from rack, install into bay), got %d: %+v", len(muts), muts)
 	}
 
-	// The child inherits the parent's rack on creation...
-	if muts[0].method != "POST" || utils.GetIDFromObject(muts[0].body["rack"]) != rackID {
-		t.Errorf("child create = %s body %v, expected POST with parent's rack %d", muts[0].method, muts[0].body, rackID)
+	// The child is created without a rack: NetBox derives a bay-mounted
+	// device's location from its parent, and installDeviceIntoBay has to clear
+	// rack/position/face to install it. Setting one here would be undone on
+	// install and re-sent on the next run forever.
+	if muts[0].method != "POST" {
+		t.Errorf("first mutation = %s, expected the child create POST", muts[0].method)
+	}
+	if got := utils.GetIDFromObject(muts[0].body["rack"]); got != 0 {
+		t.Errorf("child create body %v: bay-mounted devices must not set a rack (got %d)", muts[0].body, got)
 	}
 	if _, hasPos := muts[0].body["position"]; hasPos {
 		t.Errorf("child create body %v: bay-mounted devices must not set a position", muts[0].body)
 	}
+	_ = rackID
 
 	// ...is then detached from the rack so it can enter the bay...
 	if muts[1].method != "PATCH" || !strings.Contains(muts[1].path, "/api/dcim/devices/") {
@@ -346,10 +342,7 @@ func TestReconcileDevicesBayInstallIsIdempotent(t *testing.T) {
 	parentID := utils.GetIDFromObject(parent)
 	f.seed("dcim", "device-bays", client.Object{"name": "bay-1", "device": parentID})
 
-	child := &models.DeviceConfig{
-		Name: "node-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-		ParentDevice: "chassis-01", DeviceBay: "bay-1",
-	}
+	child := testDevice("node-01", inBay("chassis-01", "bay-1"))
 
 	// First run installs the child into the bay.
 	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{child}); err != nil {
@@ -373,9 +366,7 @@ func TestReconcileDevicesSelfHealsDeviceBays(t *testing.T) {
 		"name": "bay-1", "label": "Bay 1", "device_type": deviceTypeID,
 	})
 
-	device := &models.DeviceConfig{
-		Name: "chassis-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-	}
+	device := testDevice("chassis-01")
 	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{device}); err != nil {
 		t.Fatalf("ReconcileDevices() error = %v", err)
 	}
@@ -413,15 +404,14 @@ func TestReconcileDevicesInstallsModules(t *testing.T) {
 	deviceID := utils.GetIDFromObject(device)
 	bay := f.seed("dcim", "module-bays", client.Object{"name": "gpu-1", "device": deviceID})
 
-	config := &models.DeviceConfig{
-		Name: "srv-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-		Status: "active",
-		Modules: []models.ModuleConfig{
-			{Name: "gpu-1", ModuleTypeSlug: "h200"},
-			{Name: "gpu-1", ModuleTypeSlug: "unknown-type"}, // unknown type: skipped
-			{Name: "gpu-9", ModuleTypeSlug: "h200"},         // no such bay: skipped
-		},
-	}
+	config := testDevice("srv-01",
+		withStatus("active"),
+		withModules(
+			models.ModuleConfig{Name: "gpu-1", ModuleTypeSlug: "h200"},
+			models.ModuleConfig{Name: "gpu-1", ModuleTypeSlug: "unknown-type"}, // unknown type: skipped
+			models.ModuleConfig{Name: "gpu-9", ModuleTypeSlug: "h200"},         // no such bay: skipped
+		),
+	)
 	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{config}); err != nil {
 		t.Fatalf("ReconcileDevices() error = %v", err)
 	}
@@ -521,17 +511,134 @@ func TestReconcileDevicesSkipsCableWhenPeerMissing(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	seedDeviceFoundation(t, f, c)
 
-	devices := []*models.DeviceConfig{{
-		Name: "sw-01", SiteSlug: "berlin-dc", DeviceTypeSlug: "c9300", RoleSlug: "switch",
-		Interfaces: []models.InterfaceConfig{{
-			Name: "eth0", Type: "1000base-t",
-			Link: &models.LinkConfig{PeerDevice: "ghost-device", PeerPort: "eth0"},
-		}},
-	}}
+	devices := []*models.DeviceConfig{
+		testDevice("sw-01", withInterfaces(testInterface("eth0", "1000base-t",
+			linkedTo("ghost-device", "eth0", ""),
+		))),
+	}
 	if err := NewDeviceReconciler(c).ReconcileDevices(devices); err != nil {
 		t.Fatalf("ReconcileDevices() error = %v, expected missing peer to be skipped without error", err)
 	}
 	if got := len(f.objects("dcim", "cables")); got != 0 {
 		t.Errorf("expected no cables for a missing peer device, got %d", got)
+	}
+}
+
+// TestReconcileDevicesBayMountedDeviceGetsNoRack covers a convergence bug: a
+// bay-mounted device inherits rack_slug from its file's `defaults`, but
+// installDeviceIntoBay must clear rack/position/face to install it. Sending a
+// rack meant the install undid it and the next run re-sent it, forever.
+func TestReconcileDevicesBayMountedDeviceGetsNoRack(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	siteID, roleID, deviceTypeID := seedDeviceFoundation(t, f, c)
+	rack := f.seed("dcim", "racks", client.Object{"name": "R01", "site": siteID})
+	if err := c.Cache().LoadSite(testSiteSlug); err != nil {
+		t.Fatalf("LoadSite() error = %v", err)
+	}
+	parent := f.seed("dcim", "devices", client.Object{
+		"name": "chassis-01", "site": siteID, "role": roleID, "device_type": deviceTypeID,
+		"rack": map[string]interface{}{"id": utils.GetIDFromObject(rack)},
+	})
+	f.seed("dcim", "device-bays", client.Object{"name": "bay-1", "device": utils.GetIDFromObject(parent)})
+
+	// A blade that inherited rack_slug/position from a shared defaults block.
+	blade := testDevice("blade-01", inBay("chassis-01", "bay-1"), inRack("R01", 5))
+
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{blade}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+
+	var created client.Object
+	for _, d := range f.objects("dcim", "devices") {
+		if d["name"] == "blade-01" {
+			created = d
+		}
+	}
+	if created == nil {
+		t.Fatal("blade was not created")
+	}
+	if got := utils.GetIDFromObject(created["rack"]); got != 0 {
+		t.Errorf("bay-mounted device rack = %v, want none (NetBox derives it from the parent)", created["rack"])
+	}
+	// installDeviceIntoBay clears position/face on install, so the key may be
+	// present but must never carry a value.
+	if pos := created["position"]; pos != nil {
+		t.Errorf("bay-mounted device has position %v, want none", pos)
+	}
+
+	// And the second run must be a no-op.
+	f.resetMutations()
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{blade}); err != nil {
+		t.Fatalf("ReconcileDevices() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
+}
+
+// TestReconcileInterfacesBindsLAGMembers covers a feature that was declared in
+// the model and advertised in the README but never read by any reconciler:
+// `members` silently did nothing, so a bond was created with no legs.
+func TestReconcileInterfacesBindsLAGMembers(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	seedDeviceFoundation(t, f, c)
+
+	// The LAG is declared after its members on purpose.
+	dev := testDevice("srv-01", withInterfaces(
+		testInterface("NIC1", "25gbase-x-sfp28"),
+		testInterface("NIC2", "25gbase-x-sfp28"),
+		models.InterfaceConfig{Name: "bond0", Type: "lag", Members: []string{"NIC1", "NIC2"}},
+	))
+
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{dev}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+
+	byName := map[string]client.Object{}
+	for _, i := range f.objects("dcim", "interfaces") {
+		name, _ := i["name"].(string)
+		byName[name] = i
+	}
+	bondID := utils.GetIDFromObject(byName["bond0"])
+	if bondID == 0 {
+		t.Fatal("bond0 was not created")
+	}
+	for _, member := range []string{"NIC1", "NIC2"} {
+		if got := utils.GetIDFromObject(byName[member]["lag"]); got != bondID {
+			t.Errorf("%s lag = %v, want bond0 (%d)", member, byName[member]["lag"], bondID)
+		}
+	}
+
+	// Binding must not re-PATCH on a converged run.
+	f.resetMutations()
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{dev}); err != nil {
+		t.Fatalf("ReconcileDevices() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
+}
+
+// TestReconcileInterfacesReportsMissingLAGMember: a bond missing a leg is a
+// real difference from the declaration, so it must not pass silently.
+func TestReconcileInterfacesReportsMissingLAGMember(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	seedDeviceFoundation(t, f, c)
+
+	dev := testDevice("srv-01", withInterfaces(
+		testInterface("NIC1", "25gbase-x-sfp28"),
+		models.InterfaceConfig{Name: "bond0", Type: "lag", Members: []string{"NIC1", "ghost0"}},
+	))
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{dev}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v; a missing member must not abort the run", err)
+	}
+
+	// The present member is still bound...
+	for _, i := range f.objects("dcim", "interfaces") {
+		if i["name"] == "NIC1" && utils.GetIDFromObject(i["lag"]) == 0 {
+			t.Error("NIC1 was not bound into the LAG")
+		}
+	}
+	// ...and no interface was invented for the missing member.
+	for _, i := range f.objects("dcim", "interfaces") {
+		if i["name"] == "ghost0" {
+			t.Error("a missing LAG member must not be created implicitly")
+		}
 	}
 }

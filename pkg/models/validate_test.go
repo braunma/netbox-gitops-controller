@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package models
 
 import (
@@ -573,5 +575,62 @@ func TestCustomFieldValidate(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			checkValidation(t, tt.cf.Validate(), tt.wantErrs)
 		})
+	}
+}
+
+// rename_from must name what the object used to be called. Declaring the value
+// it already has reads as "rename this to itself", does nothing, and usually
+// means the line was left behind after the rename had already been applied.
+func TestValidateRejectsRenameFromEqualToCurrentIdentity(t *testing.T) {
+	cases := []struct {
+		name  string
+		model interface{ Validate() error }
+		want  string
+	}{
+		{"site", &Site{Name: "FRA", Slug: "fra", RenameFrom: "fra"}, "slug"},
+		{"rack", &Rack{Name: "R1", SiteSlug: "fra", RenameFrom: "R1"}, "name"},
+		{"device", &DeviceConfig{
+			Name: "srv-01", SiteSlug: "fra", DeviceTypeSlug: "t", RoleSlug: "r", RenameFrom: "srv-01",
+		}, "name"},
+		{"vlan", &VLAN{Name: "V", VID: 100, SiteSlug: "fra", RenameFrom: "100"}, "vid"},
+		{"prefix", &Prefix{Prefix: "10.0.0.0/24", RenameFrom: "10.0.0.0/24"}, "prefix"},
+		{"module type", &ModuleType{Model: "M", Manufacturer: "Dell", RenameFrom: "M"}, "model"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := tc.model.Validate()
+			if err == nil {
+				t.Fatal("expected an error for rename_from equal to the current identity")
+			}
+			if !strings.Contains(err.Error(), "rename_from") || !strings.Contains(err.Error(), tc.want) {
+				t.Errorf("error = %q, want it to mention rename_from and %q", err, tc.want)
+			}
+		})
+	}
+}
+
+// A VLAN is identified by its VID, so rename_from is a number. Anything else is
+// a sign the user meant to correct the name, which needs no declaration at all.
+func TestValidateVLANRenameFromMustBeAVID(t *testing.T) {
+	err := (&VLAN{Name: "Storage", VID: 210, SiteSlug: "fra", RenameFrom: "Storgae"}).Validate()
+	if err == nil {
+		t.Fatal("expected an error for a non-numeric VLAN rename_from")
+	}
+	if !strings.Contains(err.Error(), "vid") {
+		t.Errorf("error = %q, want it to explain that a VLAN is identified by its vid", err)
+	}
+
+	if err := (&VLAN{Name: "Storage", VID: 210, SiteSlug: "fra", RenameFrom: "201"}).Validate(); err != nil {
+		t.Errorf("a valid previous VID was rejected: %v", err)
+	}
+}
+
+// The common case must stay quiet: no rename_from at all is always valid.
+func TestValidateAcceptsAbsentRenameFrom(t *testing.T) {
+	if err := (&Site{Name: "FRA", Slug: "fra"}).Validate(); err != nil {
+		t.Errorf("site without rename_from was rejected: %v", err)
+	}
+	if err := (&Rack{Name: "R1", SiteSlug: "fra"}).Validate(); err != nil {
+		t.Errorf("rack without rename_from was rejected: %v", err)
 	}
 }

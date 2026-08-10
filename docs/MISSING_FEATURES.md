@@ -46,23 +46,33 @@ Human-oriented console logging only. Desired: `--log-format json`,
 calls, duration), optionally Prometheus-exposed in daemon mode.
 
 ### Release & packaging
-No versioned releases, Dockerfile or Makefile, and CI exists only for GitLab
-though the repo is on GitHub. Desired: a `Makefile`, multi-stage `Dockerfile` +
-image publishing, goreleaser with semver tags and a `--version` flag, and a
-GitHub Actions workflow mirroring `.gitlab-ci.yml`.
+Partly done: there is a `Makefile`, a multi-stage `Dockerfile`, an Apache-2.0
+`LICENSE`, and `--version` stamped from ldflags. Still missing: goreleaser with
+semver tags, image publishing, and a GitHub Actions workflow mirroring
+`.gitlab-ci.yml` (CI exists only for GitLab though the repo is on GitHub).
 
-### Idempotency integration test
-Unit tests use fakes/`httptest`, not a real NetBox. Missing: spin up NetBox in
-Docker in CI, sync the `example/` data twice, and assert the second run is a
-no-op.
+### Live-state validation
+`yamlcheck` validates the YAML against the typed models, but nothing validates
+it against the *server*: a status value, interface type or rack position that
+the models accept can still be rejected by a particular NetBox instance.
+Desired: a `validate` command that resolves choices and references against the
+live API without writing, so a merge request fails before it reaches apply.
+
+## Done since this list was written
+
+- **Idempotency integration test** — `tests/e2e/` drives the built binary
+  against a real NetBox over randomized datasets and asserts the second apply
+  is a no-op, that a dry-run writes nothing, that everything declared actually
+  exists, and that prune leaves unmanaged objects alone. Wired into
+  `.gitlab-ci.yml` behind `RUN_E2E`.
 
 ## Suggested order
 
 | Order | Feature | Effort |
 |-------|---------|--------|
-| 1 | Idempotency integration test | M |
+| 1 | Live-state validation | M |
 | 2 | Config file | S |
 | 3 | Extended IPAM | S–M |
-| 4 | Release / packaging | S |
+| 4 | Release / packaging (goreleaser, image publish) | S |
 | 5 | Observability | M |
 | 6 | Daemon / webhooks | L |

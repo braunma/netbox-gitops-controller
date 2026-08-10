@@ -1,7 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package reconciler
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
@@ -42,6 +45,15 @@ func NewDeviceReconciler(c *client.NetBoxClient) *DeviceReconciler {
 func (dr *DeviceReconciler) ReconcileDevices(devices []*models.DeviceConfig) error {
 	dr.logger.Info("Reconciling %d devices...", len(devices))
 
+	// A child device is placed into a bay on its parent, which reconcileDevice
+	// resolves with a live NetBox lookup — so a parent declared in this same run
+	// must have been reconciled already. Order the list accordingly instead of
+	// relying on the order the loader happened to read the files in.
+	devices, err := sortDevicesByDependency(devices)
+	if err != nil {
+		return err
+	}
+
 	// Phase 1: Reconcile all devices and their ports
 	dr.logger.Debug("═══ Phase 1: Devices and Ports ═══")
 	for i, device := range devices {
@@ -59,6 +71,65 @@ func (dr *DeviceReconciler) ReconcileDevices(devices []*models.DeviceConfig) err
 	}
 
 	return nil
+}
+
+// sortDevicesByDependency returns the devices ordered so that a parent always
+// precedes the children it hosts, at any nesting depth. Devices that are not
+// related by parent_device keep their original relative order, so a run's
+// output stays stable and diffable.
+//
+// A parent_device that is not declared in this run is left alone: it must
+// already exist in NetBox, and reconcileDevice looks it up there.
+func sortDevicesByDependency(devices []*models.DeviceConfig) ([]*models.DeviceConfig, error) {
+	// First occurrence wins; a duplicate name is a data error that surfaces
+	// with a clearer message when NetBox rejects the second device.
+	indexByName := make(map[string]int, len(devices))
+	for i, d := range devices {
+		if _, seen := indexByName[d.Name]; !seen {
+			indexByName[d.Name] = i
+		}
+	}
+
+	const (
+		unvisited = iota
+		visiting
+		done
+	)
+	state := make([]int, len(devices))
+	sorted := make([]*models.DeviceConfig, 0, len(devices))
+
+	// Depth-first emit: a device is appended only after its ancestors are.
+	var visit func(i int, chain []string) error
+	visit = func(i int, chain []string) error {
+		switch state[i] {
+		case done:
+			return nil
+		case visiting:
+			// Includes a device naming itself as its own parent.
+			return fmt.Errorf("parent_device cycle detected: %s",
+				strings.Join(append(chain, devices[i].Name), " -> "))
+		}
+
+		state[i] = visiting
+		if parent := devices[i].ParentDevice; parent != "" {
+			if pi, ok := indexByName[parent]; ok {
+				if err := visit(pi, append(chain, devices[i].Name)); err != nil {
+					return err
+				}
+			}
+		}
+		state[i] = done
+
+		sorted = append(sorted, devices[i])
+		return nil
+	}
+
+	for i := range devices {
+		if err := visit(i, nil); err != nil {
+			return nil, err
+		}
+	}
+	return sorted, nil
 }
 
 // reconcileDevice reconciles a single device
@@ -89,6 +160,12 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	if device.RackSlug != "" {
 		if rackID, ok := dr.client.Cache().GetSiteID("racks", siteID, device.RackSlug); ok {
 			yamlRackID = rackID
+		} else {
+			// Racks are only registered by the foundation phase, so a run that
+			// skips it (--only devices) can miss one. Say so: placing a device
+			// with no rack when the YAML asks for one is silent data loss.
+			dr.logger.Warning("Rack %q not found at site %q for device %s; the device will have no rack, position or face",
+				device.RackSlug, device.SiteSlug, device.Name)
 		}
 	}
 
@@ -149,19 +226,24 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		deviceBayID = utils.GetIDFromObject(bays[0])
 	}
 
-	// Determine final rack ID: YAML rack takes precedence, then parent's rack
-	if yamlRackID > 0 {
+	// Determine final rack ID: YAML rack takes precedence, then parent's rack.
+	// A bay-mounted device is the exception: NetBox derives its location from
+	// the parent and installDeviceIntoBay has to clear rack/position/face to
+	// install it, so sending a rack here would be undone on install and
+	// re-sent on the next run forever. Inventory files commonly set rack_slug
+	// in a shared `defaults` block, so a blade inherits one it must not use.
+	switch {
+	case deviceBayID > 0:
+		finalRackID = 0
+	case yamlRackID > 0:
 		finalRackID = yamlRackID
-	} else if parentRackID > 0 {
+	case parentRackID > 0:
 		finalRackID = parentRackID
 	}
 
 	// B. Build device payload
 	// Default status to "active" if not provided
-	status := device.Status
-	if status == "" {
-		status = "active"
-	}
+	status := defaultStatus(device.Status)
 
 	payload := map[string]interface{}{
 		"name":        device.Name,
@@ -203,6 +285,11 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	lookup := map[string]interface{}{
 		"name":    device.Name,
 		"site_id": siteID,
+	}
+
+	lookup, err := dr.client.RenamedLookup("dcim", "devices", device.Name, lookup, "name", nonEmpty(device.RenameFrom))
+	if err != nil {
+		return err
 	}
 
 	deviceObj, err := dr.client.Apply("dcim", "devices", lookup, payload)
@@ -326,6 +413,10 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 			"name":      iface.Name,
 		}
 
+		lookup, err := dr.client.RenamedLookup("dcim", "interfaces", iface.Name, lookup, "name", nonEmpty(iface.RenameFrom))
+		if err != nil {
+			return err
+		}
 		ifaceObj, err := dr.client.Apply("dcim", "interfaces", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to apply interface %s: %w", iface.Name, err)
@@ -355,7 +446,67 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 		}
 	}
 
+	// LAG membership runs after the loop: a member points at the LAG by ID, so
+	// the LAG interface must already exist, and it may be declared after its
+	// members in the YAML.
+	if err := dr.reconcileLAGMembers(deviceID, device); err != nil {
+		return err
+	}
+
 	return nil
+}
+
+// reconcileLAGMembers binds each interface listed under a LAG's `members` to
+// that LAG. Members are interfaces on the same device; one that does not exist
+// is reported rather than skipped silently, since a bond missing a leg is a
+// real difference from what the YAML asked for.
+func (dr *DeviceReconciler) reconcileLAGMembers(deviceID int, device *models.DeviceConfig) error {
+	for _, iface := range device.Interfaces {
+		if len(iface.Members) == 0 {
+			continue
+		}
+
+		lagID, ok := dr.lookupDeviceInterface(deviceID, iface.Name)
+		if !ok {
+			if dr.client.IsDryRun() {
+				dr.logger.Warning("      LAG %s is only planned in this run; skipping member binding in dry-run", iface.Name)
+				dr.client.MarkReconcileIncomplete("dcim", "interfaces")
+				continue
+			}
+			return fmt.Errorf("LAG interface %s not found on device %s", iface.Name, device.Name)
+		}
+
+		for _, member := range iface.Members {
+			if _, ok := dr.lookupDeviceInterface(deviceID, member); !ok {
+				dr.logger.Warning("      LAG %s lists member %s, which does not exist on %s; not bound",
+					iface.Name, member, device.Name)
+				dr.client.MarkReconcileIncomplete("dcim", "interfaces")
+				continue
+			}
+			dr.logger.Debug("      LAG %s ← member %s", iface.Name, member)
+			if _, err := dr.client.Apply("dcim", "interfaces",
+				map[string]interface{}{"device_id": deviceID, "name": member},
+				map[string]interface{}{"device": deviceID, "name": member, "lag": lagID},
+			); err != nil {
+				return fmt.Errorf("failed to bind %s into LAG %s: %w", member, iface.Name, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// lookupDeviceInterface resolves an interface by name on a device.
+func (dr *DeviceReconciler) lookupDeviceInterface(deviceID int, name string) (int, bool) {
+	found, err := dr.client.Filter("dcim", "interfaces", map[string]interface{}{
+		"device_id": deviceID,
+		"name":      name,
+	})
+	if err != nil || len(found) == 0 {
+		return 0, false
+	}
+	id := utils.GetIDFromObject(found[0])
+	return id, id > 0
 }
 
 // reconcileIPAddress reconciles an IP address for an interface
@@ -687,18 +838,14 @@ func (dr *DeviceReconciler) reconcileFrontPorts(deviceID int, device *models.Dev
 		rearPortID := utils.GetIDFromObject(rearPorts[0])
 
 		payload := map[string]interface{}{
-			"device":    deviceID,
-			"name":      port.Name,
-			"rear_port": rearPortID,
+			"device": deviceID,
+			"name":   port.Name,
 		}
+		setFrontPortTermination(dr.client, payload, rearPortID, defaultPosition(port.RearPortPosition))
 
 		// Only include type if not empty (NetBox rejects empty string)
 		if port.Type != "" {
 			payload["type"] = port.Type
-		}
-
-		if port.RearPortPosition > 0 {
-			payload["rear_port_position"] = port.RearPortPosition
 		}
 		if port.Label != "" {
 			payload["label"] = port.Label

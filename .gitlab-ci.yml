@@ -18,6 +18,14 @@
 #   GOLANG_IMAGE               Go compiler image
 #                              Default: "golang:1.24"
 #
+#   NETBOX_IMAGE               NetBox image for the end-to-end job
+#                              Default: "netboxcommunity/netbox:v4.6-3.3.0"
+#   POSTGRES_IMAGE             PostgreSQL image for the end-to-end job
+#                              Default: "postgres:16-alpine"
+#   REDIS_IMAGE                Redis/Valkey image for the end-to-end job
+#                              Default: "valkey/valkey:8-alpine"
+#                              (mirror all three into your registry on-prem)
+#
 # PIPELINE SPEED CONTROLS:
 # ------------------------
 # Speed up your pipelines by skipping optional quality checks and tests.
@@ -30,6 +38,12 @@
 #   RUN_TESTS                  Skip test execution
 #                              Set to "false" to skip (default: "true")
 #                              Skips: go_test
+#
+#   RUN_E2E                    Run the end-to-end job against a throwaway
+#                              NetBox started as CI services.
+#                              Set to "true" to enable (default: "false")
+#                              Requires a Docker-executor runner and the three
+#                              images above reachable from it.
 #
 # HOW TO USE:
 # 1. Per-pipeline: GitLab → CI/CD → Run Pipeline → Add variable
@@ -60,11 +74,26 @@ variables:
   # CLI from this image; override to pin a version or use a private mirror.
   OPENTOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.9"
 
+  # END-TO-END TEST IMAGES
+  # The e2e job starts a throwaway NetBox from these images as CI services.
+  # Mirror them into your own registry and override here when running on-prem.
+  NETBOX_IMAGE: "netboxcommunity/netbox:v4.6-3.3.0"
+  POSTGRES_IMAGE: "postgres:16-alpine"
+  REDIS_IMAGE: "valkey/valkey:8-alpine"
+
   # PROXMOX PROVISIONING (opt-in)
   # The Terraform jobs that provision VMs in Proxmox are disabled by default so
   # the NetBox pipeline runs standalone. Set ENABLE_PROXMOX="true" (and the
   # TF_VAR_proxmox_* variables) to turn on tf_validate/tf_plan/tf_apply.
   ENABLE_PROXMOX: "false"
+
+  # END-TO-END TESTS (opt-in)
+  # The e2e job drives the built binary against a real NetBox and asserts the
+  # properties an in-memory fake cannot show: that a dry run writes nothing,
+  # that a second apply has nothing left to do, and that pruning a converged
+  # instance deletes nothing. It needs a Docker-executor runner that can pull
+  # NETBOX_IMAGE/POSTGRES_IMAGE/REDIS_IMAGE, so it is off by default.
+  RUN_E2E: "false"
 
   # ===========================================================================
   # PIPELINE CONTROL VARIABLES
@@ -141,13 +170,79 @@ go_test:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
+# End-to-end test against a real NetBox.
+#
+# NetBox, PostgreSQL and Redis run as CI services. FF_NETWORK_PER_BUILD is
+# required: without it the service containers get no shared network and NetBox
+# cannot reach its database.
+#
+# The credentials below are throwaway values for a container that lives for the
+# length of one job. Do not reuse them anywhere else. NetBox 4.5+ issues "v2"
+# tokens (nbt_<key>.<secret>) and its container bootstrap only ever creates
+# that kind, which is why NETBOX_TOKEN is assembled from the key and secret.
+e2e:
+  extends: .go_base
+  stage: test
+  services:
+    - name: ${POSTGRES_IMAGE}
+      alias: postgres
+    - name: ${REDIS_IMAGE}
+      alias: redis
+    - name: ${NETBOX_IMAGE}
+      alias: netbox
+  variables:
+    FF_NETWORK_PER_BUILD: "true"
+    # PostgreSQL service
+    POSTGRES_DB: netbox
+    POSTGRES_USER: netbox
+    POSTGRES_PASSWORD: netbox
+    # NetBox -> PostgreSQL / Redis
+    DB_HOST: postgres
+    DB_NAME: netbox
+    DB_USER: netbox
+    DB_PASSWORD: netbox
+    REDIS_HOST: redis
+    REDIS_DATABASE: "0"
+    REDIS_CACHE_HOST: redis
+    REDIS_CACHE_DATABASE: "1"
+    SECRET_KEY: "ci-only-secret-key-at-least-fifty-characters-long-0123456789"
+    API_TOKEN_PEPPER_1: "ci-only-token-pepper-at-least-fifty-characters-long-0123456789"
+    SUPERUSER_NAME: admin
+    SUPERUSER_EMAIL: admin@example.com
+    SUPERUSER_PASSWORD: admin
+    SUPERUSER_API_KEY: "citokenkey01"
+    SUPERUSER_API_TOKEN: "0123456789abcdef0123456789abcdef01234567"
+    # What the controller connects with
+    NETBOX_URL: "http://netbox:8080"
+    NETBOX_TOKEN: "nbt_citokenkey01.0123456789abcdef0123456789abcdef01234567"
+    E2E_SEEDS: "1 2 3"
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 python3-yaml curl
+  script:
+    - echo "🔁 Running end-to-end tests against ${NETBOX_URL}..."
+    - tests/e2e/run.sh
+    - echo "🔁 Verifying that renames edit objects instead of duplicating them..."
+    - tests/e2e/rename.sh
+  rules:
+    - if: $RUN_E2E != "true"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
+
 # Build Go binary
 go_build:
   extends: .go_base
   stage: build
   script:
     - echo "🔨 Building Go binary..."
-    - go build -v -o netbox-gitops ./cmd/netbox-gitops/
+    # Stamp the build so `netbox-gitops --version` identifies exactly what ran,
+    # which is what makes the changelog's upgrade advice actionable.
+    - |
+      VERSION="${CI_COMMIT_TAG:-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}}"
+      go build -v -trimpath \
+        -ldflags "-X main.version=${VERSION} -X main.commit=${CI_COMMIT_SHORT_SHA} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+        -o netbox-gitops ./cmd/netbox-gitops/
+    - ./netbox-gitops --version
     - ./netbox-gitops --help
     - echo "✅ Go binary built successfully!"
   artifacts:

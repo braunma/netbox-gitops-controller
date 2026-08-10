@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package client
 
 import (
@@ -9,6 +11,8 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -27,6 +31,9 @@ type NetBoxClient struct {
 	recorder     *ChangeRecorder
 	dryRun       bool
 	managedTagID int
+	// version is the NetBox release reported by /api/status/, learned by
+	// CheckVersion. The zero value means "not determined".
+	version NetBoxVersion
 
 	// seen records the IDs of objects reconciled this run, keyed by
 	// "app/endpoint". Prune uses it to tell declared objects apart from
@@ -37,6 +44,10 @@ type NetBoxClient struct {
 	seenMu     sync.Mutex
 	seen       map[string]map[int]bool
 	incomplete map[string]bool
+	// referenced records objects that something reconciled this run points at,
+	// keyed by "app/endpoint". Prune refuses to delete them: an object still in
+	// use is not an orphan, whatever the YAML no longer says about it.
+	referenced map[string]map[int]bool
 }
 
 // NewClient creates a new NetBox API client
@@ -116,7 +127,7 @@ func (c *NetBoxClient) doWithRetry(method, requestURL string, jsonBody []byte) (
 		if err != nil {
 			return 0, nil, fmt.Errorf("failed to create request: %w", err)
 		}
-		req.Header.Set("Authorization", "Token "+c.token)
+		req.Header.Set("Authorization", c.authHeader())
 		req.Header.Set("Accept", "application/json")
 		if jsonBody != nil {
 			req.Header.Set("Content-Type", "application/json")
@@ -149,6 +160,25 @@ func (c *NetBoxClient) doWithRetry(method, requestURL string, jsonBody []byte) (
 	}
 
 	return 0, nil, fmt.Errorf("giving up after %d attempts: %w", maxRetries+1, lastErr)
+}
+
+// netboxV2TokenPrefix marks a NetBox 4.5+ "v2" API token. Such a token is
+// presented whole as "Bearer nbt_<key>.<secret>", while the older v1 token is
+// sent as "Token <key>". The prefix on the token itself is what tells them
+// apart, so an operator can paste whichever their NetBox issued without
+// configuring anything else.
+//
+// This matters for containerised deployments: the official NetBox image's
+// bootstrap only ever creates a v2 token, and v1 tokens are removed entirely
+// in NetBox 4.7.
+const netboxV2TokenPrefix = "nbt_"
+
+// authHeader returns the Authorization header value for the configured token.
+func (c *NetBoxClient) authHeader() string {
+	if strings.HasPrefix(c.token, netboxV2TokenPrefix) {
+		return "Bearer " + c.token
+	}
+	return "Token " + c.token
 }
 
 // Request makes an HTTP request to the NetBox API
@@ -312,12 +342,28 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 		payload = c.tagManager.InjectTag(payload, c.managedTagID)
 	}
 
-	c.logger.Debug("  → Applying %s with lookup: %v", endpoint, lookup)
+	payload = trimStringValues(payload)
 
-	// Try to find existing object
-	existing, err := c.Filter(app, endpoint, lookup)
-	if err != nil {
-		return nil, fmt.Errorf("failed to filter objects: %w", err)
+	c.logger.Debug("  → Applying %s with lookup: %v", endpoint, lookup)
+	c.markReferenced(payload)
+
+	// A lookup scoped by a reference that does not exist yet cannot match
+	// anything, so skip the query and plan a create. This happens in --dry-run
+	// against an empty NetBox: an object planned but never written is
+	// registered with id 0, and NetBox rejects "site_id=0" as an invalid
+	// choice rather than returning an empty result — which used to abort the
+	// first dry-run, the very run the documentation tells you to start with.
+	// In a real apply the referenced object has been created, so its id is
+	// never 0 and this never triggers.
+	var existing []Object
+	if unresolved, ok := unresolvedReference(lookup); ok {
+		c.logger.Debug("  → %s is scoped by %s, which is only planned in this run; treating as new", endpoint, unresolved)
+	} else {
+		var err error
+		existing, err = c.Filter(app, endpoint, lookup)
+		if err != nil {
+			return nil, fmt.Errorf("failed to filter objects: %w", err)
+		}
 	}
 
 	if len(existing) == 0 {
@@ -376,6 +422,144 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	}
 
 	return obj, nil
+}
+
+// trimStringValues returns a copy of the payload with leading and trailing
+// whitespace removed from its string values.
+//
+// Django REST Framework strips whitespace from character fields on write, so a
+// value ending in a newline — which a YAML block scalar produces, and which
+// the community library uses for `comments` — is stored trimmed. Sending the
+// untrimmed value therefore never matches what comes back, and the object is
+// re-PATCHed on every run. Trimming here makes the payload say what NetBox
+// will actually store; the whitespace could not have been preserved anyway.
+func trimStringValues(payload map[string]interface{}) map[string]interface{} {
+	trimmed := make(map[string]interface{}, len(payload))
+	for key, value := range payload {
+		if s, ok := value.(string); ok {
+			trimmed[key] = strings.TrimSpace(s)
+			continue
+		}
+		trimmed[key] = value
+	}
+	return trimmed
+}
+
+// unresolvedReference reports the first lookup key that scopes the query by a
+// reference id of 0 — an object planned in this run but not yet written.
+func unresolvedReference(lookup map[string]interface{}) (string, bool) {
+	for key, value := range lookup {
+		if !strings.HasSuffix(key, "_id") {
+			continue
+		}
+		if n, ok := toFloat(value); ok && n == 0 {
+			return key, true
+		}
+	}
+	return "", false
+}
+
+// referenceFieldEndpoints maps the payload fields that carry an object
+// reference to the endpoint that object lives at. Only unambiguous fields are
+// listed: mis-attributing a reference would make Prune skip a genuine orphan,
+// which is worse than missing one and letting NetBox's own foreign-key check
+// catch it. Fields whose target depends on context ("group", "parent") are
+// deliberately absent.
+var referenceFieldEndpoints = map[string]string{
+	"site":            "dcim/sites",
+	"rack":            "dcim/racks",
+	"device":          "dcim/devices",
+	"device_type":     "dcim/device-types",
+	"module_type":     "dcim/module-types",
+	"platform":        "dcim/platforms",
+	"manufacturer":    "dcim/manufacturers",
+	"role":            "dcim/device-roles",
+	"tenant":          "tenancy/tenants",
+	"vrf":             "ipam/vrfs",
+	"vlan":            "ipam/vlans",
+	"untagged_vlan":   "ipam/vlans",
+	"tagged_vlans":    "ipam/vlans",
+	"cluster":         "virtualization/clusters",
+	"virtual_machine": "virtualization/virtual-machines",
+	"lag":             "dcim/interfaces",
+	"rear_port":       "dcim/rear-ports",
+}
+
+// markReferenced records every object reference carried by an outgoing
+// payload. A string value is ignored: some fields (a prefix's `role`) are sent
+// as a name rather than an ID.
+func (c *NetBoxClient) markReferenced(payload map[string]interface{}) {
+	for key, value := range payload {
+		endpoint, ok := referenceFieldEndpoints[key]
+		if !ok {
+			continue
+		}
+		for _, id := range referenceIDs(value) {
+			c.markReferencedID(endpoint, id)
+		}
+	}
+
+	// rear_ports (NetBox 4.6 front port terminations) nests its references one
+	// level down, as {position, rear_port, rear_port_position}.
+	if mappings, ok := payload["rear_ports"].([]interface{}); ok {
+		for _, m := range mappings {
+			entry, ok := m.(map[string]interface{})
+			if !ok {
+				continue
+			}
+			for _, id := range referenceIDs(entry["rear_port"]) {
+				c.markReferencedID("dcim/rear-ports", id)
+			}
+		}
+	}
+}
+
+// referenceIDs extracts the object IDs a payload value refers to, covering the
+// scalar and list forms the reconcilers send.
+func referenceIDs(value interface{}) []int {
+	switch v := value.(type) {
+	case int:
+		if v > 0 {
+			return []int{v}
+		}
+	case []int:
+		out := make([]int, 0, len(v))
+		for _, id := range v {
+			if id > 0 {
+				out = append(out, id)
+			}
+		}
+		return out
+	case []interface{}:
+		out := make([]int, 0, len(v))
+		for _, item := range v {
+			if id := utils.GetIDFromObject(item); id > 0 {
+				out = append(out, id)
+			}
+		}
+		return out
+	}
+	return nil
+}
+
+func (c *NetBoxClient) markReferencedID(endpoint string, id int) {
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	if c.referenced == nil {
+		c.referenced = make(map[string]map[int]bool)
+	}
+	if c.referenced[endpoint] == nil {
+		c.referenced[endpoint] = make(map[int]bool)
+	}
+	c.referenced[endpoint][id] = true
+}
+
+// isReferenced reports whether something reconciled this run points at the
+// given object.
+func (c *NetBoxClient) isReferenced(app, endpoint string, id int) bool {
+	c.seenMu.Lock()
+	defer c.seenMu.Unlock()
+	return c.referenced[app+"/"+endpoint][id]
 }
 
 // formatLookup formats lookup criteria for display
@@ -486,6 +670,18 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 			continue
 		}
 
+		// rear_ports (NetBox 4.6 front port terminations) is a list of
+		// {position, rear_port, rear_port_position} mappings. Its entries carry
+		// no "id", so the ID-set comparison below would read both sides as
+		// empty and report the field permanently equal — a changed mapping
+		// would never be written. Compare the mappings themselves.
+		if key == "rear_ports" {
+			if !portMappingsEqual(existingValue, desiredValue) {
+				changes[key] = desiredValue
+			}
+			continue
+		}
+
 		// Slice-valued fields (e.g. tags, tagged_vlans) are compared as an
 		// order-insensitive set of referenced IDs. NetBox returns them as
 		// nested objects ([{id, ...}]) while we send plain []int, so a direct
@@ -534,6 +730,55 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 	}
 
 	return changes
+}
+
+// portMapping is a canonical front-port-to-rear-port termination.
+type portMapping struct{ position, rearPort, rearPortPosition int }
+
+// portMappingsEqual compares two rear_ports values as an order-insensitive set
+// of terminations, tolerating the nested-object form NetBox returns for
+// rear_port and the plain ID we send.
+func portMappingsEqual(existing, desired interface{}) bool {
+	a, b := canonicalPortMappings(existing), canonicalPortMappings(desired)
+	if len(a) != len(b) {
+		return false
+	}
+	for i := range a {
+		if a[i] != b[i] {
+			return false
+		}
+	}
+	return true
+}
+
+// canonicalPortMappings normalises a rear_ports value to a sorted slice.
+func canonicalPortMappings(v interface{}) []portMapping {
+	items, ok := v.([]interface{})
+	if !ok {
+		return nil
+	}
+	out := make([]portMapping, 0, len(items))
+	for _, item := range items {
+		m, ok := item.(map[string]interface{})
+		if !ok {
+			continue
+		}
+		out = append(out, portMapping{
+			position:         utils.GetIDFromObject(m["position"]),
+			rearPort:         utils.GetIDFromObject(m["rear_port"]),
+			rearPortPosition: utils.GetIDFromObject(m["rear_port_position"]),
+		})
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].position != out[j].position {
+			return out[i].position < out[j].position
+		}
+		if out[i].rearPort != out[j].rearPort {
+			return out[i].rearPort < out[j].rearPort
+		}
+		return out[i].rearPortPosition < out[j].rearPortPosition
+	})
+	return out
 }
 
 // idSetEqual reports whether two slice-valued fields reference the same set of
@@ -692,7 +937,53 @@ func valuesEqual(a, b interface{}) bool {
 		}
 	}
 
+	// NetBox renders decimal fields (u_height, weight, ...) as JSON strings
+	// when its serializer coerces decimals, so a numeric payload would never
+	// match the string it reads back and the object would be re-PATCHed on
+	// every run. Compare numerically whenever one side is a number and the
+	// other is a string that cleanly parses as one; a non-numeric string
+	// falls through to the plain comparison below.
+	if n, s, ok := numberAndNumericString(a, b); ok {
+		return n == s
+	}
+
 	return a == b
+}
+
+// numberAndNumericString reports whether a and b are a number and a numeric
+// string in either order, returning both as float64.
+func numberAndNumericString(a, b interface{}) (float64, float64, bool) {
+	an, aNum := toFloat(a)
+	bn, bNum := toFloat(b)
+
+	as, aStr := a.(string)
+	bs, bStr := b.(string)
+
+	switch {
+	case aNum && bStr:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(bs), 64)
+		return an, parsed, err == nil
+	case bNum && aStr:
+		parsed, err := strconv.ParseFloat(strings.TrimSpace(as), 64)
+		return parsed, bn, err == nil
+	}
+	return 0, 0, false
+}
+
+// toFloat converts the numeric types that reach valuesEqual (JSON decoding
+// yields float64; payloads may carry Go ints) to float64.
+func toFloat(v interface{}) (float64, bool) {
+	switch n := v.(type) {
+	case float64:
+		return n, true
+	case float32:
+		return float64(n), true
+	case int:
+		return float64(n), true
+	case int64:
+		return float64(n), true
+	}
+	return 0, false
 }
 
 // Cache returns the cache manager

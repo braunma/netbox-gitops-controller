@@ -1,10 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package models
 
 // ClusterType represents a NetBox cluster type (virtualization app), e.g.
 // "VMware vSphere" or "Proxmox".
 type ClusterType struct {
-	Name        string   `yaml:"name" json:"name" validate:"required"`
-	Slug        string   `yaml:"slug" json:"slug" validate:"required"`
+	Name string `yaml:"name" json:"name" validate:"required"`
+	Slug string `yaml:"slug" json:"slug" validate:"required"`
+	// RenameFrom is this object's previous slug. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom  string   `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
@@ -12,8 +18,12 @@ type ClusterType struct {
 // ClusterGroup represents a NetBox cluster group (virtualization app), an
 // organizational grouping of clusters.
 type ClusterGroup struct {
-	Name        string   `yaml:"name" json:"name" validate:"required"`
-	Slug        string   `yaml:"slug" json:"slug" validate:"required"`
+	Name string `yaml:"name" json:"name" validate:"required"`
+	Slug string `yaml:"slug" json:"slug" validate:"required"`
+	// RenameFrom is this object's previous slug. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom  string   `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
@@ -21,9 +31,13 @@ type ClusterGroup struct {
 // Cluster represents a NetBox cluster of virtualization hosts. A cluster
 // requires a type and may optionally belong to a group, site and tenant.
 type Cluster struct {
-	Name        string   `yaml:"name" json:"name" validate:"required"`
-	TypeSlug    string   `yaml:"type_slug" json:"type_slug" validate:"required"`
-	GroupSlug   string   `yaml:"group_slug,omitempty" json:"group_slug,omitempty"`
+	Name      string `yaml:"name" json:"name" validate:"required"`
+	TypeSlug  string `yaml:"type_slug" json:"type_slug" validate:"required"`
+	GroupSlug string `yaml:"group_slug,omitempty" json:"group_slug,omitempty"`
+	// RenameFrom is this object's previous name. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom  string   `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	SiteSlug    string   `yaml:"site_slug,omitempty" json:"site_slug,omitempty"`
 	Tenant      string   `yaml:"tenant,omitempty" json:"tenant,omitempty"`
 	Status      string   `yaml:"status,omitempty" json:"status,omitempty"`
@@ -35,7 +49,11 @@ type Cluster struct {
 // device InterfaceConfig (VLAN/IP semantics) but cannot be cabled, so it has
 // no Link field.
 type VMInterfaceConfig struct {
-	Name         string    `yaml:"name" json:"name" validate:"required"`
+	Name string `yaml:"name" json:"name" validate:"required"`
+	// RenameFrom is this object's previous name. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom   string    `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	Enabled      *bool     `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	Description  string    `yaml:"description,omitempty" json:"description,omitempty"`
 	MTU          int       `yaml:"mtu,omitempty" json:"mtu,omitempty"`
@@ -58,6 +76,10 @@ type VMInterfaceConfig struct {
 // generator, even if they carry a VMID/VMTemplateID for reference.
 type VMConfig struct {
 	Name string `yaml:"name" json:"name" validate:"required"`
+	// RenameFrom is this object's previous name. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom string `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	// Provision opts the VM into Proxmox provisioning via Terraform. When false
 	// (the default) the VM is documented in NetBox only.
 	Provision bool `yaml:"provision,omitempty" json:"provision,omitempty"`

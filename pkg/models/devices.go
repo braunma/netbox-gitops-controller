@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 package models
 
 import "gopkg.in/yaml.v3"
@@ -47,8 +49,12 @@ func (ip *IPConfig) UnmarshalYAML(value *yaml.Node) error {
 
 // InterfaceConfig represents an interface configuration (for concrete devices)
 type InterfaceConfig struct {
-	Name         string      `yaml:"name" json:"name" validate:"required"`
-	Type         string      `yaml:"type,omitempty" json:"type,omitempty"`
+	Name string `yaml:"name" json:"name" validate:"required"`
+	Type string `yaml:"type,omitempty" json:"type,omitempty"`
+	// RenameFrom is this object's previous name. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom   string      `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	Enabled      *bool       `yaml:"enabled,omitempty" json:"enabled,omitempty"`
 	Label        string      `yaml:"label,omitempty" json:"label,omitempty"`
 	Description  string      `yaml:"description,omitempty" json:"description,omitempty"`
@@ -99,8 +105,12 @@ type ModuleConfig struct {
 
 // DeviceConfig represents a device configuration (concrete device)
 type DeviceConfig struct {
-	Name           string            `yaml:"name" json:"name" validate:"required"`
-	SiteSlug       string            `yaml:"site_slug" json:"site_slug" validate:"required"`
+	Name     string `yaml:"name" json:"name" validate:"required"`
+	SiteSlug string `yaml:"site_slug" json:"site_slug" validate:"required"`
+	// RenameFrom is this object's previous name. Set it to correct a typo
+	// so the existing object is renamed instead of a second one being
+	// created; remove it once the sync has run.
+	RenameFrom     string            `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	DeviceTypeSlug string            `yaml:"device_type_slug" json:"device_type_slug" validate:"required"`
 	RoleSlug       string            `yaml:"role_slug" json:"role_slug" validate:"required"`
 	RackSlug       string            `yaml:"rack_slug,omitempty" json:"rack_slug,omitempty"`
