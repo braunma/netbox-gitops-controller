@@ -2,53 +2,80 @@
 # NetBox GitOps Controller - CI/CD Pipeline
 # =============================================================================
 #
-# CONFIGURATION INSTRUCTIONS:
-# ---------------------------
-# This pipeline uses variables for all environment-specific settings.
-# To configure for your environment, set these variables in:
-#   GitLab Project → Settings → CI/CD → Variables
+# Set variables in GitLab Project → Settings → CI/CD → Variables (project-wide)
+# or under CI/CD → Run Pipeline (one run). Every variable this pipeline reads is
+# listed below; the defaults live in the `variables:` block further down.
 #
-# Required variables to override (if using private infrastructure):
+# REQUIRED — the pipeline reaches no NetBox without these:
 #
-#   GITLAB_RUNNER_TAG          GitLab runner tag
+#   NETBOX_URL                 Base URL of your NetBox, no trailing /api.
+#                              Used by go_validate, go_plan and go_apply.
+#   NETBOX_TOKEN               API token, v1 (40 hex chars) or v2
+#                              (nbt_<key>.<secret>). Mark it masked.
+#                              The e2e job does NOT use these: it overrides
+#                              both in its own shell and talks only to the
+#                              throwaway NetBox it starts as a service.
+#
+# INFRASTRUCTURE — override when running on-prem or behind a private registry:
+#
+#   GITLAB_RUNNER_TAG          Runner tag every job requests.
 #                              Default: "docker"
-#
-# Optional variables to override:
-#
-#   GOLANG_IMAGE               Go compiler image
-#                              Default: "golang:1.24"
-#
-#   NETBOX_IMAGE               NetBox image for the end-to-end job
+#   GOLANG_IMAGE               Go toolchain image for the go_* and tf_generate
+#                              jobs. Default: "golang:1.24"
+#   OPENTOFU_IMAGE             OpenTofu image for tf_validate/tf_plan/tf_apply.
+#                              Default: "ghcr.io/opentofu/opentofu:1.9"
+#   NETBOX_IMAGE               NetBox image for the e2e job's service.
 #                              Default: "netboxcommunity/netbox:v4.6-3.3.0"
-#   POSTGRES_IMAGE             PostgreSQL image for the end-to-end job
-#                              Default: "postgres:16-alpine"
-#   REDIS_IMAGE                Redis/Valkey image for the end-to-end job
-#                              Default: "valkey/valkey:8-alpine"
-#                              (mirror all three into your registry on-prem)
+#   POSTGRES_IMAGE             Default: "postgres:16-alpine"
+#   REDIS_IMAGE                Default: "valkey/valkey:8-alpine"
+#                              (mirror the last three into your own registry)
 #
-# PIPELINE SPEED CONTROLS:
-# ------------------------
-# Speed up your pipelines by skipping optional quality checks and tests.
-# Set these per-pipeline run or as project variables:
+# WHICH JOBS RUN — note the exact spellings; the comparisons are literal, so
+# "False" does not skip anything and "True" does not enable anything:
 #
-#   RUN_QUALITY_CHECKS         Skip linting and YAML validation
-#                              Set to "false" to skip (default: "true")
-#                              Skips: go_lint, yaml_check
+#   RUN_QUALITY_CHECKS         "false" skips go_lint and yaml_check.
+#                              Any other value runs them. Default: "true"
+#   RUN_TESTS                  "false" skips go_test. Any other value runs it.
+#                              Default: "true"
+#   RUN_E2E                    "true" — and only "true" — enables the e2e job.
+#                              Default: "false". Needs a Docker-executor runner
+#                              that can pull the three images above.
+#   ENABLE_PROXMOX             "true" — and only "true" — enables tf_validate,
+#                              tf_plan and tf_apply. Default: "false".
+#                              tf_generate always runs: it is pure Go and
+#                              guards against tfgen regressions.
 #
-#   RUN_TESTS                  Skip test execution
-#                              Set to "false" to skip (default: "true")
-#                              Skips: go_test
+# THRESHOLDS AND GATES:
 #
-#   RUN_E2E                    Run the end-to-end job against a throwaway
-#                              NetBox started as CI services.
-#                              Set to "true" to enable (default: "false")
-#                              Requires a Docker-executor runner and the three
-#                              images above reachable from it.
+#   COVERAGE_THRESHOLD         Minimum total statement coverage (%) for
+#                              go_test over ./pkg/... . Default: "65".
+#                              A non-numeric or empty value fails the job.
+#   TF_ALLOW_DESTROY           Comma-separated environment names (no spaces)
+#                              allowed to destroy or replace VMs in tf_apply,
+#                              e.g. "stage" or "stage,playground". There is no
+#                              wildcard: "all" matches nothing. Unset means no
+#                              environment may: a plan containing a destroy
+#                              fails the job instead. Set it per-run, not
+#                              project-wide.
 #
-# HOW TO USE:
-# 1. Per-pipeline: GitLab → CI/CD → Run Pipeline → Add variable
-# 2. Project-wide: GitLab → Settings → CI/CD → Variables
-# 3. Example: Set RUN_QUALITY_CHECKS=false for faster development iterations
+# PROXMOX (only read when ENABLE_PROXMOX="true"):
+#
+#   TF_VAR_proxmox_endpoint    e.g. https://pve.example.com:8006/api2/json
+#   TF_VAR_proxmox_api_token   user@realm!tokenid=secret  (mark it masked)
+#   Optional: TF_VAR_proxmox_insecure, TF_VAR_default_gateway,
+#             TF_VAR_vlan_tags, TF_VAR_ci_ssh_keys, TF_VAR_cpu_type, …
+#             See terraform/variables.tf.
+#
+# THE END-TO-END SCRIPTS also read E2E_SEEDS, E2E_KEEP and E2E_WORK; the e2e
+# job sets E2E_SEEDS and leaves the rest at their defaults. See
+# tests/e2e/README.md.
+#
+# PRECEDENCE, worth knowing before you set anything: a variable set in the UI
+# at project, group or instance level outranks everything written in this file,
+# job-level `variables:` included.
+# That is why the e2e job exports its NetBox target in the job shell instead —
+# a project NETBOX_URL would otherwise point tests that delete every
+# gitops-tagged object at the real instance.
 #
 # =============================================================================
 
@@ -110,9 +137,11 @@ variables:
   # Default: "true" - runs all tests
   RUN_TESTS: "true"
 
-  # COVERAGE_THRESHOLD: Minimum total statement coverage (%) for go_test.
-  # Current coverage is ~73%; the gate sits below that to catch regressions
-  # without blocking routine changes. Raise it as coverage improves.
+  # COVERAGE_THRESHOLD: Minimum total statement coverage (%) for go_test,
+  # which measures ./pkg/... . Coverage there is ~79% (August 2026); the gate
+  # sits below that to catch regressions without blocking routine changes.
+  # Raise it as coverage improves. A non-numeric value fails the job rather
+  # than disabling the gate.
   COVERAGE_THRESHOLD: "65"
 
   # ===========================================================================
@@ -152,10 +181,20 @@ go_test:
     - go test ./pkg/... -v -race -coverprofile=coverage.out -covermode=atomic
     - go tool cover -func=coverage.out | tail -1
     - |
+      # Both values are checked before comparing: awk compares a non-numeric
+      # operand as a string, so an empty COVERAGE_THRESHOLD would quietly turn
+      # the gate off instead of failing.
+      MINIMUM="${COVERAGE_THRESHOLD:-65}"
+      case "${MINIMUM}" in
+        ''|*[!0-9.]*) echo "❌ COVERAGE_THRESHOLD is ${COVERAGE_THRESHOLD:-<empty>}, which is not a number"; exit 1 ;;
+      esac
       TOTAL=$(go tool cover -func=coverage.out | tail -1 | awk '{gsub(/%/, "", $3); print $3}')
-      echo "Total statement coverage: ${TOTAL}% (minimum: ${COVERAGE_THRESHOLD}%)"
-      if awk -v t="$TOTAL" -v m="$COVERAGE_THRESHOLD" 'BEGIN { exit !(t < m) }'; then
-        echo "❌ Coverage ${TOTAL}% is below the required ${COVERAGE_THRESHOLD}%"
+      case "${TOTAL}" in
+        ''|*[!0-9.]*) echo "❌ Could not read the coverage total from coverage.out"; exit 1 ;;
+      esac
+      echo "Total statement coverage: ${TOTAL}% (minimum: ${MINIMUM}%)"
+      if awk -v t="$TOTAL" -v m="$MINIMUM" 'BEGIN { exit !(t < m) }'; then
+        echo "❌ Coverage ${TOTAL}% is below the required ${MINIMUM}%"
         exit 1
       fi
     - echo "✅ All Go tests passed!"
@@ -212,12 +251,30 @@ e2e:
     SUPERUSER_PASSWORD: admin
     SUPERUSER_API_KEY: "citokenkey01"
     SUPERUSER_API_TOKEN: "0123456789abcdef0123456789abcdef01234567"
-    # What the controller connects with
-    NETBOX_URL: "http://netbox:8080"
-    NETBOX_TOKEN: "nbt_citokenkey01.0123456789abcdef0123456789abcdef01234567"
     E2E_SEEDS: "1 2 3"
   before_script:
     - apt-get update -qq && apt-get install -y -qq --no-install-recommends python3 python3-yaml curl
+    # Where the controller points is set HERE, in the job shell, and not in the
+    # variables: block above.
+    #
+    # GitLab ranks a UI-set CI/CD variable (project, group or instance) above
+    # anything .gitlab-ci.yml says, job-level included. The apply jobs need
+    # NETBOX_URL and NETBOX_TOKEN set that way to reach the real NetBox — so a
+    # job-level default
+    # would be silently overridden by them, and these scripts wipe every
+    # gitops-tagged object between seeds. That would point a --prune at
+    # production. A shell export outranks every variable source, so this cannot
+    # be inherited away.
+    - export NETBOX_URL="http://netbox:8080"
+    - export NETBOX_TOKEN="nbt_${SUPERUSER_API_KEY}.${SUPERUSER_API_TOKEN}"
+    # Fail closed if that ever stops being true (an edit above, a future
+    # GitLab change): these scripts must only ever see the throwaway service.
+    - |
+      if [ "${NETBOX_URL}" != "http://netbox:8080" ]; then
+        echo "❌ e2e targets ${NETBOX_URL}, which is not the disposable CI service."
+        echo "   These tests delete every gitops-tagged object. Refusing to run."
+        exit 1
+      fi
   script:
     - echo "🔁 Running end-to-end tests against ${NETBOX_URL}..."
     - tests/e2e/run.sh
@@ -306,15 +363,17 @@ go_apply:
 # UTILITY JOBS
 # =============================================================================
 
+# `make lint` and not `go fmt ./...`: go fmt REWRITES the files it visits and
+# exits 0 either way, so it reported success on unformatted code — and with
+# allow_failure it could not have failed the job regardless. make lint checks
+# with `gofmt -l`, runs go vet, and verifies the SPDX headers.
 go_lint:
   extends: .go_base
   stage: test
   script:
     - echo "🔍 Running Go linters..."
-    - go fmt ./...
-    - go vet ./...
+    - make lint
     - echo "✅ Linting passed!"
-  allow_failure: true
   rules:
     - if: $RUN_QUALITY_CHECKS == "false"
       when: never
@@ -334,9 +393,12 @@ yaml_check:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
+# In the validate stage, not build: `dependencies` may only name jobs from an
+# earlier stage, and go_build is in build. As a build-stage job this failed
+# pipeline validation and could never have downloaded the binary it prints.
 debug_environment:
   extends: .go_base
-  stage: build
+  stage: validate
   script:
     - echo "📂 Repository structure:"
     - ls -la

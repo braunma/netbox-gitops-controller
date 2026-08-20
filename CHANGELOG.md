@@ -203,6 +203,29 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **The end-to-end CI job could have been pointed at the real NetBox and wiped
+  it.** GitLab ranks a UI-set CI/CD variable (project, group or instance level) above
+  anything in `.gitlab-ci.yml`, job-level `variables:` included — so the
+  `NETBOX_URL` and `NETBOX_TOKEN` that `go_apply` needs silently overrode the
+  throwaway values the `e2e` job declared for itself. Those scripts run
+  `--prune` against an empty data directory between seeds, which deletes every
+  `gitops`-tagged object. Enabling `RUN_E2E="true"` on a configured project
+  would have aimed that at production. The job now exports its target in the
+  job shell, where nothing outranks it, rebuilds the token from the service's
+  own bootstrap values, and refuses to run if the URL is not the CI service.
+- **`go_lint` could not fail.** Its script ran `go fmt ./...`, which *rewrites*
+  the files it visits and exits 0 either way, so unformatted code reported
+  success — and `allow_failure: true` meant even `go vet` could not block. It
+  runs `make lint` now (`gofmt -l` as a check, `go vet`, SPDX headers) and is
+  blocking.
+- **An empty `COVERAGE_THRESHOLD` silently disabled the coverage gate.** awk
+  compares a non-numeric operand as a string, so `"79.5" < ""` is false and the
+  gate passed. The threshold and the measured total are both validated as
+  numbers before the comparison, and either one being unreadable fails the job.
+- **`debug_environment` declared `dependencies: [go_build]` from the same
+  stage**, which GitLab rejects — `dependencies` may only name jobs from an
+  earlier stage. It moved to the `validate` stage, where the dependency is
+  legal and the binary it prints is actually available.
 - **TLS certificate verification was disabled on every connection.**
   `InsecureSkipVerify: true` was hardcoded in the HTTP client, while the README
   offered `IGNORE_SSL_ERRORS` as an opt-in "for dev environments only" that no
@@ -350,6 +373,18 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **Every CI/CD variable is now documented where it is set.** The header of
+  `.gitlab-ci.yml` listed six of them and omitted the two that are actually
+  required (`NETBOX_URL`, `NETBOX_TOKEN`), along with `OPENTOFU_IMAGE`,
+  `ENABLE_PROXMOX`, `COVERAGE_THRESHOLD` and `TF_ALLOW_DESTROY`. All of them
+  are listed there and in `CI_CD.md` with their defaults and exact effect,
+  including the two gotchas: the `RUN_*`/`ENABLE_*` comparisons are literal, so
+  `"False"` skips nothing and `"True"` enables nothing; and a project-level
+  variable outranks anything this file says. The stale "current coverage is
+  ~73%" note is now ~79%, measured.
+- `tests/e2e/rename.sh` honours `E2E_KEEP`, which `tests/e2e/README.md`
+  documents for the suite as a whole and the other two scripts already
+  respected.
 - **The README opens with a quickstart instead of reference material.** Build,
   configure, dry-run against the example data, edit, check, plan — one screen at
   the top, followed by a table mapping the task you have to the section that
