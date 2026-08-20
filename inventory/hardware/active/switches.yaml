@@ -1,133 +1,98 @@
 # Switch Inventory - Active Network Equipment
-# Concrete switch instances with port configurations and cabling
+#
+# Ports come from the dell-s5248f-on device type template, so a port is listed
+# here only for what the template cannot know: its access or trunk VLANs, its
+# management IP, an MTU.
+#
+# Cables are NOT declared here. The endpoint side (server, storage, patch
+# panel) owns every `link:`, so re-patching a port is a one-place edit; see
+# inventory/hardware/active/servers.yaml.
 
-# ========================================
-# Berlin DC - Leaf Switches
-# ========================================
-
-- name: "berlin-leaf-01"
-  site_slug: "berlin-dc"
+defaults:
   device_type_slug: "dell-s5248f-on"
   role_slug: "leaf-switch"
-  rack_slug: "berlin-rack-a01"
   position: 40
   status: "active"
-  serial: "LEAF01-SN-12345"
   tags: ["gitops", "production"]
 
-  interfaces:
-    # Management Interface
-    - name: "Management 1/1"
-      type: "1000base-t"
-      enabled: true
-      description: "Out-of-band management"
-      ip:
-        address: "10.10.10.11/24"
-        dns_name: "berlin-leaf-01-mgmt.example.com"
-        status: "active"
-        vrf: "Management"
-      address_role: "primary"
+devices:
+  # ========================================
+  # Berlin DC - Leaf Switches
+  # ========================================
 
-    # Server Downlinks (25G)
-    - name: "Eth1/1"
-      type: "25gbase-x-sfp28"
-      enabled: true
-      mode: "access"
-      untagged_vlan: "Server-Production"
-      description: "Connection to berlin-srv-web-01"
-      link:
-        peer_device: "berlin-srv-web-01"
-        peer_port: "eth0"
-        cable_type: "dac-active"
+  - name: "berlin-leaf-01"
+    site_slug: "berlin-dc"
+    rack_slug: "berlin-rack-a01"
+    serial: "LEAF01-SN-12345"
 
-    - name: "Eth1/2"
-      type: "25gbase-x-sfp28"
-      enabled: true
-      mode: "access"
-      untagged_vlan: "Server-Production"
-      description: "Connection to berlin-srv-web-02"
-      link:
-        peer_device: "berlin-srv-web-02"
-        peer_port: "eth0"
-        cable_type: "dac-active"
+    interfaces:
+      - name: "Management 1/1"
+        description: "Out-of-band management"
+        ip:
+          address: "10.10.10.11/24"
+          dns_name: "berlin-leaf-01-mgmt.example.com"
+          status: "active"
+          vrf: "Management"
+        address_role: "primary"
 
-    - name: "Eth1/3"
-      type: "25gbase-x-sfp28"
-      enabled: true
-      mode: "access"
-      untagged_vlan: "AI-Compute"
-      description: "Connection to berlin-srv-ai-01"
-      link:
-        peer_device: "berlin-srv-ai-01"
-        peer_port: "eth2"
-        cable_type: "dac-active"
+      # Server downlinks (cabled from the server side)
+      - name: "Eth1/1"
+        mode: "access"
+        untagged_vlan: "Server-Production"
+        description: "Connection to berlin-srv-web-01"
 
-    # Uplinks to Spine (100G)
-    - name: "Eth1/49"
-      type: "100gbase-x-qsfp28"
-      enabled: true
-      mode: "tagged"
-      tagged_vlans: ["Management", "Server-Production", "Storage", "AI-Compute"]
-      description: "Uplink to spine (future)"
-      mtu: 9000
+      - name: "Eth1/2"
+        mode: "access"
+        untagged_vlan: "Server-Production"
+        description: "Connection to berlin-srv-web-02"
 
-- name: "berlin-leaf-02"
-  site_slug: "berlin-dc"
-  device_type_slug: "dell-s5248f-on"
-  role_slug: "leaf-switch"
-  rack_slug: "berlin-rack-a02"
-  position: 40
-  status: "active"
-  serial: "LEAF02-SN-67890"
-  tags: ["gitops", "production"]
+      - name: "Eth1/3"
+        mode: "access"
+        untagged_vlan: "AI-Compute"
+        description: "Connection to berlin-srv-ai-01"
 
-  interfaces:
-    # Management Interface
-    - name: "Management 1/1"
-      type: "1000base-t"
-      enabled: true
-      description: "Out-of-band management"
-      ip:
-        address: "10.10.10.12/24"
-        dns_name: "berlin-leaf-02-mgmt.example.com"
-        status: "active"
-        vrf: "Management"
-      address_role: "primary"
+      # Uplink to spine
+      - name: "Eth1/49"
+        mode: "tagged"
+        tagged_vlans: ["Management", "Server-Production", "Storage", "AI-Compute"]
+        description: "Uplink to spine (future)"
+        mtu: 9000
 
-    # Server Downlinks
-    - name: "Eth1/1"
-      type: "25gbase-x-sfp28"
-      enabled: true
-      mode: "access"
-      untagged_vlan: "Storage"
-      description: "Connection to storage system"
-      link:
-        peer_device: "berlin-storage-01"
-        peer_port: "eth0"
-        cable_type: "dac-active"
+  - name: "berlin-leaf-02"
+    site_slug: "berlin-dc"
+    rack_slug: "berlin-rack-a02"
+    serial: "LEAF02-SN-67890"
 
-# ========================================
-# Frankfurt DC - Leaf Switch
-# ========================================
+    interfaces:
+      - name: "Management 1/1"
+        description: "Out-of-band management"
+        ip:
+          address: "10.10.10.12/24"
+          dns_name: "berlin-leaf-02-mgmt.example.com"
+          status: "active"
+          vrf: "Management"
+        address_role: "primary"
 
-- name: "frankfurt-leaf-01"
-  site_slug: "frankfurt-dc"
-  device_type_slug: "dell-s5248f-on"
-  role_slug: "leaf-switch"
-  rack_slug: "frankfurt-rack-c01"
-  position: 40
-  status: "active"
-  serial: "LEAF-FFM-11111"
-  tags: ["gitops", "production"]
+      - name: "Eth1/1"
+        mode: "access"
+        untagged_vlan: "Storage"
+        description: "Connection to storage system"
 
-  interfaces:
-    - name: "Management 1/1"
-      type: "1000base-t"
-      enabled: true
-      description: "Out-of-band management"
-      ip:
-        address: "10.20.10.11/24"
-        dns_name: "frankfurt-leaf-01-mgmt.example.com"
-        status: "active"
-        vrf: "Management"
-      address_role: "primary"
+  # ========================================
+  # Frankfurt DC - Leaf Switch
+  # ========================================
+
+  - name: "frankfurt-leaf-01"
+    site_slug: "frankfurt-dc"
+    rack_slug: "frankfurt-rack-c01"
+    serial: "LEAF-FFM-11111"
+
+    interfaces:
+      - name: "Management 1/1"
+        description: "Out-of-band management"
+        ip:
+          address: "10.20.10.11/24"
+          dns_name: "frankfurt-leaf-01-mgmt.example.com"
+          status: "active"
+          vrf: "Management"
+        address_role: "primary"

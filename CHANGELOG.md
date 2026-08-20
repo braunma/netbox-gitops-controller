@@ -14,6 +14,30 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **Cross-object lint checks in `yamlcheck` (`pkg/lint`).** Model validation
+  sees one object at a time, so everything that is only wrong *in relation to
+  something else* used to reach the apply: a device type slug that matches no
+  definition (the device is skipped with a warning), two devices in one rack
+  unit (NetBox rejects the second, after the first has been created), an IP or
+  a name used twice (the second write silently overwrites the first), a switch
+  port claimed by two cables, an interface the device type does not have.
+  `yamlcheck` now reports all of them from the repository alone, before a merge
+  request is applied — 36 checks, listed with their severities in the README
+  section *Checking the YAML before it reaches NetBox*.
+
+  Findings that are wrong regardless of what NetBox contains are errors and
+  fail the run; ones that may be legitimate (a value the device type template
+  already supplies, a cable declared from both ends, an address outside every
+  declared prefix, a peer device this repository does not manage) are warnings
+  and fail only under `--strict`. A kind of object the repository declares none
+  of is not checked at all, so managing devices but not sites stays a supported
+  partial adoption; `--allow-undeclared-refs` covers the mixed case.
+
+  `yamlcheck` also gained proper argument handling: a directory that holds
+  `definitions/` or `inventory/` is now treated as a data directory, so
+  `yamlcheck path/to/data-dir` runs model validation and linting on it instead
+  of only checking its YAML syntax.
+
 - **`rename_from`: correcting an identifying field now renames the object
   instead of duplicating it.** Every object is matched against NetBox by an
   identifying field — a slug, name, model, prefix or VID — so editing that field
@@ -143,6 +167,17 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **Two device type references in the sample inventory matched no definition,
+  and one module type reference in the example data matched none either.** The
+  first lint run found them: `berlin-pp-mm-01` asked for `patchpanel-mm-48`
+  where the definition's slug is `pp-48-mm-lc`, `berlin-storage-01` asked for
+  `isilon-a300` where the definitions declare an `isilon-a300-chassis` and an
+  `isilon-a300-node`, and the example GPU server installed `ex-gpu-a100`, a
+  part number rather than a slug the module type declared. Each meant the
+  object was skipped at apply time with a warning, not an error. The references
+  are corrected, the storage system is modelled the way its device types
+  describe it (a racked chassis with a node installed into a device bay), and
+  the example module types now declare the slugs they are referenced by.
 - **A module type reference could silently resolve to the wrong vendor's
   module.** NetBox identifies a module type by manufacturer and model together
   and gives it no slug, so two vendors may ship the same model name — but the
@@ -252,6 +287,18 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **The sample hardware inventory now uses the conventions the README
+  documents.** `inventory/hardware/active/` was written in the classic form
+  and predated them: it repeated `type` and `enabled: true` on every interface
+  (both already supplied by the device type template and the default), repeated
+  the site, role, device type and rack on every device, and declared each cable
+  from both ends — so adding one server meant editing two files. The files now
+  use the grouped `defaults` form, list an interface only for what is specific
+  to the device, and declare every cable from the endpoint side only; the
+  switches carry the VLANs and management IPs their ports need and no `link:`.
+  Nothing about the resulting NetBox state changes. A parked
+  `_new-server.yaml` holds a skeleton to copy from, and the Munich lab server
+  moved into its own `munich-lab.yaml` to show the one-file-per-site pattern.
 - `DeviceType.UHeight` is now a decimal rather than an integer, so half-height
   (0.5U) device types are represented correctly. Existing whole-number
   definitions are unaffected.

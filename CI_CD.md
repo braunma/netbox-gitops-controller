@@ -9,7 +9,7 @@ controller, and optionally provisions the VMs in Proxmox via OpenTofu.
 |-------|-----|------|-------------|---------|
 | test | `go_test` | branches + MRs | auto | `go test ./pkg/... -race` with a coverage gate (`COVERAGE_THRESHOLD`, default 65%); uploads `coverage.out`. |
 | test | `go_lint` | branches + MRs | auto (`allow_failure`) | `go fmt` + `go vet`. |
-| test | `yaml_check` | branches + MRs | auto | `go run ./cmd/yamlcheck` (YAML syntax). |
+| test | `yaml_check` | branches + MRs | auto | `go run ./cmd/yamlcheck` (YAML syntax, typed model validation, and the cross-object lint checks: duplicate names and IPs, rack collisions, cables, references). |
 | build | `go_build` | branches + MRs | auto | Builds the `netbox-gitops` binary (artifact, 1 week). |
 | build | `debug_environment` | — | manual | Dumps repo/Go/env info for debugging. |
 | validate | `go_validate` | non-default branches + MRs | auto | `./netbox-gitops --dry-run`. |
@@ -97,7 +97,8 @@ typos are caught before merge.
 ```bash
 go test ./pkg/... -race        # tests
 go vet ./... && go fmt ./...   # lint
-go run ./cmd/yamlcheck         # YAML check
+go run ./cmd/yamlcheck         # YAML syntax + models + cross-object lint
+go run ./cmd/yamlcheck --strict  # ... failing on warnings too
 go build -o netbox-gitops ./cmd/netbox-gitops/
 ./netbox-gitops --dry-run      # validate / plan
 ```

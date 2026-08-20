@@ -52,9 +52,13 @@ semver tags, image publishing, and a GitHub Actions workflow mirroring
 `.gitlab-ci.yml` (CI exists only for GitLab though the repo is on GitHub).
 
 ### Live-state validation
-`yamlcheck` validates the YAML against the typed models, but nothing validates
-it against the *server*: a status value, interface type or rack position that
-the models accept can still be rejected by a particular NetBox instance.
+`yamlcheck` validates the YAML against the typed models and, since the lint
+checks landed (`pkg/lint`), against the rest of the repository: references that
+resolve to nothing declared, a name or IP used twice, two devices in one rack
+unit, a port claimed by two cables, an interface the device type does not have.
+What it still cannot see is the *server*: a status value, interface type or
+rack position that the models accept can still be rejected by a particular
+NetBox instance, and an object that exists only in NetBox is invisible to it.
 Desired: a `validate` command that resolves choices and references against the
 live API without writing, so a merge request fails before it reaches apply.
 

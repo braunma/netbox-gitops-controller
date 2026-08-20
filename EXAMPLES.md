@@ -109,6 +109,23 @@ list of devices — remains fully supported (see `switches.yaml` and
 An interface's `ip:` accepts either a plain CIDR string (`ip: "10.0.0.1/24"`)
 or the full mapping form with `dns_name`, `vrf`, `status` etc.
 
+### Checking a data directory without NetBox
+
+`yamlcheck` validates any directory holding `definitions/` and `inventory/` —
+syntax, the typed models, and then the cross-object checks that no single
+object can see on its own: a name or IP used twice, two devices in one rack
+unit, a port claimed by two cables, a slug that matches nothing declared, an
+interface the device type does not have.
+
+```bash
+go run ./cmd/yamlcheck example        # this example tree
+go run ./cmd/yamlcheck               # definitions/, inventory/ and example/
+go run ./cmd/yamlcheck --strict      # fail on warnings as well as errors
+```
+
+The full list of checks and their severities is in the README section
+*Checking the YAML before it reaches NetBox*.
+
 ### Self-healing device bays and blades
 `example-chassis.yaml` defines device-bay templates; the controller auto-creates
 the bays on each chassis instance, and `chassis.yaml` installs child blades into

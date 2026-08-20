@@ -46,6 +46,7 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 ├── terraform/           # Optional Proxmox provisioning (bpg/proxmox)
 ├── pkg/                 # Go Implementation (Core Logic)
 │   ├── client/          # NetBox API Client
+│   ├── lint/            # Cross-object checks (references, collisions)
 │   ├── loader/          # YAML Data Loader
 │   ├── models/          # Data Models
 │   ├── reconciler/      # Synchronization Logic
@@ -54,7 +55,7 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 └── cmd/                 # Command-Line Interfaces
     ├── netbox-gitops/   # Main Entry Point (NetBox sync)
     ├── tfgen/           # Generate Terraform vars from VM YAML
-    └── yamlcheck/       # YAML syntax + model validation
+    └── yamlcheck/       # YAML syntax, model validation, cross-object lint
 ```
 
 ### 🔒 Private Data vs. Public Examples
@@ -280,6 +281,95 @@ File: `inventory/hardware/active/switches.yaml`
   * **Group shared fields in `defaults`.** One file per rack, role or
     hardware batch with a `defaults` block keeps each device down to its name,
     position and IPs.
+  * **Start from the parked template.** `inventory/hardware/active/_new-server.yaml`
+    holds a filled-in skeleton. The leading underscore parks it, so it is never
+    applied (see *Parking a File* below) — copy a block out of it rather than
+    editing it.
+
+### Adding a server, end to end
+
+With those conventions in place, a new machine in an existing rack is its
+identity and its addresses, and nothing else:
+
+```yaml
+# inventory/hardware/active/servers.yaml  (defaults supply site, role,
+# device type, rack, face, status and tags)
+  - name: "berlin-srv-web-03"
+    device_type_slug: "poweredge-r740"
+    rack_slug: "berlin-rack-a01"
+    position: 14
+    serial: "WEB03-SN-KLMNO"
+    tags: ["production"]
+
+    interfaces:
+      - name: "idrac"
+        ip: "10.10.10.103/24"
+
+      - name: "eth0"
+        ip:
+          address: "10.10.20.103/24"
+          vrf: "Production"
+        address_role: "primary"
+        link:
+          peer_device: "berlin-leaf-01"
+          peer_port: "Eth1/4"
+          cable_type: "dac-active"
+```
+
+Then check it before it reaches NetBox:
+
+```bash
+go run ./cmd/yamlcheck definitions inventory
+```
+
+Nothing else has to change — the switch side is wired from the server's
+`link:`, and the ports come from the device type. The switch is edited only
+when the new port needs a VLAN it does not already have.
+
+### Checking the YAML before it reaches NetBox
+
+`yamlcheck` reads the data directory and reports what is wrong with it without
+opening a connection: YAML syntax, then the typed model validation (required
+fields, cross-field constraints, NetBox choice values), then cross-object
+checks that no single object can see on its own.
+
+```bash
+go run ./cmd/yamlcheck                       # definitions/, inventory/ and example/
+go run ./cmd/yamlcheck path/to/data-dir      # a directory holding definitions/ and inventory/
+go run ./cmd/yamlcheck --strict              # fail on warnings too
+```
+
+**Errors** — wrong regardless of what NetBox contains, so they fail the run:
+
+| Check | What it catches |
+|---|---|
+| `duplicate-device`, `duplicate-vm`, `duplicate-interface` | the same name declared twice, where the second declaration silently overwrites the first |
+| `duplicate-ip` | one address on two interfaces in the same VRF (the global table counts as one) |
+| `duplicate-primary-ip` | two interfaces claiming the primary IP for one address family |
+| `rack-collision` | two devices occupying the same rack unit, computed from each device type's `u_height` |
+| `cable-conflict` | a port claimed by two different cables |
+| `unknown-peer-port` | a cable to a port its peer's device type does not have |
+| `untyped-interface` | an interface that is neither an interface template on the device type nor carries a `type`, so NetBox has nothing to create it from |
+| `unknown-lag-member` | a LAG whose `members` name an interface the device does not have |
+| `unknown-module-bay`, `unknown-device-bay`, `missing-device-bay` | a module or child device installed into a bay the parent's device type does not have |
+| `unknown-site`, `unknown-role`, `unknown-rack`, `unknown-device-type`, `unknown-vlan`, `unknown-vrf`, `unknown-module-type`, `unknown-cluster`, `unknown-platform`, `unknown-tenant`, `unknown-parent-device` | a reference that resolves to nothing declared here (VLANs are matched within the device's site, as NetBox resolves them) |
+| `invalid-ip`, `network-address`, `broadcast-address` | an address that is not a host address (a /31 point-to-point link is not flagged) |
+
+**Warnings** — legitimate in some repositories, so they only fail under
+`--strict`: `redundant-interface-type` and `redundant-enabled` (a value the
+device type template or the default already supplies),
+`interface-type-override`, `interface-not-in-template`,
+`cable-declared-twice` (the same cable from both ends),
+`undeclared-peer-device`, `ip-outside-prefix`, `unracked-device`,
+`module-type-without-slug`.
+
+Two things worth knowing about the reference checks:
+
+  * A kind of object the repository declares **none** of is not checked at all.
+    A repository that manages devices but not sites is a legitimate partial
+    adoption, not one full of broken site references.
+  * If you do declare everything but reference an object created outside this
+    repository, `--allow-undeclared-refs` reports those as warnings instead.
 
 -----
 
