@@ -1,6 +1,6 @@
 - model: "PowerEdge R740"
   slug: "poweredge-r740"
-  manufacturer: "Dell"   # Das Skript wird "Dell" automatisch als Manufacturer anlegen
+  manufacturer: "Dell" # created in NetBox automatically if it does not exist yet
   u_height: 2
   is_full_depth: true
   tags: ["gitops"]
@@ -9,10 +9,10 @@
       type: "1000base-t"
       mgmt_only: true
     - name: "eth0"
-      type: "1000base-t" # Oder "100gbase-sr4"
+      type: "1000base-t"
     - name: "eth1"
       type: "1000base-t"
-    - name: "eth2" # NEU
+    - name: "eth2"
       type: "100gbase-x-qsfp28"
-    - name: "eth3" # NEU
+    - name: "eth3"
       type: "100gbase-x-qsfp28"

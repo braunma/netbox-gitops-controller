@@ -13,6 +13,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
+	"github.com/braunma/netbox-gitops-controller/internal/dotenv"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/loader"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
@@ -72,7 +73,7 @@ func main() {
 	}
 
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate changes without applying them")
-	rootCmd.Flags().StringVar(&configFile, "config", ".env", "Configuration file path")
+	rootCmd.Flags().StringVar(&configFile, "config", defaultConfigFile, "KEY=value file read into the environment; values already exported win over it")
 	rootCmd.Flags().StringVar(&dataDir, "data-dir", ".", "Base directory for definitions and inventory (e.g., 'example' for test data)")
 	rootCmd.Flags().StringVar(&outputFormat, "output", "text", "Output format: 'text' or 'json' (json prints the plan to stdout and moves logs to stderr)")
 	rootCmd.Flags().BoolVar(&detailedExitcode, "detailed-exitcode", false, "Exit with code 2 when changes are pending (dry-run) or were applied; 0 means in sync")
@@ -114,6 +115,14 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	logger := utils.NewLogger(dryRun)
 
+	// Read the config file before anything looks at the environment, so every
+	// setting the controller takes from it (NETBOX_URL, NETBOX_TOKEN,
+	// IGNORE_SSL_ERRORS, the library paths, IGNORED_FILES) can come from there.
+	if err := loadConfigFile(configFile, cmd.Flags().Changed("config"), logger); err != nil {
+		logger.Error("Failed to read the configuration file", err)
+		return err
+	}
+
 	// Auto-detect and validate data directory; the phase helpers below read
 	// the package-level dataDir, so update it in place.
 	resolvedDir, err := resolveDataDir(dataDir, logger)
@@ -128,8 +137,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 	netboxToken := os.Getenv("NETBOX_TOKEN")
 
 	if netboxURL == "" || netboxToken == "" {
-		logger.Error("NETBOX_URL and NETBOX_TOKEN environment variables must be set", nil)
-		return fmt.Errorf("missing required environment variables")
+		logger.Error(fmt.Sprintf(
+			"NETBOX_URL and NETBOX_TOKEN must be set — export them, or put them in %s (copy .env.example)",
+			configFile), nil)
+		return fmt.Errorf("missing required configuration: NETBOX_URL and NETBOX_TOKEN")
 	}
 
 	// Initialize NetBox client
@@ -468,6 +479,34 @@ func runDeviceTypes(c *client.NetBoxClient, dataLoader *loader.DataLoader, logge
 		return err
 	}
 
+	return nil
+}
+
+// defaultConfigFile is where --config looks when it is not given a path. A
+// missing file there is ordinary — the environment is the other way to
+// configure the controller, and CI uses it.
+const defaultConfigFile = ".env"
+
+// loadConfigFile reads a KEY=value file into the environment. A missing file
+// is only an error when the path was asked for explicitly: `--config
+// prod.env` naming a file that is not there is a mistake worth stopping for,
+// while the default `.env` is absent on every CI runner.
+func loadConfigFile(path string, explicit bool, logger *utils.Logger) error {
+	applied, err := dotenv.Load(path)
+	if err != nil {
+		if os.IsNotExist(err) && !explicit {
+			return nil
+		}
+		return err
+	}
+
+	if len(applied) == 0 {
+		// Every variable it declares was already exported, so the file changed
+		// nothing — worth saying, since it looks like it did.
+		logger.Debug("Read %s; every variable it declares was already set in the environment", path)
+		return nil
+	}
+	logger.Info("Read %s (%s)", path, strings.Join(applied, ", "))
 	return nil
 }
 

@@ -1,8 +1,8 @@
 # Bug-Fix Record
 
 Historical record of the correctness fixes applied to the Go implementation.
-**All five are implemented and verified against the code (June 2026);** one
-small follow-up remains (see below). Open feature work lives in
+**All five are implemented and verified against the code (June 2026)**, as is
+the one follow-up that was outstanding (see below). Open feature work lives in
 `docs/MISSING_FEATURES.md`, the broader audit in `docs/AUDIT_AND_ROADMAP.md`.
 
 Guiding principle at the time: none of these changed reconciliation decision
@@ -18,9 +18,10 @@ changed where it was wrong.
 | 4 | **Cache API migration** — all reconcilers use explicit `GetGlobalID()`/`GetSiteID()`; the legacy collision-prone `CacheManager.GetID()` was removed. (`TagManager.GetID(slug)` is an unrelated tag-by-slug lookup.) | ✅ done | reconcilers, `pkg/client/cache.go` |
 | 5 | **Pruning** — the README's "safe pruning" claim is now backed by an actual implementation (opt-in `--prune`, gitops-tagged orphans only). | ✅ done | `pkg/client/prune.go`, see `MISSING_FEATURES.md` |
 
-**Remaining gap (fix #3):** wiring the same `Validate()` checks into the
-`cmd/yamlcheck` CLI — `yamlcheck` currently checks YAML syntax, not model
-constraints.
+**Closed (fix #3):** `cmd/yamlcheck` runs the same `Validate()` checks — it
+loads every folder through the typed loader, which validates after unmarshal —
+and since then also the cross-object checks in `pkg/lint`. See the README
+section *Checking the YAML before it reaches NetBox*.
 
 Also fixed along the way: the loader now accepts single-mapping YAML files (the
 `example/definitions/device_types/*.yaml` files were previously unloadable), and

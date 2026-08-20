@@ -2,6 +2,59 @@
 
 This Go tool enables **declarative management** (Infrastructure as Code) for a NetBox instance. It synchronizes definitions from YAML files idempotently against the NetBox API.
 
+The YAML in this repository is the desired state. You edit it, open a merge
+request, and a pipeline applies it — nobody clicks anything in the NetBox UI.
+
+-----
+
+## ⏱ Quickstart
+
+```bash
+# 1. Build (Go 1.24+; dependencies download themselves)
+make build
+
+# 2. Point it at your NetBox
+cp .env.example .env
+$EDITOR .env                      # NETBOX_URL and NETBOX_TOKEN
+
+# 3. See what it would do — against the bundled example data, so nothing of
+#    yours is touched. --dry-run never writes.
+./netbox-gitops --dry-run --data-dir example
+```
+
+That prints a plan and ends with a line like
+`Plan: 43 to create, 0 to update, 0 to delete, 3 unchanged`. Nothing has been
+written; drop `--dry-run` to apply.
+
+Then, to change something real:
+
+```bash
+# 4. Edit the inventory. Start from the parked skeleton:
+#    inventory/hardware/active/_new-server.yaml
+$EDITOR inventory/hardware/active/servers.yaml
+
+# 5. Check it without touching NetBox — syntax, models, and the cross-object
+#    checks (duplicate IPs, rack collisions, cables, unknown slugs)
+make check
+
+# 6. Read the plan for your own data before opening the merge request
+./netbox-gitops --dry-run
+```
+
+### Where to look next
+
+| If you want to… | Read |
+|---|---|
+| add a server, switch or storage system | [Adding a server, end to end](#adding-a-server-end-to-end) |
+| know what the checks catch before you push | [Checking the YAML before it reaches NetBox](#checking-the-yaml-before-it-reaches-netbox) |
+| add hardware the repository has never seen | [Step 1: Define a Device Type](#step-1-define-a-device-type-if-new) — or vendor one from the community library |
+| fix a typo in a name or slug | [Renaming an Object](#renaming-an-object-fixing-a-typo) — do **not** just edit it |
+| understand why a change did nothing | [Common Errors](#common-errors) and [Phase Order](#phase-order-dependency-model) |
+| remove something | [Pruning Orphans](#6-pruning-orphans) — deletion is opt-in |
+| see every flag | `./netbox-gitops --help`, or the **Usage** section below |
+
+-----
+
 ## 🚀 Key Features
 
   * **Single Source of Truth:** The YAML files in this repository represent the desired state of the network inventory.
@@ -572,14 +625,29 @@ go build -o netbox-gitops ./cmd/netbox-gitops/
 
 ### 3\. Environment Configuration
 
-Create a `.env` file in the root directory:
+Copy `.env.example` to `.env` and fill it in:
 
 ```ini
 NETBOX_URL=https://netbox.example.com
 NETBOX_TOKEN=your_api_token_here
-# Optional: Disable SSL verification (Dev environments only)
-# IGNORE_SSL_ERRORS=True
+# Optional: skip TLS certificate verification (a lab NetBox behind a
+# self-signed certificate). Every run that sets it says so in its output.
+# IGNORE_SSL_ERRORS=true
 ```
+
+The file is read at startup; `--config path/to/other.env` points at a different
+one. **Anything already exported in the environment wins over the file**, so CI
+variables are never shadowed by a `.env` that happens to be in the working
+directory — and a missing `.env` is not an error when the environment already
+carries the settings. A `--config` path you name explicitly *is* required to
+exist, so a typo fails instead of quietly running against the wrong NetBox.
+
+`.env` is gitignored. `.env.example` is the committed template and holds no
+credentials.
+
+> **TLS:** certificates are verified. `IGNORE_SSL_ERRORS=true` (also `1`,
+> `yes`, `on`) turns verification off for a self-signed instance and logs a
+> warning on every run.
 
 ## ▶️ Usage
 

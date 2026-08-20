@@ -14,6 +14,31 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **The `.env` file the README always documented is now actually read.**
+  `--config` existed as a flag, defaulted to `.env`, and appeared in `--help`
+  — but nothing in the program ever opened it: credentials came from the
+  environment only. Following the README ("Create a `.env` file in the root
+  directory") therefore produced `NETBOX_URL and NETBOX_TOKEN environment
+  variables must be set`, which is a poor first five minutes for a new
+  colleague. The file is now read at startup, before anything looks at the
+  environment, so every setting the controller takes from there —
+  `NETBOX_URL`, `NETBOX_TOKEN`, `IGNORE_SSL_ERRORS`, `DEVICETYPE_LIBRARY`,
+  `MODULETYPE_LIBRARY`, `IGNORED_FILES` — can come from it.
+
+  Values already exported win over the file, so a stale `.env` in a working
+  directory cannot shadow a CI variable. A missing `.env` is ignored (CI has no
+  file); a `--config` path given explicitly must exist, so a typo fails instead
+  of running against the wrong NetBox. `.env.example` is the committed
+  template, and the "must be set" error now names the file to copy.
+- **`.github/workflows/ci.yml`.** The repository lives on GitHub while its
+  pipeline lives in `.gitlab-ci.yml`, so a pull request opened here ran no
+  checks at all — including `yamlcheck`, the one that catches a bad inventory
+  edit. Formatting, `go vet`, licence headers, the unit tests with the same 65%
+  coverage gate, `yamlcheck` and a stamped build now run on every push and pull
+  request. The end-to-end suite stays where it can reach a NetBox
+  (`make e2e`, or the GitLab `e2e` job). A pull request template asks for the
+  dry-run plan, which is the only reviewable form of a data change.
+
 - **Cross-object lint checks in `yamlcheck` (`pkg/lint`).** Model validation
   sees one object at a time, so everything that is only wrong *in relation to
   something else* used to reach the apply: a device type slug that matches no
@@ -178,6 +203,17 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **TLS certificate verification was disabled on every connection.**
+  `InsecureSkipVerify: true` was hardcoded in the HTTP client, while the README
+  offered `IGNORE_SSL_ERRORS` as an opt-in "for dev environments only" that no
+  code read. Every run against every instance, production included, accepted
+  any certificate presented to it — silently. Certificates are now verified,
+  and `IGNORE_SSL_ERRORS` (`true`, `1`, `yes`, `on`) is the real opt-out; a run
+  that sets it logs a warning saying so.
+
+  > **Action required** if you sync a NetBox behind a self-signed or internal
+  > CA certificate: the run will now fail on the certificate. Either trust the
+  > CA on the machine (right) or set `IGNORE_SSL_ERRORS=true` in `.env` (quick).
 - **The sample hardware inventory could not be applied to a real NetBox at
   all.** All three leaf switches declared `position: 40` with no `face`, and
   NetBox answers `400 {"face": ["Must specify rack face when defining rack
@@ -314,6 +350,17 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **The README opens with a quickstart instead of reference material.** Build,
+  configure, dry-run against the example data, edit, check, plan — one screen at
+  the top, followed by a table mapping the task you have to the section that
+  covers it. Previously the first instruction on how to *run* the thing was at
+  line 556, after the device type library semantics, the module type ambiguity
+  rules and the rename table.
+- **The German comments in `definitions/` are in English**, like the rest of the
+  repository, and the `# NEU` markers that had stopped being new are gone.
+  `docs/BUGFIX_PLAN.md` and `docs/AUDIT_AND_ROADMAP.md` no longer claim that
+  `yamlcheck` skips model validation — it has not for some time, and now runs
+  the `pkg/lint` checks as well.
 - **The sample hardware inventory now uses the conventions the README
   documents.** `inventory/hardware/active/` was written in the classic form
   and predated them: it repeated `type` and `enabled: true` on every interface

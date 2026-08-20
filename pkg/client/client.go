@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -50,14 +51,39 @@ type NetBoxClient struct {
 	referenced map[string]map[int]bool
 }
 
-// NewClient creates a new NetBox API client
+// envIsTrue reports whether an environment variable is set to something that
+// means yes. Accepts what strconv.ParseBool does, plus "yes" and "on", so a
+// config file written by hand behaves the way it reads.
+func envIsTrue(name string) bool {
+	value := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
+	switch value {
+	case "":
+		return false
+	case "yes", "on":
+		return true
+	}
+	parsed, err := strconv.ParseBool(value)
+	return err == nil && parsed
+}
+
+// NewClient creates a new NetBox API client.
+//
+// TLS certificates are verified. A NetBox behind a self-signed or internal CA
+// certificate can opt out with IGNORE_SSL_ERRORS, which is loud about it:
+// the alternative — the unconditional skip this had before — silently
+// accepted any certificate against production too.
 func NewClient(baseURL, token string, dryRun bool) (*NetBoxClient, error) {
 	logger := utils.NewLogger(dryRun)
+
+	skipVerify := envIsTrue("IGNORE_SSL_ERRORS")
+	if skipVerify {
+		logger.Warning("IGNORE_SSL_ERRORS is set: the NetBox TLS certificate will not be verified")
+	}
 
 	httpClient := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: true},
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: skipVerify}, // #nosec G402 -- opt-in, warned about, for self-signed dev instances
 		},
 	}
 

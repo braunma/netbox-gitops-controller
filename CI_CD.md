@@ -1,9 +1,21 @@
 # CI/CD Pipeline
 
-The GitLab pipeline (`.gitlab-ci.yml`) tests, builds and deploys the Go
-controller, and optionally provisions the VMs in Proxmox via OpenTofu.
+Two pipelines, with different jobs:
 
-## Stages & jobs
+- **GitLab (`.gitlab-ci.yml`)** — the pipeline of record. Tests, builds,
+  plans and applies against NetBox, and optionally provisions the VMs in
+  Proxmox via OpenTofu. Only this one holds credentials, so only this one
+  writes anything.
+- **GitHub Actions (`.github/workflows/ci.yml`)** — the review-time checks,
+  for pull requests opened on GitHub: formatting, `go vet`, licence headers,
+  the unit tests with the same coverage gate, `yamlcheck` (syntax, models and
+  the cross-object inventory lint), and a build. It talks to no NetBox and
+  needs no secrets.
+
+A change is reviewed wherever the merge or pull request is opened; it reaches
+NetBox only through the GitLab `apply` stage.
+
+## Stages & jobs (GitLab)
 
 | Stage | Job | When | Auto/Manual | Purpose |
 |-------|-----|------|-------------|---------|
@@ -91,6 +103,19 @@ branch that adds a new site **and** a device in it validates as a plan rather
 than failing with `site ... not found`. A reference that is neither in NetBox
 nor declared anywhere in the YAML is still reported as an error, so genuine
 typos are caught before merge.
+
+## GitHub Actions jobs
+
+| Job | Runs |
+|-----|------|
+| `lint` | `make lint` — `gofmt -l`, `go vet ./...`, and the SPDX header check |
+| `test` | `go test ./... -race` with the `COVERAGE_THRESHOLD` gate (65%), uploads `coverage.out` |
+| `data` | `go run ./cmd/yamlcheck` — YAML syntax, typed models, cross-object lint |
+| `build` | `make build`, then `--version` to show the stamped metadata |
+
+The end-to-end suite is deliberately absent: it needs a NetBox to talk to. Run
+it with `make e2e` against a disposable instance, or enable the GitLab `e2e`
+job with `RUN_E2E=true`.
 
 ## Local equivalents
 

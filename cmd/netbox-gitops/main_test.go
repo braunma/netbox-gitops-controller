@@ -3,10 +3,14 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
+	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
 // allPhases returns a phase set with every phase selected, matching a default
@@ -268,5 +272,63 @@ func TestPruneTargetsProtectsManagedTag(t *testing.T) {
 	}
 	if !found {
 		t.Error("foundation prune must include the tags endpoint")
+	}
+}
+
+// The README has always told people to put their credentials in a .env file.
+// These cover the promise it makes: the file is read, an exported value still
+// wins, and a path the user typed is not silently ignored when it is wrong.
+func TestLoadConfigFile(t *testing.T) {
+	logger := utils.NewLogger(true)
+
+	t.Run("reads the file into the environment", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), ".env")
+		if err := os.WriteFile(path, []byte("NETBOX_URL=https://netbox.example.com\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		os.Unsetenv("NETBOX_URL")
+		t.Cleanup(func() { os.Unsetenv("NETBOX_URL") })
+
+		if err := loadConfigFile(path, true, logger); err != nil {
+			t.Fatalf("loadConfigFile: %v", err)
+		}
+		if got := os.Getenv("NETBOX_URL"); got != "https://netbox.example.com" {
+			t.Errorf("NETBOX_URL=%q", got)
+		}
+	})
+
+	t.Run("a missing default file is not an error", func(t *testing.T) {
+		if err := loadConfigFile(filepath.Join(t.TempDir(), ".env"), false, logger); err != nil {
+			t.Errorf("a missing .env must be ignored on a machine that uses the environment: %v", err)
+		}
+	})
+
+	t.Run("a missing explicit file is an error", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), "prod.env")
+		err := loadConfigFile(path, true, logger)
+		if err == nil {
+			t.Fatal("--config naming a file that does not exist must fail rather than run against the wrong NetBox")
+		}
+		if !strings.Contains(err.Error(), path) {
+			t.Errorf("error %q should name the file", err)
+		}
+	})
+
+	t.Run("a malformed file is an error", func(t *testing.T) {
+		path := filepath.Join(t.TempDir(), ".env")
+		if err := os.WriteFile(path, []byte("NETBOX_URL https://netbox.example.com\n"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		if err := loadConfigFile(path, false, logger); err == nil {
+			t.Error("a line that declares nothing must be reported, not skipped")
+		}
+	})
+}
+
+// The default is the documented one; a colleague following the README writes
+// .env and nothing else.
+func TestDefaultConfigFile(t *testing.T) {
+	if defaultConfigFile != ".env" {
+		t.Errorf("got %q, want .env — the README, the .gitignore entry and .env.example all name it", defaultConfigFile)
 	}
 }

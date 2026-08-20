@@ -34,9 +34,9 @@ checks), and the optional Proxmox/OpenTofu pipeline (`cmd/tfgen`,
 ## 2. Correctness — ✅ all resolved
 
 The four historical issues (no pagination, no retries, mixed `GetID()` usage, no
-model validation) are fixed and verified against the code. See
-`docs/BUGFIX_PLAN.md` for per-fix detail. The one remaining sub-item is wiring
-`Validate()` into `cmd/yamlcheck`.
+model validation) are fixed and verified against the code, and `Validate()` is
+wired into `cmd/yamlcheck` alongside the `pkg/lint` cross-object checks. See
+`docs/BUGFIX_PLAN.md` for per-fix detail.
 
 ## 3. Missing features
 

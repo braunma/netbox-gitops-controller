@@ -1,0 +1,97 @@
+# Checks that run on every push and pull request.
+#
+# The repository's pipeline of record is .gitlab-ci.yml, which also plans and
+# applies against a real NetBox. This workflow covers the part that must run
+# wherever the code is reviewed: a pull request opened on GitHub gets the same
+# formatting, test and data checks a merge request gets, instead of nothing.
+#
+# The end-to-end suite is not here — it needs a NetBox to talk to. Run it with
+# `make e2e` against a disposable instance, or let the GitLab `e2e` job do it.
+
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  # Keep in step with COVERAGE_THRESHOLD in .gitlab-ci.yml.
+  COVERAGE_THRESHOLD: "65"
+
+jobs:
+  lint:
+    name: Format, vet and licence headers
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: make lint
+        run: make lint
+
+  test:
+    name: Unit tests
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: go test
+        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
+      - name: Coverage gate
+        run: |
+          go tool cover -func=coverage.out | tail -1
+          TOTAL=$(go tool cover -func=coverage.out | tail -1 | awk '{gsub(/%/, "", $3); print $3}')
+          echo "Total statement coverage: ${TOTAL}% (minimum: ${COVERAGE_THRESHOLD}%)"
+          if awk -v t="$TOTAL" -v m="$COVERAGE_THRESHOLD" 'BEGIN { exit !(t < m) }'; then
+            echo "::error::Coverage ${TOTAL}% is below the required ${COVERAGE_THRESHOLD}%"
+            exit 1
+          fi
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage
+          path: coverage.out
+          retention-days: 7
+
+  data:
+    name: YAML, models and inventory lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # Syntax, the typed models, and the cross-object checks: duplicate names
+      # and IPs, rack collisions, cables claimed twice, references that resolve
+      # to nothing. This is the check that catches a bad inventory edit before
+      # anyone applies it.
+      - name: yamlcheck
+        run: go run ./cmd/yamlcheck
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # `make build` stamps the binary from `git describe`.
+          fetch-depth: 0
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      - name: make build
+        run: make build
+      - name: Report the version the binary carries
+        run: ./netbox-gitops --version

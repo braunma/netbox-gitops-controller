@@ -26,9 +26,12 @@ These were once on this list and are now implemented (documented in `README.md`,
 ## Still missing
 
 ### Config-driven settings
-Only `NETBOX_URL`, `NETBOX_TOKEN`, `IGNORE_SSL_ERRORS` (env) today. Desired: an
-optional YAML config for managed tag slug, page size, retry counts, HTTP
-timeout, default data dir.
+Settings come from the environment, or from a `KEY=value` file read at startup
+(`--config`, default `.env`; the environment wins over it): `NETBOX_URL`,
+`NETBOX_TOKEN`, `IGNORE_SSL_ERRORS`, `DEVICETYPE_LIBRARY`,
+`MODULETYPE_LIBRARY`, `IGNORED_FILES`. Desired: an optional YAML config for the
+things that are still constants — managed tag slug, page size, retry counts,
+HTTP timeout, default data dir.
 
 ### Extended IPAM coverage
 VRFs, VLAN groups, VLANs and prefixes only. Missing object types: aggregates,
