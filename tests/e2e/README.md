@@ -27,6 +27,24 @@ For each generated dataset:
 Then, once: an object the controller does not manage (no `gitops` tag)
 **survives** a prune that removes everything else.
 
+## The three scripts
+
+| Script | Data | What it proves |
+|---|---|---|
+| `run.sh` | randomly generated (`gen.py`) | the controller handles inventories it has never seen |
+| `rename.sh` | purpose-built fixtures | correcting an identity edits the object instead of duplicating it |
+| `repo-data.sh` | this repository's own `definitions/` + `inventory/` | the sample data converges, and the conventions it is written in hold |
+
+`repo-data.sh` is a different claim from the other two. The sample inventory
+leans on conventions whose failure mode is silent: a cable declared on one end
+only either wires both ends or quietly wires none; an interface listed without
+a `type` either matches a template port or creates a second, typeless one
+beside it; a device type slug that matches no definition skips the device with
+a warning and exits 0. So beyond the six properties above it asserts the
+objects NetBox actually ends up holding — the cable's far end, the child device
+in its bay, the interface count against the device type's templates, the
+switch port's VLAN, the primary IP.
+
 ## The data
 
 `gen.py` generates random but valid Dell inventories from a seed — PowerEdge
@@ -68,7 +86,8 @@ instance:
 ```bash
 export NETBOX_URL=https://netbox-staging.internal
 export NETBOX_TOKEN=...            # v1 or v2 (nbt_<key>.<secret>)
-make e2e
+make e2e                           # all three scripts
+make e2e-repo                      # this repository's own data only
 ```
 
 **Never point this at production.** It creates objects and prunes everything

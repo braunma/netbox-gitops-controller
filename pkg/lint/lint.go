@@ -289,6 +289,13 @@ func (c *checker) checkDeviceReferences() {
 			c.add(Warning, "unracked-device", ref,
 				"names a rack but no position, so NetBox files it as non-racked equipment in %s", d.RackSlug)
 		}
+		if d.RackSlug != "" && d.Position != 0 && d.Face == "" && d.ParentDevice == "" {
+			// NetBox answers 400 "Must specify rack face when defining rack
+			// position" — the device is never created, and every interface,
+			// IP and cable that hangs off it is lost with it.
+			c.add(Error, "position-without-face", ref,
+				"is placed at U%d but names no face; NetBox rejects a rack position without one", d.Position)
+		}
 		c.checkDeviceBay(d)
 	}
 }

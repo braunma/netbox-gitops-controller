@@ -22,7 +22,7 @@ are about to run before applying a sync with pruning enabled.
   a name used twice (the second write silently overwrites the first), a switch
   port claimed by two cables, an interface the device type does not have.
   `yamlcheck` now reports all of them from the repository alone, before a merge
-  request is applied — 36 checks, listed with their severities in the README
+  request is applied — 37 checks, listed with their severities in the README
   section *Checking the YAML before it reaches NetBox*.
 
   Findings that are wrong regardless of what NetBox contains are errors and
@@ -37,6 +37,17 @@ are about to run before applying a sync with pruning enabled.
   `definitions/` or `inventory/` is now treated as a data directory, so
   `yamlcheck path/to/data-dir` runs model validation and linting on it instead
   of only checking its YAML syntax.
+- **An end-to-end test for this repository's own data**
+  (`tests/e2e/repo-data.sh`, `make e2e-repo`). The existing e2e run proves the
+  controller copes with inventories it has never seen; this proves the
+  inventory *in this repository* applies, converges and means what its
+  conventions say. Beyond the six properties `run.sh` asserts, it checks the
+  objects NetBox ends up holding: that a cable declared on one end only wires
+  both, that an interface listed without a `type` matched a template port
+  instead of creating a second one beside it, that the storage node is
+  installed in its chassis bay, that the switch port kept its access VLAN when
+  the `link:` moved to the server side, and that the parked `_new-server.yaml`
+  was not applied.
 
 - **`rename_from`: correcting an identifying field now renames the object
   instead of duplicating it.** Every object is matched against NetBox by an
@@ -167,6 +178,22 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **The sample hardware inventory could not be applied to a real NetBox at
+  all.** All three leaf switches declared `position: 40` with no `face`, and
+  NetBox answers `400 {"face": ["Must specify rack face when defining rack
+  position."]}` — so the run stopped at the first switch, and every interface,
+  IP and cable behind it was never created. It went unnoticed because the
+  end-to-end tests only ever applied *generated* data, which always emits a
+  face; `tests/e2e/repo-data.sh` now applies this repository's data too. The
+  switches declare `face: "front"`, and `position-without-face` is a lint
+  error, so the next occurrence is caught before an apply rather than by it.
+- **`tests/e2e/provision-local.sh` printed an API token that did not work.**
+  It minted the v1 token by assigning `plaintext=` directly, but
+  `Token.save()` treats an instance whose `token` attribute is None as one
+  needing a value and generates a random one, whose setter overwrites
+  `plaintext`. The instance ended up holding a token nobody knew, and every
+  call made with the printed value answered `Invalid v1 token`. The value is
+  now passed as `token=` and the script asserts it survived the save.
 - **Two device type references in the sample inventory matched no definition,
   and one module type reference in the example data matched none either.** The
   first lint run found them: `berlin-pp-mm-01` asked for `patchpanel-mm-48`

@@ -347,6 +347,7 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `duplicate-ip` | one address on two interfaces in the same VRF (the global table counts as one) |
 | `duplicate-primary-ip` | two interfaces claiming the primary IP for one address family |
 | `rack-collision` | two devices occupying the same rack unit, computed from each device type's `u_height` |
+| `position-without-face` | a rack position with no `face`, which NetBox rejects outright (`Must specify rack face when defining rack position`) |
 | `cable-conflict` | a port claimed by two different cables |
 | `unknown-peer-port` | a cable to a port its peer's device type does not have |
 | `untyped-interface` | an interface that is neither an interface template on the device type nor carries a `type`, so NetBox has nothing to create it from |

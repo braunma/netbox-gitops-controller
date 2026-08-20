@@ -9,7 +9,7 @@ COMMIT     ?= $(shell git rev-parse --short HEAD 2>/dev/null || echo unknown)
 BUILD_DATE ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS    := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildDate=$(BUILD_DATE)
 
-.PHONY: help build version test lint check e2e e2e-rename e2e-local clean
+.PHONY: help build version test lint check e2e e2e-rename e2e-repo e2e-local clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -36,9 +36,13 @@ check: lint test ## Everything that does not need a NetBox
 e2e: ## End-to-end tests (needs NETBOX_URL and NETBOX_TOKEN)
 	./tests/e2e/run.sh
 	./tests/e2e/rename.sh
+	./tests/e2e/repo-data.sh
 
 e2e-rename: ## Rename coverage only (needs NETBOX_URL and NETBOX_TOKEN)
 	./tests/e2e/rename.sh
+
+e2e-repo: ## Apply this repository's own data (needs NETBOX_URL and NETBOX_TOKEN)
+	./tests/e2e/repo-data.sh
 
 e2e-local: ## Provision a throwaway NetBox from source, then run e2e
 	./tests/e2e/provision-local.sh

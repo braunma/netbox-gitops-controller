@@ -659,3 +659,49 @@ func TestRackCollisionTreatsAnUnsetFaceAsFront(t *testing.T) {
 
 	assertCheck(t, Check(ds, Options{}), "rack-collision", 1)
 }
+
+// NetBox answers 400 "Must specify rack face when defining rack position", so
+// a positioned device without a face is never created at all.
+func TestPositionWithoutFace(t *testing.T) {
+	ds := baseDataset()
+	faceless := server("srv-01", 10)
+	faceless.Face = ""
+	ds.Devices = []*models.DeviceConfig{faceless}
+
+	got := assertCheck(t, Check(ds, Options{}), "position-without-face", 1)
+	if len(got) == 1 && got[0].Severity != Error {
+		t.Errorf("got severity %v, want error", got[0].Severity)
+	}
+}
+
+// A child device is installed into a bay, not placed at a rack unit, so
+// neither position nor face applies to it.
+func TestPositionWithoutFaceSkipsChildDevices(t *testing.T) {
+	ds := baseDataset()
+	ds.DeviceTypes = append(ds.DeviceTypes, &models.DeviceType{
+		Model: "Chassis", Slug: "chassis", Manufacturer: "Dell", UHeight: 4,
+		DeviceBays: []models.DeviceBayTemplate{{Name: "Node 1"}},
+	})
+	chassis := server("chassis-01", 20)
+	chassis.DeviceTypeSlug = "chassis"
+	node := server("node-01", 0)
+	node.Face = ""
+	node.RackSlug = ""
+	node.ParentDevice = "chassis-01"
+	node.DeviceBay = "Node 1"
+	ds.Devices = []*models.DeviceConfig{chassis, node}
+
+	assertCheck(t, Check(ds, Options{}), "position-without-face", 0)
+}
+
+// Position and face are only sent for a racked device, so a device with a
+// position but no rack has nothing to reject.
+func TestPositionWithoutFaceNeedsARack(t *testing.T) {
+	ds := baseDataset()
+	unracked := server("srv-01", 10)
+	unracked.Face = ""
+	unracked.RackSlug = ""
+	ds.Devices = []*models.DeviceConfig{unracked}
+
+	assertCheck(t, Check(ds, Options{}), "position-without-face", 0)
+}

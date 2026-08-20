@@ -223,6 +223,8 @@ e2e:
     - tests/e2e/run.sh
     - echo "🔁 Verifying that renames edit objects instead of duplicating them..."
     - tests/e2e/rename.sh
+    - echo "🔁 Applying this repository's own data and checking its conventions..."
+    - tests/e2e/repo-data.sh
   rules:
     - if: $RUN_E2E != "true"
       when: never
