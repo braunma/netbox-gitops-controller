@@ -554,7 +554,7 @@ func (dr *DeviceReconciler) reconcileIPAddress(deviceID, ifaceID int, iface *mod
 	}
 
 	// Set as primary IP if requested
-	if iface.AddressRole == "primary" {
+	if iface.IsPrimaryIP() {
 		ipID := utils.GetIDFromObject(ipObj)
 		if ipID > 0 {
 			if err := dr.setPrimaryIP(deviceID, ipID); err != nil {

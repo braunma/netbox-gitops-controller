@@ -99,6 +99,14 @@ func asPrimaryIP() interfaceOption {
 	}
 }
 
+// withPrimaryIPInMapping assigns an IP and marks it primary inside the ip
+// mapping — the other spelling of withIP plus asPrimaryIP.
+func withPrimaryIPInMapping(address string) interfaceOption {
+	return func(i *models.InterfaceConfig) {
+		i.IP = &models.IPConfig{Address: address, AddressRole: "primary"}
+	}
+}
+
 // inAccessVLAN puts the interface in access mode on an untagged VLAN.
 func inAccessVLAN(vlan string) interfaceOption {
 	return func(i *models.InterfaceConfig) {

@@ -240,6 +240,14 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **`address_role: primary` inside an `ip:` mapping never reached NetBox.** The
+  role can be written on the interface or beside the address it applies to, and
+  the linter has always accepted both — but the sync and the Terraform
+  generator only ever read the interface-level spelling. An inventory using the
+  nested form passed `yamlcheck` (including its `duplicate-primary-ip` check)
+  and then left `primary_ip4`/`primary_ip6` unset on every device and VM, with
+  no error to say so. Both spellings now go through one shared helper, so what
+  the linter reasons about is what gets applied.
 - **A quoted value in `.env` followed by a comment kept its quotes.**
   `NETBOX_TOKEN="nbt_…"   # rotated in May` was parsed as the token *with* the
   double quotes attached, so NetBox answered `403 Invalid token` and the run

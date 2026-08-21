@@ -524,7 +524,7 @@ func (c *checker) checkIPAddresses() {
 		for _, iface := range d.Interfaces {
 			ref := ifaceRef(d.Name, iface.Name)
 			record(ref, iface.IP)
-			if !isPrimary(iface) || iface.IP == nil {
+			if !iface.IsPrimaryIP() || iface.IP == nil {
 				continue
 			}
 			addr, err := netip.ParsePrefix(iface.IP.Address)
@@ -781,15 +781,6 @@ func isPhysicalType(ifaceType string) bool {
 		return false
 	}
 	return true
-}
-
-// isPrimary reports whether the interface claims the device's primary IP,
-// which may be declared on the interface or inside its ip mapping.
-func isPrimary(iface models.InterfaceConfig) bool {
-	if strings.EqualFold(iface.AddressRole, "primary") {
-		return true
-	}
-	return iface.IP != nil && strings.EqualFold(iface.IP.AddressRole, "primary")
 }
 
 // isNetworkAddress reports whether the address is the all-zero host of its own

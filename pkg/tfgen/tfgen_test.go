@@ -97,6 +97,23 @@ func TestBuildPreservesInterfaceOrderAndPrimary(t *testing.T) {
 	}
 }
 
+func TestBuildFlagsPrimaryDeclaredInsideIP(t *testing.T) {
+	// address_role nested in the ip mapping means the same thing as one on the
+	// interface; Terraform must still put the gateway on that NIC.
+	vm := clusteredVM()
+	vm.Interfaces = []models.VMInterfaceConfig{
+		{Name: "eth0", IP: &models.IPConfig{Address: "10.0.0.10/24", AddressRole: "primary"}},
+	}
+
+	doc, err := Build([]*models.VMConfig{vm})
+	if err != nil {
+		t.Fatalf("Build returned error: %v", err)
+	}
+	if got := doc.VMs["web-01"].Interfaces; !got[0].Primary {
+		t.Error("eth0 (ip.address_role primary) should be flagged primary")
+	}
+}
+
 func TestBuildSkipsVMsWithoutProvision(t *testing.T) {
 	// A VM without provision: true is NetBox-only: skipped, not an error, and the
 	// provisioned VMs alongside it are still emitted — even if it carries a vmid.

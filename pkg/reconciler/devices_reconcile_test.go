@@ -127,6 +127,37 @@ func TestReconcileDevicesFullFlow(t *testing.T) {
 	f.requireMutationCount(t, 0)
 }
 
+func TestReconcileDevicesSetsPrimaryIPDeclaredInsideIPMapping(t *testing.T) {
+	// address_role sits just as naturally beside the address it applies to as
+	// on the interface, and the linter accepts both, so the sync must too.
+	f, c := newFakeNetBox(t)
+	seedDeviceFoundation(t, f, c)
+
+	devices := []*models.DeviceConfig{
+		testDevice("sw-01",
+			withInterfaces(testInterface("eth0", "1000base-t",
+				withPrimaryIPInMapping("10.0.0.1/24"),
+			)),
+		),
+	}
+
+	if err := NewDeviceReconciler(c).ReconcileDevices(devices); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+
+	stored := f.objects("dcim", "devices")
+	if len(stored) != 1 {
+		t.Fatalf("expected 1 device, got %d", len(stored))
+	}
+	ips := f.objects("ipam", "ip-addresses")
+	if len(ips) != 1 {
+		t.Fatalf("expected 1 IP address, got %d", len(ips))
+	}
+	if got := utils.GetIDFromObject(stored[0]["primary_ip4"]); got != utils.GetIDFromObject(ips[0]) {
+		t.Errorf("sw-01 primary_ip4 = %v, expected IP ID %d", stored[0]["primary_ip4"], utils.GetIDFromObject(ips[0]))
+	}
+}
+
 func TestReconcileDevicesErrorsOnUnresolvedReferences(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	dr := NewDeviceReconciler(c)

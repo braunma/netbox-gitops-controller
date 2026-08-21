@@ -2,7 +2,11 @@
 
 package models
 
-import "gopkg.in/yaml.v3"
+import (
+	"strings"
+
+	"gopkg.in/yaml.v3"
+)
 
 // LinkConfig represents a cable connection definition
 type LinkConfig struct {
@@ -67,6 +71,16 @@ type InterfaceConfig struct {
 	AddressRole  string      `yaml:"address_role,omitempty" json:"address_role,omitempty"`
 	Members      []string    `yaml:"members,omitempty" json:"members,omitempty"`
 	Tags         []string    `yaml:"tags,omitempty" json:"tags,omitempty"`
+}
+
+// IsPrimaryIP reports whether the interface claims the device's primary IP.
+// The role may be declared on the interface itself or inside its ip mapping;
+// both spellings appear in the wild, so every consumer honours both.
+func (i InterfaceConfig) IsPrimaryIP() bool {
+	if strings.EqualFold(i.AddressRole, "primary") {
+		return true
+	}
+	return i.IP != nil && strings.EqualFold(i.IP.AddressRole, "primary")
 }
 
 // RearPortConfig represents a rear port configuration (Backbone)

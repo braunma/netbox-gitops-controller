@@ -333,6 +333,14 @@ File: `inventory/hardware/active/switches.yaml`
     interfaces).
   * **Interfaces are enabled by default.** `enabled: true` is implied; only
     write `enabled: false` to shut a port.
+  * **One interface carries `address_role: primary`.** NetBox stores a single
+    `primary_ip4` and a single `primary_ip6` per device, so exactly one
+    interface may claim it per address family — usually the in-band management
+    NIC, not the BMC/iDRAC (an out-of-band address is documented by leaving the
+    role off). The role may sit on the interface or inside its `ip:` mapping;
+    both spellings mean the same thing. Two interfaces claiming it is
+    `duplicate-primary-ip`, since NetBox would keep whichever one was written
+    last.
   * **Declare each cable on one end only.** Pick a convention (e.g. the
     server/endpoint side owns the `link:`) — the reconciler wires both ends
     from a single declaration. Declaring the same cable from both sides works
@@ -404,7 +412,7 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 |---|---|
 | `duplicate-device`, `duplicate-vm`, `duplicate-interface` | the same name declared twice, where the second declaration silently overwrites the first |
 | `duplicate-ip` | one address on two interfaces in the same VRF (the global table counts as one) |
-| `duplicate-primary-ip` | two interfaces claiming the primary IP for one address family |
+| `duplicate-primary-ip` | two interfaces claiming the primary IP for one address family, where NetBox keeps only the one written last |
 | `rack-collision` | two devices occupying the same rack unit, computed from each device type's `u_height` |
 | `position-without-face` | a rack position with no `face`, which NetBox rejects outright (`Must specify rack face when defining rack position`) |
 | `cable-conflict` | a port claimed by two different cables |

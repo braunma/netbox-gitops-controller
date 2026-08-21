@@ -169,3 +169,50 @@ func TestDeviceTypeRequiresParentRoleForDeviceBays(t *testing.T) {
 		t.Errorf("Validate() error = %v, want a device type without bays accepted", err)
 	}
 }
+
+func TestIsPrimaryIPAcceptsBothPlacements(t *testing.T) {
+	// address_role reads naturally either on the interface or beside the
+	// address it applies to; NetBox gets the same primary IP from both.
+	cases := []struct {
+		name string
+		dev  InterfaceConfig
+		vm   VMInterfaceConfig
+		want bool
+	}{
+		{
+			name: "on the interface",
+			dev:  InterfaceConfig{AddressRole: "primary", IP: &IPConfig{Address: "10.0.0.1/24"}},
+			vm:   VMInterfaceConfig{AddressRole: "primary", IP: &IPConfig{Address: "10.0.0.1/24"}},
+			want: true,
+		},
+		{
+			name: "inside the ip mapping",
+			dev:  InterfaceConfig{IP: &IPConfig{Address: "10.0.0.1/24", AddressRole: "primary"}},
+			vm:   VMInterfaceConfig{IP: &IPConfig{Address: "10.0.0.1/24", AddressRole: "primary"}},
+			want: true,
+		},
+		{
+			name: "no role at all",
+			dev:  InterfaceConfig{IP: &IPConfig{Address: "10.0.0.1/24"}},
+			vm:   VMInterfaceConfig{IP: &IPConfig{Address: "10.0.0.1/24"}},
+			want: false,
+		},
+		{
+			name: "role set but no ip",
+			dev:  InterfaceConfig{AddressRole: "primary"},
+			vm:   VMInterfaceConfig{AddressRole: "primary"},
+			want: true,
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tc.dev.IsPrimaryIP(); got != tc.want {
+				t.Errorf("InterfaceConfig.IsPrimaryIP() = %v, want %v", got, tc.want)
+			}
+			if got := tc.vm.IsPrimaryIP(); got != tc.want {
+				t.Errorf("VMInterfaceConfig.IsPrimaryIP() = %v, want %v", got, tc.want)
+			}
+		})
+	}
+}
