@@ -56,13 +56,18 @@ lint: ## Format check, vet, and SPDX headers
 	@# repository does not own. --others --exclude-standard keeps new, not-yet-
 	@# staged files in scope (as `gofmt -l .` had them) while honouring
 	@# .gitignore, which is what excludes the module cache.
-	@files=$$(git ls-files --cached --others --exclude-standard '*.go'); \
-	 if [ -n "$$files" ]; then \
-	   unformatted=$$(gofmt -l $$files); \
-	   test -z "$$unformatted" || { echo "gofmt needed:"; echo "$$unformatted"; exit 1; }; \
-	   missing=$$(grep -L 'SPDX-License-Identifier' $$files); \
-	   test -z "$$missing" || { echo "missing SPDX header:"; echo "$$missing"; exit 1; }; \
-	 fi
+	@# Fail closed on the file list itself. git exits non-zero when it will not
+	@# read the tree -- no .git directory, or the "dubious ownership" refusal a
+	@# container runner triggers when the checkout belongs to another UID -- and
+	@# an unchecked empty list would otherwise skip both checks and report
+	@# success on unformatted code.
+	@files=$$(git ls-files --cached --others --exclude-standard '*.go') || \
+	   { echo "cannot list this repository's Go files; is it a readable git checkout?"; exit 1; }; \
+	 test -n "$$files" || { echo "found no Go files to check; refusing to report success"; exit 1; }; \
+	 unformatted=$$(gofmt -l $$files); \
+	 test -z "$$unformatted" || { echo "gofmt needed:"; echo "$$unformatted"; exit 1; }; \
+	 missing=$$(grep -L 'SPDX-License-Identifier' $$files); \
+	 test -z "$$missing" || { echo "missing SPDX header:"; echo "$$missing"; exit 1; }
 	$(GO) vet ./...
 
 check: lint test ## Everything that does not need a NetBox
