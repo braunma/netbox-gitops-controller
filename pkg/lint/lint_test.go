@@ -489,6 +489,81 @@ func TestPatchPanelPortsAreValidCableEnds(t *testing.T) {
 	assertCheck(t, findings, "undeclared-peer-device", 0)
 }
 
+// patchPanelDataset extends baseDataset with the patch-panel role and a
+// 12-port LC panel type, the pieces a fibre backbone through two racks needs.
+func patchPanelDataset() Dataset {
+	ds := baseDataset()
+	ds.Roles = append(ds.Roles, &models.Role{Name: "Patch Panel", Slug: "patch-panel", Color: "9e9e9e"})
+	ds.DeviceTypes = append(ds.DeviceTypes, &models.DeviceType{
+		Model: "PP-12-SM-LC", Slug: "pp-12-sm-lc", Manufacturer: "Generic", UHeight: 1,
+		FrontPorts: []models.PortTemplate{{Name: "2", Type: "lc", RearPort: "2"}},
+		RearPorts:  []models.PortTemplate{{Name: "2", Type: "lc", Positions: 1}},
+	})
+	return ds
+}
+
+func patchPanel(name, rack string, opts ...func(*models.DeviceConfig)) *models.DeviceConfig {
+	d := &models.DeviceConfig{
+		Name: name, SiteSlug: "berlin", RoleSlug: "patch-panel",
+		DeviceTypeSlug: "pp-12-sm-lc", RackSlug: rack, Position: 38, Face: "front",
+		FrontPorts: []models.FrontPortConfig{{Name: "2", Type: "lc", RearPort: "2", RearPortPosition: 1}},
+		RearPorts:  []models.RearPortConfig{{Name: "2", Positions: 1}},
+	}
+	for _, opt := range opts {
+		opt(d)
+	}
+	return d
+}
+
+func TestFrontAndRearPortOfOneNameAreTwoCableEnds(t *testing.T) {
+	// A patch through two panels: server -> front 2 on panel A, the backbone
+	// rear 2 <-> rear 2 between the panels, front 2 on panel B -> switch. Port
+	// "2" is named three times per panel side but is two distinct NetBox
+	// objects per panel, which is what the reconciler resolves it to.
+	ds := patchPanelDataset()
+	panelA := patchPanel("pp-a01", "rack-a01", func(d *models.DeviceConfig) {
+		d.RearPorts[0].Link = &models.LinkConfig{PeerDevice: "pp-b02", PeerPort: "2", CableType: "smf"}
+	})
+	panelB := patchPanel("pp-b02", "rack-a02")
+	srv := server("srv-01", 10)
+	srv.Interfaces = []models.InterfaceConfig{
+		{Name: "eth0", Link: &models.LinkConfig{PeerDevice: "pp-a01", PeerPort: "2", CableType: "smf"}},
+	}
+	leaf := &models.DeviceConfig{
+		Name: "leaf-01", SiteSlug: "berlin", RoleSlug: "leaf",
+		DeviceTypeSlug: "leaf-sw", RackSlug: "rack-a02", Position: 42,
+		Interfaces: []models.InterfaceConfig{
+			{Name: "Eth1/1", Link: &models.LinkConfig{PeerDevice: "pp-b02", PeerPort: "2", CableType: "smf"}},
+		},
+	}
+	ds.Devices = []*models.DeviceConfig{panelA, panelB, srv, leaf}
+
+	findings := Check(ds, Options{})
+	assertCheck(t, findings, "cable-conflict", 0)
+	assertCheck(t, findings, "unknown-peer-port", 0)
+}
+
+func TestTwoCablesOnOnePatchPanelFrontPortConflict(t *testing.T) {
+	// The front port really can hold only one cable, and two servers patched
+	// into it is the mistake the check exists for.
+	ds := patchPanelDataset()
+	panel := patchPanel("pp-a01", "rack-a01")
+	a := server("srv-01", 10)
+	a.Interfaces = []models.InterfaceConfig{
+		{Name: "eth0", Link: &models.LinkConfig{PeerDevice: "pp-a01", PeerPort: "2", CableType: "smf"}},
+	}
+	b := server("srv-02", 20)
+	b.Interfaces = []models.InterfaceConfig{
+		{Name: "eth0", Link: &models.LinkConfig{PeerDevice: "pp-a01", PeerPort: "2", CableType: "smf"}},
+	}
+	ds.Devices = []*models.DeviceConfig{panel, a, b}
+
+	got := assertCheck(t, Check(ds, Options{}), "cable-conflict", 1)
+	if len(got) == 1 && !strings.Contains(got[0].Object, "front 2") {
+		t.Errorf("expected the conflict to name the front port, got %q", got[0].Object)
+	}
+}
+
 func TestDeviceBayChecks(t *testing.T) {
 	ds := baseDataset()
 	ds.DeviceTypes = append(ds.DeviceTypes,

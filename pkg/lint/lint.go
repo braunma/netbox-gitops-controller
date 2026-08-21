@@ -524,7 +524,7 @@ func (c *checker) checkIPAddresses() {
 		for _, iface := range d.Interfaces {
 			ref := ifaceRef(d.Name, iface.Name)
 			record(ref, iface.IP)
-			if !isPrimary(iface) || iface.IP == nil {
+			if !iface.IsPrimaryIP() || iface.IP == nil {
 				continue
 			}
 			addr, err := netip.ParsePrefix(iface.IP.Address)
@@ -557,13 +557,54 @@ func (c *checker) withinDeclaredPrefix(addr netip.Addr) bool {
 	return false
 }
 
-// cableEnd is one end of a declared cable.
+// portKind is which of a device's port collections a cable end refers to. A
+// patch panel routinely has a front port and a rear port of the same name --
+// NetBox keeps them apart as separate objects, and so must this check.
+type portKind uint8
+
+const (
+	kindInterface portKind = iota
+	kindFrontPort
+	kindRearPort
+)
+
+// patchPanelRole is the role slug the reconciler keys its front/rear port
+// selection on. A panel under any other role has its cables resolved as
+// interfaces, so the checks here mirror that rather than guess.
+const patchPanelRole = "patch-panel"
+
+// cableEnd is one end of a declared cable. The kind is part of its identity:
+// pp-01[front 2] and pp-01[rear 2] are two ports, not one.
 type cableEnd struct {
 	device string
 	port   string
+	kind   portKind
 }
 
-func (e cableEnd) String() string { return e.device + "[" + e.port + "]" }
+func (e cableEnd) String() string {
+	switch e.kind {
+	case kindFrontPort:
+		return e.device + "[front " + e.port + "]"
+	case kindRearPort:
+		return e.device + "[rear " + e.port + "]"
+	}
+	return e.device + "[" + e.port + "]"
+}
+
+// peerPortKind reports which port collection the far end of a cable resolves
+// to, mirroring the reconciler's role-based selection: patch panel to patch
+// panel is the rear-to-rear backbone, anything else into a patch panel lands
+// on its front port, and everything else is an interface.
+func peerPortKind(sourceRole, peerRole string) portKind {
+	switch {
+	case sourceRole == patchPanelRole && peerRole == patchPanelRole:
+		return kindRearPort
+	case peerRole == patchPanelRole:
+		return kindFrontPort
+	default:
+		return kindInterface
+	}
+}
 
 // checkCables reports a port that two different cables claim, and notes the
 // cables declared from both ends — legal, but it makes every re-patch a
@@ -575,25 +616,33 @@ func (c *checker) checkCables() {
 	}
 	var declarations []declaration
 
-	collect := func(device string, port string, link *models.LinkConfig) {
+	collect := func(d *models.DeviceConfig, port string, kind portKind, link *models.LinkConfig) {
 		if link == nil {
 			return
 		}
+		peerRole := ""
+		if peer, ok := c.devices[link.PeerDevice]; ok {
+			peerRole = peer.RoleSlug
+		}
 		declarations = append(declarations, declaration{
-			local: cableEnd{device: device, port: port},
-			peer:  cableEnd{device: link.PeerDevice, port: link.PeerPort},
+			local: cableEnd{device: d.Name, port: port, kind: kind},
+			peer: cableEnd{
+				device: link.PeerDevice,
+				port:   link.PeerPort,
+				kind:   peerPortKind(d.RoleSlug, peerRole),
+			},
 		})
 	}
 
 	for _, d := range c.ds.Devices {
 		for _, iface := range d.Interfaces {
-			collect(d.Name, iface.Name, iface.Link)
+			collect(d, iface.Name, kindInterface, iface.Link)
 		}
 		for _, port := range d.FrontPorts {
-			collect(d.Name, port.Name, port.Link)
+			collect(d, port.Name, kindFrontPort, port.Link)
 		}
 		for _, port := range d.RearPorts {
-			collect(d.Name, port.Name, port.Link)
+			collect(d, port.Name, kindRearPort, port.Link)
 		}
 	}
 
@@ -781,15 +830,6 @@ func isPhysicalType(ifaceType string) bool {
 		return false
 	}
 	return true
-}
-
-// isPrimary reports whether the interface claims the device's primary IP,
-// which may be declared on the interface or inside its ip mapping.
-func isPrimary(iface models.InterfaceConfig) bool {
-	if strings.EqualFold(iface.AddressRole, "primary") {
-		return true
-	}
-	return iface.IP != nil && strings.EqualFold(iface.IP.AddressRole, "primary")
 }
 
 // isNetworkAddress reports whether the address is the all-zero host of its own

@@ -2,6 +2,8 @@
 
 package models
 
+import "strings"
+
 // ClusterType represents a NetBox cluster type (virtualization app), e.g.
 // "VMware vSphere" or "Proxmox".
 type ClusterType struct {
@@ -65,6 +67,16 @@ type VMInterfaceConfig struct {
 	IP           *IPConfig `yaml:"ip,omitempty" json:"ip,omitempty"`
 	AddressRole  string    `yaml:"address_role,omitempty" json:"address_role,omitempty"`
 	Tags         []string  `yaml:"tags,omitempty" json:"tags,omitempty"`
+}
+
+// IsPrimaryIP reports whether the interface claims the VM's primary IP. As
+// with device interfaces, the role may sit on the interface or inside its ip
+// mapping.
+func (i VMInterfaceConfig) IsPrimaryIP() bool {
+	if strings.EqualFold(i.AddressRole, "primary") {
+		return true
+	}
+	return i.IP != nil && strings.EqualFold(i.IP.AddressRole, "primary")
 }
 
 // VMConfig represents a virtual machine. A VM must belong to exactly one of a

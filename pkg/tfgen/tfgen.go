@@ -95,7 +95,7 @@ func Build(vms []*models.VMConfig) (*Document, error) {
 			nic := Interface{
 				Name:    iface.Name,
 				VLAN:    iface.UntaggedVLAN,
-				Primary: iface.AddressRole == "primary",
+				Primary: iface.IsPrimaryIP(),
 			}
 			if iface.IP != nil {
 				nic.IP = iface.IP.Address

@@ -397,7 +397,7 @@ func (vr *VirtualizationReconciler) reconcileVMIP(vmID, ifaceID int, iface *mode
 		return fmt.Errorf("failed to apply IP address: %w", err)
 	}
 
-	if iface.AddressRole == "primary" {
+	if iface.IsPrimaryIP() {
 		if ipID := utils.GetIDFromObject(ipObj); ipID > 0 {
 			if err := vr.setVMPrimaryIP(vmID, ipID); err != nil {
 				return fmt.Errorf("failed to set primary IP: %w", err)
