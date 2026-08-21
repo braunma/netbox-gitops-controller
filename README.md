@@ -415,7 +415,7 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `duplicate-primary-ip` | two interfaces claiming the primary IP for one address family, where NetBox keeps only the one written last |
 | `rack-collision` | two devices occupying the same rack unit, computed from each device type's `u_height` |
 | `position-without-face` | a rack position with no `face`, which NetBox rejects outright (`Must specify rack face when defining rack position`) |
-| `cable-conflict` | a port claimed by two different cables |
+| `cable-conflict` | a port claimed by two different cables (a patch panel's front port and rear port of the same name are two ports, resolved by role as the reconciler does) |
 | `unknown-peer-port` | a cable to a port its peer's device type does not have |
 | `untyped-interface` | an interface that is neither an interface template on the device type nor carries a `type`, so NetBox has nothing to create it from |
 | `unknown-lag-member` | a LAG whose `members` name an interface the device does not have |

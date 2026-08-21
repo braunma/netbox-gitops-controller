@@ -240,6 +240,17 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **`cable-conflict` fired on every patch panel.** The check identified a cable
+  end by device and port name alone, so a panel's front port "2" and its rear
+  port "2" — two separate objects in NetBox, and the whole point of a patch
+  panel — looked like one port holding two cables. A correctly modelled fibre
+  run (server to front port, rear-to-rear backbone between panels, front port
+  to switch on the far side) failed the linter with two errors it could do
+  nothing about. A cable end now carries which port collection it belongs to,
+  taking the far end from the same role-based rule the reconciler applies:
+  patch panel to patch panel is the rear-to-rear backbone, anything else into
+  a patch panel lands on its front port. Two cables on one front port are
+  still an error, and the message now names the port kind.
 - **`address_role: primary` inside an `ip:` mapping never reached NetBox.** The
   role can be written on the interface or beside the address it applies to, and
   the linter has always accepted both — but the sync and the Terraform
