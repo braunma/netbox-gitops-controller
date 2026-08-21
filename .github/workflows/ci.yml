@@ -19,10 +19,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # Keep in step with COVERAGE_THRESHOLD in .gitlab-ci.yml.
-  COVERAGE_THRESHOLD: "65"
-
 jobs:
   lint:
     name: Format, vet and licence headers
@@ -45,27 +41,11 @@ jobs:
         with:
           go-version-file: go.mod
           cache: true
-      - name: go test
-        run: go test ./... -race -coverprofile=coverage.out -covermode=atomic
-      - name: Coverage gate
-        run: |
-          go tool cover -func=coverage.out | tail -1
-          # Validate both operands first: awk compares a non-numeric operand as
-          # a string, so an unreadable total or an empty threshold would pass
-          # the gate instead of failing it.
-          MINIMUM="${COVERAGE_THRESHOLD:-65}"
-          case "${MINIMUM}" in
-            ''|*[!0-9.]*) echo "::error::COVERAGE_THRESHOLD is not a number"; exit 1 ;;
-          esac
-          TOTAL=$(go tool cover -func=coverage.out | tail -1 | awk '{gsub(/%/, "", $3); print $3}')
-          case "${TOTAL}" in
-            ''|*[!0-9.]*) echo "::error::Could not read the coverage total from coverage.out"; exit 1 ;;
-          esac
-          echo "Total statement coverage: ${TOTAL}% (minimum: ${MINIMUM}%)"
-          if awk -v t="$TOTAL" -v m="$MINIMUM" 'BEGIN { exit !(t < m) }'; then
-            echo "::error::Coverage ${TOTAL}% is below the required ${MINIMUM}%"
-            exit 1
-          fi
+      # `make coverage` runs the tests and enforces the gate. The GitLab
+      # pipeline calls the same target, so the scope measured and the bar
+      # applied are defined once, in the Makefile.
+      - name: go test and coverage gate
+        run: make coverage
       - uses: actions/upload-artifact@v4
         if: always()
         with:

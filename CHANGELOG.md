@@ -425,6 +425,23 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **One coverage gate, in the Makefile.** `.gitlab-ci.yml` and
+  `.github/workflows/ci.yml` each carried their own copy of the shell that
+  reads the total and compares it — and they measured different things, GitLab
+  over `./pkg/...` and GitHub over `./...`, while sharing one threshold. Both
+  now call `make coverage`, so the scope and the bar are defined once; a CI
+  variable still overrides the threshold where you want a different one.
+- **The Proxmox module's status is stated consistently.** `providers.tf` and
+  `versions.tf` said it was "validated against the live cluster" while the
+  README said it had never been run against one; the validation they record was
+  on the older 0.83.x provider line, and the current `~> 0.109.0` pin has not
+  been exercised. `terraform/VALIDATION.md` is the sequence for settling
+  that — one throwaway VM through plan, apply, converge and destroy — and names
+  the failure modes a first run meets: the NetBox cluster name being passed
+  through as a Proxmox pool ID that must already exist and cannot contain
+  spaces, unmapped VLAN names, and the guest-agent default that makes an apply
+  hang until it times out when the template has no agent.
+
 - **The data directory is loaded in one place.** `yamlcheck` and the controller
   each had their own copy of "load every definitions and inventory folder, merge
   the type libraries"; they are now one `loader.LoadDataset`, so the two cannot

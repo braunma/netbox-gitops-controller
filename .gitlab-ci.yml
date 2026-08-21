@@ -47,16 +47,12 @@
 #
 # THRESHOLDS AND GATES:
 #
-#   COVERAGE_THRESHOLD         Minimum total statement coverage (%) for
-#                              go_test over ./pkg/... . Default: "65".
-#                              A non-numeric or empty value fails the job.
-#   TF_ALLOW_DESTROY           Comma-separated environment names (no spaces)
-#                              allowed to destroy or replace VMs in tf_apply,
-#                              e.g. "stage" or "stage,playground". There is no
-#                              wildcard: "all" matches nothing. Unset means no
-#                              environment may: a plan containing a destroy
-#                              fails the job instead. Set it per-run, not
-#                              project-wide.
+#   COVERAGE_THRESHOLD         Minimum total statement coverage (%). The
+#                              default lives in the Makefile (make coverage),
+#                              which this pipeline and GitHub Actions both
+#                              call, so the bar is defined once. Set this to
+#                              override it. A non-numeric or empty value fails
+#                              the job rather than disabling the gate.
 #
 # PROXMOX (only read when ENABLE_PROXMOX="true"):
 #
@@ -137,13 +133,6 @@ variables:
   # Default: "true" - runs all tests
   RUN_TESTS: "true"
 
-  # COVERAGE_THRESHOLD: Minimum total statement coverage (%) for go_test,
-  # which measures ./pkg/... . Coverage there is ~79% (August 2026); the gate
-  # sits below that to catch regressions without blocking routine changes.
-  # Raise it as coverage improves. A non-numeric value fails the job rather
-  # than disabling the gate.
-  COVERAGE_THRESHOLD: "65"
-
   # ===========================================================================
   # BUILD CONFIGURATION
   # ===========================================================================
@@ -177,26 +166,11 @@ go_test:
   extends: .go_base
   stage: test
   script:
+    # `make coverage` runs the tests and enforces the gate. Both this pipeline
+    # and .github/workflows/ci.yml call it, so the scope measured and the bar
+    # applied are defined once, in the Makefile, and cannot drift apart.
     - echo "🧪 Running Go tests..."
-    - go test ./pkg/... -v -race -coverprofile=coverage.out -covermode=atomic
-    - go tool cover -func=coverage.out | tail -1
-    - |
-      # Both values are checked before comparing: awk compares a non-numeric
-      # operand as a string, so an empty COVERAGE_THRESHOLD would quietly turn
-      # the gate off instead of failing.
-      MINIMUM="${COVERAGE_THRESHOLD:-65}"
-      case "${MINIMUM}" in
-        ''|*[!0-9.]*) echo "❌ COVERAGE_THRESHOLD is ${COVERAGE_THRESHOLD:-<empty>}, which is not a number"; exit 1 ;;
-      esac
-      TOTAL=$(go tool cover -func=coverage.out | tail -1 | awk '{gsub(/%/, "", $3); print $3}')
-      case "${TOTAL}" in
-        ''|*[!0-9.]*) echo "❌ Could not read the coverage total from coverage.out"; exit 1 ;;
-      esac
-      echo "Total statement coverage: ${TOTAL}% (minimum: ${MINIMUM}%)"
-      if awk -v t="$TOTAL" -v m="$MINIMUM" 'BEGIN { exit !(t < m) }'; then
-        echo "❌ Coverage ${TOTAL}% is below the required ${MINIMUM}%"
-        exit 1
-      fi
+    - make coverage
     - echo "✅ All Go tests passed!"
   coverage: '/^total:.*\s(\d+\.\d+)%/'
   artifacts:

@@ -158,7 +158,7 @@ pipeline**. Two things are true of all of them:
 | `RUN_QUALITY_CHECKS` | `true` | `false` skips `go_lint` and `yaml_check`. |
 | `RUN_E2E` | `false` | Exactly `true` enables `e2e`. Needs a Docker-executor runner that can pull the three service images. |
 | `ENABLE_PROXMOX` | `false` | Exactly `true` enables `tf_validate`, `tf_plan` and `tf_apply`. `tf_generate` always runs — it is pure Go and guards against tfgen regressions. |
-| `COVERAGE_THRESHOLD` | `65` | Minimum total statement coverage for `go_test`, measured over `./pkg/...`. A non-numeric or empty value fails the job rather than disabling the gate. |
+| `COVERAGE_THRESHOLD` | `65` (from the Makefile) | Minimum total statement coverage. `go_test` runs `make coverage`, which measures `./...` and enforces the bar; setting this variable overrides the Makefile's default. A non-numeric or empty value fails the job rather than disabling the gate. |
 
 ### Images
 
@@ -203,11 +203,14 @@ Honoured by `tests/e2e/*.sh`, and by `make e2e`:
 
 ## GitHub Actions
 
-`.github/workflows/ci.yml` runs on every push and pull request and needs no
-configuration: format/vet/licence headers, unit tests with the same coverage
-gate as GitLab, `yamlcheck`, and a build. It never touches a NetBox, so no
-credentials are involved. `COVERAGE_THRESHOLD` is set in the workflow's `env`
-block.
+`.gitlab-ci.yml` is the pipeline of record: it is the only one that plans and
+applies against a real NetBox, and the only one that runs the end-to-end suite.
+
+`.github/workflows/ci.yml` is the gate for wherever the code is reviewed. It
+runs on every push and pull request and needs no configuration:
+format/vet/licence headers, `make coverage` (the same target GitLab calls, so
+the two cannot measure different things), `yamlcheck`, and a build. It never
+touches a NetBox, so no credentials are involved.
 
 ## How this was verified
 

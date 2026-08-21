@@ -208,5 +208,11 @@ pipeline stays self-consistent — but a committed lock file is the durable fix.
 ## Status
 
 Scaffold — written to be correct against bpg/proxmox ~0.109 but **not yet run
-against a live Proxmox**. Validate with `tofu validate` and a `plan`
-against your environment before applying.
+against a live Proxmox at this pin**. The comments in `versions.tf` and
+`providers.tf` record a validation on the older 0.83.x line; whether it carried
+over to 0.109 is untested.
+
+[`VALIDATION.md`](VALIDATION.md) is the sequence for settling that: one
+throwaway VM in the playground environment, plan, apply, converge, destroy —
+with the five failure modes a first run tends to hit, and what to update
+afterwards.
