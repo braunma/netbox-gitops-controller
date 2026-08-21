@@ -14,6 +14,35 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`netbox-gitops validate`: check the YAML against the NetBox that will
+  receive it, without writing.** The typed models carry a hardcoded copy of
+  NetBox's choice sets, which can only ever approximate a particular instance —
+  the values it accepts depend on its release and its plugins, and some sets are
+  far too large to keep by hand (NetBox 4.6 offers 216 interface types, so
+  `type` was not validated at all). A value the models let through became a
+  `400` partway through an apply, after earlier objects were already written.
+
+  `validate` reads each endpoint's `OPTIONS` response — the authority on what
+  that server accepts — and checks every choice value and string length the
+  repository declares against it, naming the near miss where there is one:
+
+  ```
+  ✗ device srv-01 interface eth0: type "25gbase-x-sfp29" is not a value this
+    NetBox accepts; did you mean "25gbase-x-sfp28"? (invalid-choice)
+  ```
+
+  References the repository does not declare itself are looked up in NetBox, so
+  a site that exists only on the server is accepted and one that exists nowhere
+  is reported. Everything wrong is reported at once rather than stopping at the
+  first rejection, one schema is fetched per endpoint rather than per object,
+  and identical references are looked up once. `--skip-references` limits it to
+  values. Every request it makes is a read, and the client runs in dry-run mode
+  throughout, so the path cannot write even if asked to.
+
+  The three checks now answer three different questions: `yamlcheck` (no NetBox
+  needed) whether the repository is coherent with itself, `validate` whether
+  this instance accepts these values, `--dry-run` what would change.
+
 - **`docs/CONFIGURATION.md`: every setting in one verified reference.** Each
   environment variable, each flag of `netbox-gitops`, `yamlcheck` and `tfgen`,
   each GitLab CI/CD variable and each end-to-end knob, with its default and
@@ -395,6 +424,12 @@ are about to run before applying a sync with pruning enabled.
   applied.
 
 ### Changed
+
+- **The data directory is loaded in one place.** `yamlcheck` and the controller
+  each had their own copy of "load every definitions and inventory folder, merge
+  the type libraries"; they are now one `loader.LoadDataset`, so the two cannot
+  drift apart on which folders exist or how libraries merge. `lint.Dataset` is
+  an alias for `loader.Dataset`, so nothing that used it had to change.
 
 - **The historical planning documents are gone.** `docs/BUGFIX_PLAN.md`,
   `docs/AUDIT_AND_ROADMAP.md`, `docs/PLAN_VIRTUALIZATION.md` and

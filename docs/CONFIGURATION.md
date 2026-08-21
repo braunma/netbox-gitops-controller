@@ -72,6 +72,30 @@ cp .env.example .env      # then fill in NETBOX_URL and NETBOX_TOKEN
 | `--detailed-exitcode` | off | Exit `0` when already in sync, `2` when changes are pending or were applied, `1` on error — the Terraform convention, so a scheduled `--dry-run` becomes a drift monitor. |
 | `--version` | — | Prints the version, commit and build date stamped at link time. |
 
+### `netbox-gitops validate`
+
+Checks the YAML against the live instance without writing: every value the
+repository sets for a NetBox choice field is compared with what that instance
+offers in its OPTIONS response, string lengths against the same source, and
+references the repository does not declare itself are looked up.
+
+```bash
+./netbox-gitops validate                    # against $NETBOX_URL
+./netbox-gitops validate --data-dir example
+```
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--skip-references` | off | Checks values only, making no existence queries. For a large instance, or a token that may not read every endpoint. |
+
+It inherits `--config`, `--data-dir`, `--devicetype-library`,
+`--moduletype-library`, `--ignore-file` and `--include-ignored-files` from the
+root command. Exit `0` when everything is accepted, `1` when it is not.
+
+Where the three checks sit: `yamlcheck` needs no NetBox and answers "is this
+repository coherent"; `validate` needs one and answers "will this instance
+accept these values"; `--dry-run` needs one and answers "what would change".
+
 ## `yamlcheck`
 
 Validates a data directory without contacting NetBox: YAML syntax, then the

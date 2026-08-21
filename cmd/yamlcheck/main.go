@@ -20,7 +20,6 @@ import (
 
 	"github.com/braunma/netbox-gitops-controller/pkg/lint"
 	"github.com/braunma/netbox-gitops-controller/pkg/loader"
-	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
@@ -207,74 +206,19 @@ func report(base string, findings []lint.Finding, showWarnings bool) {
 	fmt.Printf("%d error(s), %d warning(s) in %s\n", errors, warnings, base)
 }
 
-// collect loads every known definition and inventory folder under base through
-// the typed loader, which runs per-model validation, and returns the result as
-// a dataset for the linter. Missing folders are skipped by the loader, so a
-// partial layout is fine.
+// collect loads a data directory through the shared loader, which
+// model-validates every object as it goes, and returns it for the linter.
 func collect(base string) (lint.Dataset, error) {
-	var ds lint.Dataset
 	if !isDataDir(base) {
-		return ds, nil
+		return lint.Dataset{}, nil
 	}
 
 	fmt.Printf("Validating models in %s...\n", base)
-	logger := utils.NewLogger(false)
-	dl := loader.NewDataLoader(base, logger)
-
-	var err error
-	load := func(fn func() error) {
-		if err == nil {
-			err = fn()
-		}
-	}
-
-	load(func() (e error) { ds.Sites, e = dl.LoadSites("definitions/sites"); return })
-	load(func() (e error) { ds.Racks, e = dl.LoadRacks("definitions/racks"); return })
-	load(func() (e error) { ds.Roles, e = dl.LoadRoles("definitions/roles"); return })
-	load(func() (e error) { _, e = dl.LoadTags("definitions/extras"); return })
-	load(func() (e error) { _, e = dl.LoadCustomFields("definitions/custom_fields"); return })
-	load(func() (e error) { ds.VRFs, e = dl.LoadVRFs("definitions/vrfs"); return })
-	load(func() (e error) { _, e = dl.LoadVLANGroups("definitions/vlan_groups"); return })
-	load(func() (e error) { ds.VLANs, e = dl.LoadVLANs("definitions/vlans"); return })
-	load(func() (e error) { ds.Prefixes, e = dl.LoadPrefixes("definitions/prefixes"); return })
-	load(func() (e error) { ds.Platforms, e = dl.LoadPlatforms("definitions/platforms"); return })
-	load(func() (e error) { _, e = dl.LoadTenantGroups("definitions/tenant_groups"); return })
-	load(func() (e error) { ds.Tenants, e = dl.LoadTenants("definitions/tenants"); return })
-	load(func() (e error) { _, e = dl.LoadClusterTypes("definitions/virtualization/cluster_types"); return })
-	load(func() (e error) { _, e = dl.LoadClusterGroups("definitions/virtualization/cluster_groups"); return })
-	load(func() (e error) { ds.Clusters, e = dl.LoadClusters("definitions/virtualization/clusters"); return })
-
-	// Native types are merged with the community-format libraries the same way
-	// the controller merges them, so a reference to a vendored type resolves
-	// here too.
-	var nativeModuleTypes, libraryModuleTypes []*models.ModuleType
-	load(func() (e error) { nativeModuleTypes, e = dl.LoadModuleTypes("definitions/module_types"); return })
-	load(func() (e error) {
-		libraryModuleTypes, e = dl.LoadModuleTypeLibrary(resolveLibrary("MODULETYPE_LIBRARY", base, "module_type_library"))
-		return
+	dl := loader.NewDataLoader(base, utils.NewLogger(false))
+	return dl.LoadDataset(loader.DatasetOptions{
+		DeviceTypeLibrary: resolveLibrary("DEVICETYPE_LIBRARY", base, "device_type_library"),
+		ModuleTypeLibrary: resolveLibrary("MODULETYPE_LIBRARY", base, "module_type_library"),
 	})
-	var nativeDeviceTypes, libraryDeviceTypes []*models.DeviceType
-	load(func() (e error) { nativeDeviceTypes, e = dl.LoadDeviceTypes("definitions/device_types"); return })
-	load(func() (e error) {
-		libraryDeviceTypes, e = dl.LoadDeviceTypeLibrary(resolveLibrary("DEVICETYPE_LIBRARY", base, "device_type_library"))
-		return
-	})
-
-	// Match the reconciler's device folders so VM definitions under
-	// inventory/virtual are not mis-parsed as devices by a recursive scan.
-	var active, passive []*models.DeviceConfig
-	load(func() (e error) { active, e = dl.LoadDevices("inventory/hardware/active"); return })
-	load(func() (e error) { passive, e = dl.LoadDevices("inventory/hardware/passive"); return })
-	load(func() (e error) { ds.VMs, e = dl.LoadVMs("inventory/virtual"); return })
-
-	if err != nil {
-		return lint.Dataset{}, err
-	}
-
-	ds.ModuleTypes = loader.MergeModuleTypes(nativeModuleTypes, libraryModuleTypes, logger)
-	ds.DeviceTypes = loader.MergeDeviceTypes(nativeDeviceTypes, libraryDeviceTypes, logger)
-	ds.Devices = append(append([]*models.DeviceConfig{}, active...), passive...)
-	return ds, nil
 }
 
 // resolveLibrary mirrors the controller's library resolution: the environment

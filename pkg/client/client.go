@@ -49,6 +49,9 @@ type NetBoxClient struct {
 	// keyed by "app/endpoint". Prune refuses to delete them: an object still in
 	// use is not an orphan, whatever the YAML no longer says about it.
 	referenced map[string]map[int]bool
+	// schemas memoises the OPTIONS response of each endpoint, so live
+	// validation asks the server what it accepts once rather than per object.
+	schemas schemaCache
 }
 
 // envIsTrue reports whether an environment variable is set to something that

@@ -47,6 +47,7 @@ make check
 |---|---|
 | add a server, switch or storage system | [Adding a server, end to end](#adding-a-server-end-to-end) |
 | know what the checks catch before you push | [Checking the YAML before it reaches NetBox](#checking-the-yaml-before-it-reaches-netbox) |
+| find out whether *your* NetBox accepts a value | [Checking against the live NetBox](#checking-against-the-live-netbox) |
 | add hardware the repository has never seen | [Step 1: Define a Device Type](#step-1-define-a-device-type-if-new) — or vendor one from the community library |
 | fix a typo in a name or slug | [Renaming an Object](#renaming-an-object-fixing-a-typo) — do **not** just edit it |
 | understand why a change did nothing | [Common Errors](#common-errors) and [Phase Order](#phase-order-dependency-model) |
@@ -108,6 +109,7 @@ make check
 │   ├── models/          # Data Models
 │   ├── reconciler/      # Synchronization Logic
 │   ├── tfgen/           # VM YAML → Terraform vars (Proxmox)
+│   ├── validate/        # Live checks against a NetBox instance
 │   └── utils/           # Utilities
 └── cmd/                 # Command-Line Interfaces
     ├── netbox-gitops/   # Main Entry Point (NetBox sync)
@@ -428,6 +430,49 @@ Two things worth knowing about the reference checks:
     adoption, not one full of broken site references.
   * If you do declare everything but reference an object created outside this
     repository, `--allow-undeclared-refs` reports those as warnings instead.
+
+### Checking against the live NetBox
+
+`yamlcheck` cannot know what *your* instance accepts. The choices a NetBox
+offers depend on its release and its plugins — 4.6 has 216 interface types —
+so a hardcoded list can only approximate them, and a value it gets wrong
+becomes a `400` partway through an apply, after earlier objects have been
+written.
+
+`validate` asks the instance instead:
+
+```bash
+./netbox-gitops validate               # against $NETBOX_URL, writes nothing
+./netbox-gitops validate --skip-references
+```
+
+It reads each endpoint's `OPTIONS` response — the authority on what that server
+accepts — and checks every choice value and string length the YAML sets against
+it. References the repository does not declare itself are looked up, so a site
+that exists only in NetBox is accepted and one that exists nowhere is reported.
+Everything wrong is reported at once, rather than stopping at the first
+rejection:
+
+```text
+✗ device srv-01 interface eth0: type "25gbase-x-sfp29" is not a value this
+  NetBox accepts; did you mean "25gbase-x-sfp28"? (invalid-choice)
+✗ cable declared on device srv-01 interface eth0: type "dac-activ" is not a
+  value this NetBox accepts; did you mean "dac-active"? (invalid-choice)
+✗ site does-not-exist: is declared nowhere in this repository and does not
+  exist in NetBox either (missing-reference)
+```
+
+Every request it makes is a read, and the client runs in dry-run mode
+throughout, so it cannot write even if asked to.
+
+The three checks answer different questions, and a merge request is worth
+running all three through:
+
+| | Needs a NetBox | Answers |
+|---|---|---|
+| `yamlcheck` | no | Is this repository coherent with itself? |
+| `validate` | yes | Will this instance accept these values? |
+| `--dry-run` | yes | What would change? |
 
 -----
 

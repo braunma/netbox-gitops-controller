@@ -94,6 +94,47 @@ else
   fail "yamlcheck" "$(grep -E '❌' "${WORK}/yamlcheck.log" | head -1)"
 fi
 
+# Live validation: every value this repository declares must be one the target
+# instance accepts. Run before the apply, which is the point of it.
+if "${BIN}" validate >"${WORK}/validate.log" 2>&1; then
+  ok "validate against the live instance"
+else
+  fail "validate against the live instance" "$(grep -E '✗' "${WORK}/validate.log" | head -1)"
+fi
+
+# It is a read-only path: nothing it does may create an object.
+before_validate="$(count dcim/devices "")"
+"${BIN}" validate >/dev/null 2>&1 || true
+if [ "$(count dcim/devices "")" = "${before_validate}" ]; then
+  ok "validate writes nothing" "${before_validate} device(s) before and after"
+else
+  fail "validate writes nothing" "the device count changed"
+fi
+
+# A value NetBox does not offer must be caught here rather than mid-apply.
+BADDIR="${WORK}/bad-choice"
+mkdir -p "${BADDIR}"
+cp -r definitions inventory "${BADDIR}/"
+cat >"${BADDIR}/inventory/hardware/active/_zz-bad.yaml" <<'BADYAML'
+defaults:
+  site_slug: "berlin-dc"
+  role_slug: "server"
+  device_type_slug: "poweredge-r740"
+  face: "front"
+devices:
+  - name: "e2e-invalid-choice"
+    interfaces:
+      - name: "eth9"
+        type: "25gbase-x-sfp29"
+BADYAML
+if "${BIN}" validate --data-dir "${BADDIR}" --include-ignored-files >"${WORK}/validate-bad.log" 2>&1; then
+  fail "validate rejects an unknown interface type" "it passed"
+elif grep -q "25gbase-x-sfp28" "${WORK}/validate-bad.log"; then
+  ok "validate rejects an unknown interface type" "and suggests the real one"
+else
+  fail "validate rejects an unknown interface type" "no suggestion in the output"
+fi
+
 "${BIN}" --dry-run >"${WORK}/dryrun.log" 2>&1
 rc=$?
 if [ "${rc}" -le 2 ]; then ok "dry-run" "exit ${rc}"; else

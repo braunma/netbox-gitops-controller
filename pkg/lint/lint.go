@@ -14,6 +14,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/braunma/netbox-gitops-controller/pkg/loader"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
@@ -55,25 +56,10 @@ func (f Finding) String() string {
 	return fmt.Sprintf("[%s] %s: %s — %s", f.Check, f.Severity, f.Object, f.Message)
 }
 
-// Dataset is everything the linter reasons over: the definitions that declare
-// what may be referenced, and the inventory that references it. Any field may
-// be empty; a kind that is not declared at all is treated as "not managed by
-// this repository" rather than as a repository full of broken references.
-type Dataset struct {
-	Sites       []*models.Site
-	Racks       []*models.Rack
-	Roles       []*models.Role
-	VRFs        []*models.VRF
-	VLANs       []*models.VLAN
-	Prefixes    []*models.Prefix
-	DeviceTypes []*models.DeviceType
-	ModuleTypes []*models.ModuleType
-	Platforms   []*models.Platform
-	Tenants     []*models.Tenant
-	Clusters    []*models.Cluster
-	Devices     []*models.DeviceConfig
-	VMs         []*models.VMConfig
-}
+// Dataset is everything the linter reasons over. It is the loader's type: the
+// data is loaded once and checked by whoever cares — this package from the
+// repository alone, pkg/validate against a live NetBox.
+type Dataset = loader.Dataset
 
 // Options tunes how strictly references are judged.
 type Options struct {

@@ -4,20 +4,15 @@ What this controller does not do yet, roughly in the order it is worth doing.
 Everything it *does* do is documented in the [README](../README.md); what
 changed and when is in the [changelog](../CHANGELOG.md).
 
-## Live-state validation
+## Extended live validation
 
-`yamlcheck` checks the YAML against the typed models and against the rest of
-the repository — references that resolve to nothing declared, a name or IP used
-twice, two devices in one rack unit, a port claimed by two cables, an interface
-the device type does not have.
-
-What it cannot see is the *server*. A status value, interface type or rack
-position the models accept can still be rejected by a particular NetBox, and an
-object that exists only in NetBox is invisible to it.
-
-**Wanted:** a `validate` command that resolves choices and references against
-the live API without writing, so a merge request fails before it reaches apply.
-Effort: M.
+`netbox-gitops validate` asks the target instance which values it accepts —
+choices and string lengths from each endpoint's OPTIONS response — and looks up
+the references this repository does not declare itself. What it does not yet
+check: custom fields an instance marks required, uniqueness constraints that
+depend on existing objects (a serial or asset tag another device already
+holds), and whether a rack position is free. Each needs a query per object
+rather than per endpoint, so it wants care over the request count. Effort: M.
 
 ## A config file
 

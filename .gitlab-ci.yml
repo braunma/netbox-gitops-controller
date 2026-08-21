@@ -319,7 +319,12 @@ go_validate:
   dependencies:
     - go_build
   script:
-    - echo "🔍 Validating with Go implementation..."
+    # Ask the target instance what it accepts before planning against it: a
+    # choice value or a reference this NetBox rejects would otherwise surface
+    # as a 400 partway through the apply job, with earlier objects written.
+    - echo "🔍 Validating against the live NetBox..."
+    - ./netbox-gitops validate
+    - echo "🔍 Planning with Go implementation..."
     - ./netbox-gitops --dry-run
     - echo "✅ Validation passed!"
   rules:

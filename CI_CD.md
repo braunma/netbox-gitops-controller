@@ -25,7 +25,7 @@ NetBox only through the GitLab `apply` stage.
 | test | `e2e` | branches + MRs, only when `RUN_E2E="true"` | auto | `tests/e2e/{run,rename,repo-data}.sh` against a throwaway NetBox started as a CI service. Never talks to the project's NetBox: it exports its own target in the job shell. |
 | build | `go_build` | branches + MRs | auto | Builds the `netbox-gitops` binary (artifact, 1 week). |
 | validate | `debug_environment` | — | manual | Dumps repo/Go/env info for debugging, with `go_build`'s binary. |
-| validate | `go_validate` | non-default branches + MRs | auto | `./netbox-gitops --dry-run`. |
+| validate | `go_validate` | non-default branches + MRs | auto | `./netbox-gitops validate` (choice values and references against the live instance), then `./netbox-gitops --dry-run`. |
 | plan | `go_plan` | MRs only | auto | `--dry-run` → `plan-output.txt` artifact for review. |
 | apply | `go_apply` | default branch | **manual** | `./netbox-gitops` (production deploy). |
 
