@@ -91,21 +91,34 @@ func Parse(r io.Reader) ([]Pair, error) {
 	return pairs, nil
 }
 
-// unquote strips a matching pair of surrounding quotes, or trims an inline
-// comment from an unquoted value.
+// unquote returns the value a line declares: what is inside the quotes if it
+// opens with one, else the text up to an inline comment.
+//
+// A quoted value ends at its closing quote and whatever follows is discarded,
+// which is what makes `TOKEN="secret"  # rotated May` mean the secret and not
+// the secret with quotes and a sentence attached.
 func unquote(value string) string {
 	for _, quote := range []string{`"`, `'`} {
-		if len(value) >= 2 && strings.HasPrefix(value, quote) && strings.HasSuffix(value, quote) {
-			return value[1 : len(value)-1]
+		if !strings.HasPrefix(value, quote) {
+			continue
 		}
+		if end := strings.Index(value[1:], quote); end >= 0 {
+			return value[1 : end+1]
+		}
+		// An opening quote with no closing one is not a quoted value; fall
+		// through and treat the line as unquoted rather than guessing.
 	}
-	// Only whitespace-preceded `#` starts a comment, so a value that contains
-	// one (a URL fragment, a token) survives.
-	if index := strings.Index(value, " #"); index >= 0 {
-		return strings.TrimSpace(value[:index])
-	}
-	if index := strings.Index(value, "\t#"); index >= 0 {
-		return strings.TrimSpace(value[:index])
+	// Unquoted: only a whitespace-preceded `#` starts a comment, so a value
+	// that merely contains one (a URL fragment, a token) survives.
+	for index := strings.Index(value, "#"); index > 0; {
+		if prev := value[index-1]; prev == ' ' || prev == '\t' {
+			return strings.TrimSpace(value[:index])
+		}
+		next := strings.Index(value[index+1:], "#")
+		if next < 0 {
+			break
+		}
+		index += next + 1
 	}
 	return value
 }

@@ -51,7 +51,8 @@ make check
 | fix a typo in a name or slug | [Renaming an Object](#renaming-an-object-fixing-a-typo) — do **not** just edit it |
 | understand why a change did nothing | [Common Errors](#common-errors) and [Phase Order](#phase-order-dependency-model) |
 | remove something | [Pruning Orphans](#6-pruning-orphans) — deletion is opt-in |
-| see every flag | `./netbox-gitops --help`, or the **Usage** section below |
+| see every flag, variable or CI setting | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — one verified table per command |
+| know what is planned but not built | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 
 -----
 
@@ -66,7 +67,7 @@ make check
   * **Renames, not duplicates (`rename_from`):** Correcting a typo in a name, slug or other identifying field renames the existing object instead of creating a second one and orphaning the first. Supported on every managed object type. See the Renaming section below.
   * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
   * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
-  * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`docs/PLAN_YAML_VM_PIPELINE.md`](docs/PLAN_YAML_VM_PIPELINE.md) and [`terraform/README.md`](terraform/README.md).
+  * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`terraform/README.md`](terraform/README.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -96,6 +97,9 @@ make check
 ├── example/             # Public Example Data for Tests
 │   ├── definitions/     # Example definitions (for learning/testing)
 │   └── inventory/       # Example inventory (for learning/testing)
+├── docs/                # Reference documentation
+│   ├── CONFIGURATION.md # Every flag, variable and CI setting
+│   └── ROADMAP.md       # What is not built yet
 ├── terraform/           # Optional Proxmox provisioning (bpg/proxmox)
 ├── pkg/                 # Go Implementation (Core Logic)
 │   ├── client/          # NetBox API Client
@@ -585,26 +589,42 @@ image — the reverse order used for `--prune` — by
 
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`).
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
-  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See `docs/MISSING_FEATURES.md` for details and current limitations.
+  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
 
 ### Common Errors
 
-**Error: "400 Bad Request: {'type': ['This field may not be blank.']}"**
+Run `go run ./cmd/yamlcheck` first — the first three below are reported by name
+before a single request is made.
 
-  * **Cause:** A device interface or template is missing the `type` definition in the YAML.
-  * **Solution:** Ensure every interface in your `definitions/device_types/` files has a valid type (e.g., `1000base-t`, `virtual`, `lag`).
+**`400 Bad Request: {"face": ["Must specify rack face when defining rack position."]}`**
 
-**Cables are "flapping" (Deleting... Creating... on every run)**
+  * **Cause:** the device declares `position` but no `face`. NetBox requires
+    both together, and rejects the device — every interface, IP and cable
+    behind it is then never created.
+  * **Fix:** add `face: "front"` (or `"rear"`). Put it in the file's `defaults`
+    block so it cannot be forgotten on the next device.
 
-  * **Cause:** You likely assigned two different devices to the same peer port.
-  * **Solution:** Check your `link:` definitions. A port can only support one cable connection.
+**`400 Bad Request: {"type": ["This field may not be blank."]}`**
 
-**Changes to Device Type (e.g., adding a port) do not appear on existing servers**
+  * **Cause:** an interface exists neither as a template on the device type nor
+    with a `type` of its own.
+  * **Fix:** name the template's interface, or give the interface a `type`.
+    `yamlcheck` reports this as `untyped-interface`.
 
-  * **Cause:** This is standard NetBox behavior. Modifying the "Blueprint" (Device Type) does not automatically update already created "Instances" (Devices).
-  * **Solution:** Either recreate the device (Delete + Sync) or manually update the components in NetBox using the "Sync components" button on the Device Type page. Global attributes like `u_height` update immediately.
+**Cables "flap" — deleted and recreated on every run**
 
-  
+  * **Cause:** two devices claim the same peer port. A port holds one cable.
+  * **Fix:** check the `link:` declarations. `yamlcheck` reports this as
+    `cable-conflict`.
+
+**A device type change (e.g. a new port) does not appear on existing devices**
+
+  * **Cause:** standard NetBox behaviour. Editing the blueprint does not
+    retrofit instances that already exist.
+  * **Fix:** use "Sync components" on the device type page in NetBox, or delete
+    and re-sync the device. Global attributes like `u_height` do update
+    immediately.
+
 
 ## 🛠 Local Development
 
@@ -648,6 +668,10 @@ credentials.
 > **TLS:** certificates are verified. `IGNORE_SSL_ERRORS=true` (also `1`,
 > `yes`, `on`) turns verification off for a self-signed instance and logs a
 > warning on every run.
+
+Every setting — the environment variables, the flags of all three commands, the
+GitLab CI/CD variables and the end-to-end knobs — is listed in
+[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
 
 ## ▶️ Usage
 
@@ -772,7 +796,7 @@ run via `--only`, and cannot be combined with `--site`/`--device`/`--vm` (a
 filtered run would delete the out-of-scope objects the filter excluded). Device children
 (interfaces, IP addresses, front/rear ports, modules) are pruned too; cables
 are not (they are untagged and NetBox removes them when their port or device is
-deleted). See `docs/MISSING_FEATURES.md` for details.
+deleted).
 
 ## 📚 Example Files
 

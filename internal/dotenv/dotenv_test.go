@@ -194,3 +194,41 @@ func TestLoadErrorNamesTheFile(t *testing.T) {
 		t.Errorf("error %q should name the file", err)
 	}
 }
+
+// A quoted value may be followed by a comment. Stripping the comment before
+// the quotes would leave the quotes in the value — which is how a token
+// arrives at NetBox as `"nbt_…"` and comes back 403.
+func TestParseQuotedValueFollowedByComment(t *testing.T) {
+	cases := map[string]string{
+		`TOKEN="secret"   # rotated in May`: "secret",
+		`TOKEN='secret'   # rotated in May`: "secret",
+		`TOKEN="secret"`:                    "secret",
+		`TOKEN="with space"  # note`:        "with space",
+		`TOKEN="has#hash"  # note`:          "has#hash",
+		`TOKEN=bare   # note`:               "bare",
+		`TOKEN=frag#ment`:                   "frag#ment",
+		`TOKEN="unterminated`:               `"unterminated`,
+	}
+	for line, want := range cases {
+		pairs, err := Parse(strings.NewReader(line))
+		if err != nil {
+			t.Errorf("%s: %v", line, err)
+			continue
+		}
+		if len(pairs) != 1 || pairs[0].Value != want {
+			t.Errorf("%s -> %q, want %q", line, pairs[0].Value, want)
+		}
+	}
+}
+
+// A `#` inside the value does not end it, but a later whitespace-preceded one
+// still starts a comment.
+func TestParseHashInsideValueThenComment(t *testing.T) {
+	pairs, err := Parse(strings.NewReader(`URL=https://host/path#frag  # the anchor matters`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := pairs[0].Value, "https://host/path#frag"; got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}

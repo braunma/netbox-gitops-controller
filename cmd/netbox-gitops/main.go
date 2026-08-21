@@ -125,7 +125,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 
 	// Auto-detect and validate data directory; the phase helpers below read
 	// the package-level dataDir, so update it in place.
-	resolvedDir, err := resolveDataDir(dataDir, logger)
+	resolvedDir, err := resolveDataDir(dataDir, cmd.Flags().Changed("data-dir"), logger)
 	if err != nil {
 		logger.Error("Failed to resolve data directory", err)
 		return err
@@ -857,21 +857,26 @@ func getKeys(m map[string]bool) []string {
 	return keys
 }
 
-// resolveDataDir determines the correct data directory to use
-// It implements auto-detection: if definitions/ doesn't exist in the specified directory,
-// it falls back to the example/ directory
-func resolveDataDir(dir string, logger *utils.Logger) (string, error) {
-	// Check if definitions directory exists in the specified directory
-	definitionsPath := fmt.Sprintf("%s/definitions", dir)
+// resolveDataDir returns the directory to load definitions and inventory from.
+//
+// When the caller did not name one, a checkout with no private data falls back
+// to example/ so that a first run has something to show. An explicit
+// --data-dir never falls back: a typo there would otherwise apply the example
+// dataset to whatever NetBox the token points at, and with --prune delete
+// every managed object the example does not declare.
+func resolveDataDir(dir string, explicit bool, logger *utils.Logger) (string, error) {
+	definitionsPath := filepath.Join(dir, "definitions")
 	if _, err := os.Stat(definitionsPath); err == nil {
 		logger.Info("Using data directory: %s", dir)
 		return dir, nil
 	}
 
-	// If not in current directory, check if example/ directory exists
-	examplePath := "example"
-	exampleDefinitionsPath := fmt.Sprintf("%s/definitions", examplePath)
-	if _, err := os.Stat(exampleDefinitionsPath); err == nil {
+	if explicit {
+		return "", fmt.Errorf("--data-dir %s holds no definitions/ directory", dir)
+	}
+
+	const examplePath = "example"
+	if _, err := os.Stat(filepath.Join(examplePath, "definitions")); err == nil {
 		logger.Warning("definitions/ not found in '%s', falling back to '%s'", dir, examplePath)
 		return examplePath, nil
 	}

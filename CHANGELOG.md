@@ -14,6 +14,14 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`docs/CONFIGURATION.md`: every setting in one verified reference.** Each
+  environment variable, each flag of `netbox-gitops`, `yamlcheck` and `tfgen`,
+  each GitLab CI/CD variable and each end-to-end knob, with its default and
+  what it actually does — checked against a NetBox 4.6.7 rather than described
+  from intent. It also states the two rules that were previously folklore: how
+  a setting is resolved (default → `.env` → environment → flag) and that a
+  GitLab **project** variable outranks anything `.gitlab-ci.yml` says.
+
 - **The `.env` file the README always documented is now actually read.**
   `--config` existed as a flag, defaulted to `.env`, and appeared in `--help`
   — but nothing in the program ever opened it: credentials came from the
@@ -203,6 +211,21 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **A quoted value in `.env` followed by a comment kept its quotes.**
+  `NETBOX_TOKEN="nbt_…"   # rotated in May` was parsed as the token *with* the
+  double quotes attached, so NetBox answered `403 Invalid token` and the run
+  stopped at the first request. The inline comment was being stripped before
+  the quotes, leaving nothing to match. Quoted values now end at their closing
+  quote and whatever follows is discarded.
+- **An explicit `--data-dir` silently fell back to `example/`.** Any directory
+  without a `definitions/` subdirectory — a typo, a wrong relative path, a
+  clone where the private data had not been checked out — resolved to the
+  bundled example dataset with only a warning. The run then applied *the
+  example objects* to whatever NetBox the token pointed at, and with `--prune`
+  deleted every managed object the example does not declare. A directory named
+  explicitly must now contain `definitions/` or the run stops; the fallback
+  remains only for the default, where it is the convenience it was meant to be.
+
 - **The end-to-end CI job could have been pointed at the real NetBox and wiped
   it.** GitLab ranks a UI-set CI/CD variable (project, group or instance level) above
   anything in `.gitlab-ci.yml`, job-level `variables:` included — so the
@@ -373,6 +396,20 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **The historical planning documents are gone.** `docs/BUGFIX_PLAN.md`,
+  `docs/AUDIT_AND_ROADMAP.md`, `docs/PLAN_VIRTUALIZATION.md` and
+  `docs/PLAN_YAML_VM_PIPELINE.md` recorded work that is finished, alongside
+  status claims that had drifted out of date — a reader looking for how to
+  operate the thing found a June 2026 audit and two design records instead.
+  What they documented that is still true lives in the README (phase order,
+  the object tables) and `terraform/README.md` (the Proxmox pipeline).
+  `docs/MISSING_FEATURES.md` is now `docs/ROADMAP.md`, carrying only what is
+  actually missing.
+- **The README's *Common Errors* section leads with the errors you can still
+  hit.** Three of the four are now reported by `yamlcheck` before any request
+  is made, and it says so; the rack-face rejection that the end-to-end suite
+  found on real hardware data was added.
+
 - **Every CI/CD variable is now documented where it is set.** The header of
   `.gitlab-ci.yml` listed six of them and omitted the two that are actually
   required (`NETBOX_URL`, `NETBOX_TOKEN`), along with `OPENTOFU_IMAGE`,
@@ -393,9 +430,9 @@ are about to run before applying a sync with pruning enabled.
   rules and the rename table.
 - **The German comments in `definitions/` are in English**, like the rest of the
   repository, and the `# NEU` markers that had stopped being new are gone.
-  `docs/BUGFIX_PLAN.md` and `docs/AUDIT_AND_ROADMAP.md` no longer claim that
-  `yamlcheck` skips model validation — it has not for some time, and now runs
-  the `pkg/lint` checks as well.
+  The planning documents that still claimed `yamlcheck` skips model validation
+  were corrected; they have since been replaced by `docs/CONFIGURATION.md` and
+  `docs/ROADMAP.md`.
 - **The sample hardware inventory now uses the conventions the README
   documents.** `inventory/hardware/active/` was written in the classic form
   and predated them: it repeated `type` and `enabled: true` on every interface

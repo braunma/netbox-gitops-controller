@@ -422,7 +422,7 @@ debug_environment:
 # =============================================================================
 # These jobs provision the VMs declared in inventory/virtual/*.yaml onto
 # Proxmox, in parallel with the NetBox sync (they have no dependency on the
-# go_* jobs). See terraform/README.md and docs/PLAN_YAML_VM_PIPELINE.md.
+# go_* jobs). See terraform/README.md.
 #
 # Required CI variables when ENABLE_PROXMOX="true":
 #   TF_VAR_proxmox_endpoint    e.g. https://pve.example.com:8006/api2/json

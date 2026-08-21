@@ -332,3 +332,66 @@ func TestDefaultConfigFile(t *testing.T) {
 		t.Errorf("got %q, want .env — the README, the .gitignore entry and .env.example all name it", defaultConfigFile)
 	}
 }
+
+// An explicit --data-dir must never fall back to example/: applying the
+// example dataset to a real NetBox because of a typo would create its objects
+// and, with --prune, delete every managed object it does not declare.
+func TestResolveDataDirExplicitNeverFallsBack(t *testing.T) {
+	base := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, "example", "definitions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	restore := chdir(t, base)
+	defer restore()
+
+	logger := utils.NewLogger(true)
+
+	if _, err := resolveDataDir("typo-dir", true, logger); err == nil {
+		t.Error("an explicit --data-dir without definitions/ must fail, not fall back")
+	} else if !strings.Contains(err.Error(), "typo-dir") {
+		t.Errorf("the error must name the directory, got %v", err)
+	}
+
+	// Without the flag, the fallback is the convenience it was meant to be.
+	got, err := resolveDataDir(".", false, logger)
+	if err != nil {
+		t.Fatalf("default resolution: %v", err)
+	}
+	if got != "example" {
+		t.Errorf("got %q, want the example fallback", got)
+	}
+}
+
+func TestResolveDataDirUsesADirectoryThatHasDefinitions(t *testing.T) {
+	base := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(base, "data", "definitions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	restore := chdir(t, base)
+	defer restore()
+
+	got, err := resolveDataDir("data", true, utils.NewLogger(true))
+	if err != nil {
+		t.Fatalf("resolveDataDir: %v", err)
+	}
+	if got != "data" {
+		t.Errorf("got %q, want %q", got, "data")
+	}
+}
+
+// chdir moves into dir for the duration of a test and returns the undo.
+func chdir(t *testing.T, dir string) func() {
+	t.Helper()
+	previous, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(dir); err != nil {
+		t.Fatal(err)
+	}
+	return func() {
+		if err := os.Chdir(previous); err != nil {
+			t.Fatal(err)
+		}
+	}
+}
