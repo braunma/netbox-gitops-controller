@@ -62,12 +62,19 @@ echo ">>> migrating"
 echo ">>> creating superuser and API token"
 # A v1 token is minted directly: the plaintext is what the client sends as
 # "Token <plaintext>". Passing only a key is rejected on NetBox 4.5+.
+#
+# The value must be passed as `token=`, not `plaintext=`: Token.save() treats a
+# token whose `token` attribute is None as one that needs a value and generates
+# a random one, whose setter then overwrites `plaintext`. Assigning the field
+# directly therefore leaves the instance holding a token nobody knows, and
+# every API call made with the value printed below answers "Invalid v1 token".
 "${NETBOX_ROOT}/venv/bin/python" "${NETBOX_ROOT}/netbox/manage.py" shell -c "
 from users.models import User, Token
 u, _ = User.objects.get_or_create(username='admin')
 u.is_superuser = True; u.set_password('admin'); u.save()
 Token.objects.filter(user=u, version=1).delete()
-Token.objects.create(user=u, version=1, plaintext='${TOKEN_PLAINTEXT}')
+t = Token.objects.create(user=u, version=1, token='${TOKEN_PLAINTEXT}')
+assert t.plaintext == '${TOKEN_PLAINTEXT}', 'NetBox replaced the token value'
 " >/dev/null
 
 pgrep -f "manage.py runserver" >/dev/null || \

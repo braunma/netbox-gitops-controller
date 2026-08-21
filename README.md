@@ -2,6 +2,61 @@
 
 This Go tool enables **declarative management** (Infrastructure as Code) for a NetBox instance. It synchronizes definitions from YAML files idempotently against the NetBox API.
 
+The YAML in this repository is the desired state. You edit it, open a merge
+request, and a pipeline applies it — nobody clicks anything in the NetBox UI.
+
+-----
+
+## ⏱ Quickstart
+
+```bash
+# 1. Build (Go 1.24+; dependencies download themselves)
+make build
+
+# 2. Point it at your NetBox
+cp .env.example .env
+$EDITOR .env                      # NETBOX_URL and NETBOX_TOKEN
+
+# 3. See what it would do — against the bundled example data, so nothing of
+#    yours is touched. --dry-run never writes.
+./netbox-gitops --dry-run --data-dir example
+```
+
+That prints a plan and ends with a line like
+`Plan: 43 to create, 0 to update, 0 to delete, 3 unchanged`. Nothing has been
+written; drop `--dry-run` to apply.
+
+Then, to change something real:
+
+```bash
+# 4. Edit the inventory. Start from the parked skeleton:
+#    inventory/hardware/active/_new-server.yaml
+$EDITOR inventory/hardware/active/servers.yaml
+
+# 5. Check it without touching NetBox — syntax, models, and the cross-object
+#    checks (duplicate IPs, rack collisions, cables, unknown slugs)
+make check
+
+# 6. Read the plan for your own data before opening the merge request
+./netbox-gitops --dry-run
+```
+
+### Where to look next
+
+| If you want to… | Read |
+|---|---|
+| add a server, switch or storage system | [Adding a server, end to end](#adding-a-server-end-to-end) |
+| know what the checks catch before you push | [Checking the YAML before it reaches NetBox](#checking-the-yaml-before-it-reaches-netbox) |
+| find out whether *your* NetBox accepts a value | [Checking against the live NetBox](#checking-against-the-live-netbox) |
+| add hardware the repository has never seen | [Step 1: Define a Device Type](#step-1-define-a-device-type-if-new) — or vendor one from the community library |
+| fix a typo in a name or slug | [Renaming an Object](#renaming-an-object-fixing-a-typo) — do **not** just edit it |
+| understand why a change did nothing | [Common Errors](#common-errors) and [Phase Order](#phase-order-dependency-model) |
+| remove something | [Pruning Orphans](#6-pruning-orphans) — deletion is opt-in |
+| see every flag, variable or CI setting | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — one verified table per command |
+| know what is planned but not built | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
+
+-----
+
 ## 🚀 Key Features
 
   * **Single Source of Truth:** The YAML files in this repository represent the desired state of the network inventory.
@@ -13,7 +68,7 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
   * **Renames, not duplicates (`rename_from`):** Correcting a typo in a name, slug or other identifying field renames the existing object instead of creating a second one and orphaning the first. Supported on every managed object type. See the Renaming section below.
   * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
   * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
-  * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`docs/PLAN_YAML_VM_PIPELINE.md`](docs/PLAN_YAML_VM_PIPELINE.md) and [`terraform/README.md`](terraform/README.md).
+  * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`terraform/README.md`](terraform/README.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -43,18 +98,23 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 ├── example/             # Public Example Data for Tests
 │   ├── definitions/     # Example definitions (for learning/testing)
 │   └── inventory/       # Example inventory (for learning/testing)
+├── docs/                # Reference documentation
+│   ├── CONFIGURATION.md # Every flag, variable and CI setting
+│   └── ROADMAP.md       # What is not built yet
 ├── terraform/           # Optional Proxmox provisioning (bpg/proxmox)
 ├── pkg/                 # Go Implementation (Core Logic)
 │   ├── client/          # NetBox API Client
+│   ├── lint/            # Cross-object checks (references, collisions)
 │   ├── loader/          # YAML Data Loader
 │   ├── models/          # Data Models
 │   ├── reconciler/      # Synchronization Logic
 │   ├── tfgen/           # VM YAML → Terraform vars (Proxmox)
+│   ├── validate/        # Live checks against a NetBox instance
 │   └── utils/           # Utilities
 └── cmd/                 # Command-Line Interfaces
     ├── netbox-gitops/   # Main Entry Point (NetBox sync)
     ├── tfgen/           # Generate Terraform vars from VM YAML
-    └── yamlcheck/       # YAML syntax + model validation
+    └── yamlcheck/       # YAML syntax, model validation, cross-object lint
 ```
 
 ### 🔒 Private Data vs. Public Examples
@@ -280,6 +340,139 @@ File: `inventory/hardware/active/switches.yaml`
   * **Group shared fields in `defaults`.** One file per rack, role or
     hardware batch with a `defaults` block keeps each device down to its name,
     position and IPs.
+  * **Start from the parked template.** `inventory/hardware/active/_new-server.yaml`
+    holds a filled-in skeleton. The leading underscore parks it, so it is never
+    applied (see *Parking a File* below) — copy a block out of it rather than
+    editing it.
+
+### Adding a server, end to end
+
+With those conventions in place, a new machine in an existing rack is its
+identity and its addresses, and nothing else:
+
+```yaml
+# inventory/hardware/active/servers.yaml  (defaults supply site, role,
+# device type, rack, face, status and tags)
+  - name: "berlin-srv-web-03"
+    device_type_slug: "poweredge-r740"
+    rack_slug: "berlin-rack-a01"
+    position: 14
+    serial: "WEB03-SN-KLMNO"
+    tags: ["production"]
+
+    interfaces:
+      - name: "idrac"
+        ip: "10.10.10.103/24"
+
+      - name: "eth0"
+        ip:
+          address: "10.10.20.103/24"
+          vrf: "Production"
+        address_role: "primary"
+        link:
+          peer_device: "berlin-leaf-01"
+          peer_port: "Eth1/4"
+          cable_type: "dac-active"
+```
+
+Then check it before it reaches NetBox:
+
+```bash
+go run ./cmd/yamlcheck definitions inventory
+```
+
+Nothing else has to change — the switch side is wired from the server's
+`link:`, and the ports come from the device type. The switch is edited only
+when the new port needs a VLAN it does not already have.
+
+### Checking the YAML before it reaches NetBox
+
+`yamlcheck` reads the data directory and reports what is wrong with it without
+opening a connection: YAML syntax, then the typed model validation (required
+fields, cross-field constraints, NetBox choice values), then cross-object
+checks that no single object can see on its own.
+
+```bash
+go run ./cmd/yamlcheck                       # definitions/, inventory/ and example/
+go run ./cmd/yamlcheck path/to/data-dir      # a directory holding definitions/ and inventory/
+go run ./cmd/yamlcheck --strict              # fail on warnings too
+```
+
+**Errors** — wrong regardless of what NetBox contains, so they fail the run:
+
+| Check | What it catches |
+|---|---|
+| `duplicate-device`, `duplicate-vm`, `duplicate-interface` | the same name declared twice, where the second declaration silently overwrites the first |
+| `duplicate-ip` | one address on two interfaces in the same VRF (the global table counts as one) |
+| `duplicate-primary-ip` | two interfaces claiming the primary IP for one address family |
+| `rack-collision` | two devices occupying the same rack unit, computed from each device type's `u_height` |
+| `position-without-face` | a rack position with no `face`, which NetBox rejects outright (`Must specify rack face when defining rack position`) |
+| `cable-conflict` | a port claimed by two different cables |
+| `unknown-peer-port` | a cable to a port its peer's device type does not have |
+| `untyped-interface` | an interface that is neither an interface template on the device type nor carries a `type`, so NetBox has nothing to create it from |
+| `unknown-lag-member` | a LAG whose `members` name an interface the device does not have |
+| `unknown-module-bay`, `unknown-device-bay`, `missing-device-bay` | a module or child device installed into a bay the parent's device type does not have |
+| `unknown-site`, `unknown-role`, `unknown-rack`, `unknown-device-type`, `unknown-vlan`, `unknown-vrf`, `unknown-module-type`, `unknown-cluster`, `unknown-platform`, `unknown-tenant`, `unknown-parent-device` | a reference that resolves to nothing declared here (VLANs are matched within the device's site, as NetBox resolves them) |
+| `invalid-ip`, `network-address`, `broadcast-address` | an address that is not a host address (a /31 point-to-point link is not flagged) |
+
+**Warnings** — legitimate in some repositories, so they only fail under
+`--strict`: `redundant-interface-type` and `redundant-enabled` (a value the
+device type template or the default already supplies),
+`interface-type-override`, `interface-not-in-template`,
+`cable-declared-twice` (the same cable from both ends),
+`undeclared-peer-device`, `ip-outside-prefix`, `unracked-device`,
+`module-type-without-slug`.
+
+Two things worth knowing about the reference checks:
+
+  * A kind of object the repository declares **none** of is not checked at all.
+    A repository that manages devices but not sites is a legitimate partial
+    adoption, not one full of broken site references.
+  * If you do declare everything but reference an object created outside this
+    repository, `--allow-undeclared-refs` reports those as warnings instead.
+
+### Checking against the live NetBox
+
+`yamlcheck` cannot know what *your* instance accepts. The choices a NetBox
+offers depend on its release and its plugins — 4.6 has 216 interface types —
+so a hardcoded list can only approximate them, and a value it gets wrong
+becomes a `400` partway through an apply, after earlier objects have been
+written.
+
+`validate` asks the instance instead:
+
+```bash
+./netbox-gitops validate               # against $NETBOX_URL, writes nothing
+./netbox-gitops validate --skip-references
+```
+
+It reads each endpoint's `OPTIONS` response — the authority on what that server
+accepts — and checks every choice value and string length the YAML sets against
+it. References the repository does not declare itself are looked up, so a site
+that exists only in NetBox is accepted and one that exists nowhere is reported.
+Everything wrong is reported at once, rather than stopping at the first
+rejection:
+
+```text
+✗ device srv-01 interface eth0: type "25gbase-x-sfp29" is not a value this
+  NetBox accepts; did you mean "25gbase-x-sfp28"? (invalid-choice)
+✗ cable declared on device srv-01 interface eth0: type "dac-activ" is not a
+  value this NetBox accepts; did you mean "dac-active"? (invalid-choice)
+✗ site does-not-exist: is declared nowhere in this repository and does not
+  exist in NetBox either (missing-reference)
+```
+
+Every request it makes is a read, and the client runs in dry-run mode
+throughout, so it cannot write even if asked to.
+
+The three checks answer different questions, and a merge request is worth
+running all three through:
+
+| | Needs a NetBox | Answers |
+|---|---|---|
+| `yamlcheck` | no | Is this repository coherent with itself? |
+| `validate` | yes | Will this instance accept these values? |
+| `--dry-run` | yes | What would change? |
 
 -----
 
@@ -441,26 +634,42 @@ image — the reverse order used for `--prune` — by
 
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`).
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
-  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See `docs/MISSING_FEATURES.md` for details and current limitations.
+  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
 
 ### Common Errors
 
-**Error: "400 Bad Request: {'type': ['This field may not be blank.']}"**
+Run `go run ./cmd/yamlcheck` first — the first three below are reported by name
+before a single request is made.
 
-  * **Cause:** A device interface or template is missing the `type` definition in the YAML.
-  * **Solution:** Ensure every interface in your `definitions/device_types/` files has a valid type (e.g., `1000base-t`, `virtual`, `lag`).
+**`400 Bad Request: {"face": ["Must specify rack face when defining rack position."]}`**
 
-**Cables are "flapping" (Deleting... Creating... on every run)**
+  * **Cause:** the device declares `position` but no `face`. NetBox requires
+    both together, and rejects the device — every interface, IP and cable
+    behind it is then never created.
+  * **Fix:** add `face: "front"` (or `"rear"`). Put it in the file's `defaults`
+    block so it cannot be forgotten on the next device.
 
-  * **Cause:** You likely assigned two different devices to the same peer port.
-  * **Solution:** Check your `link:` definitions. A port can only support one cable connection.
+**`400 Bad Request: {"type": ["This field may not be blank."]}`**
 
-**Changes to Device Type (e.g., adding a port) do not appear on existing servers**
+  * **Cause:** an interface exists neither as a template on the device type nor
+    with a `type` of its own.
+  * **Fix:** name the template's interface, or give the interface a `type`.
+    `yamlcheck` reports this as `untyped-interface`.
 
-  * **Cause:** This is standard NetBox behavior. Modifying the "Blueprint" (Device Type) does not automatically update already created "Instances" (Devices).
-  * **Solution:** Either recreate the device (Delete + Sync) or manually update the components in NetBox using the "Sync components" button on the Device Type page. Global attributes like `u_height` update immediately.
+**Cables "flap" — deleted and recreated on every run**
 
-  
+  * **Cause:** two devices claim the same peer port. A port holds one cable.
+  * **Fix:** check the `link:` declarations. `yamlcheck` reports this as
+    `cable-conflict`.
+
+**A device type change (e.g. a new port) does not appear on existing devices**
+
+  * **Cause:** standard NetBox behaviour. Editing the blueprint does not
+    retrofit instances that already exist.
+  * **Fix:** use "Sync components" on the device type page in NetBox, or delete
+    and re-sync the device. Global attributes like `u_height` do update
+    immediately.
+
 
 ## 🛠 Local Development
 
@@ -481,14 +690,33 @@ go build -o netbox-gitops ./cmd/netbox-gitops/
 
 ### 3\. Environment Configuration
 
-Create a `.env` file in the root directory:
+Copy `.env.example` to `.env` and fill it in:
 
 ```ini
 NETBOX_URL=https://netbox.example.com
 NETBOX_TOKEN=your_api_token_here
-# Optional: Disable SSL verification (Dev environments only)
-# IGNORE_SSL_ERRORS=True
+# Optional: skip TLS certificate verification (a lab NetBox behind a
+# self-signed certificate). Every run that sets it says so in its output.
+# IGNORE_SSL_ERRORS=true
 ```
+
+The file is read at startup; `--config path/to/other.env` points at a different
+one. **Anything already exported in the environment wins over the file**, so CI
+variables are never shadowed by a `.env` that happens to be in the working
+directory — and a missing `.env` is not an error when the environment already
+carries the settings. A `--config` path you name explicitly *is* required to
+exist, so a typo fails instead of quietly running against the wrong NetBox.
+
+`.env` is gitignored. `.env.example` is the committed template and holds no
+credentials.
+
+> **TLS:** certificates are verified. `IGNORE_SSL_ERRORS=true` (also `1`,
+> `yes`, `on`) turns verification off for a self-signed instance and logs a
+> warning on every run.
+
+Every setting — the environment variables, the flags of all three commands, the
+GitLab CI/CD variables and the end-to-end knobs — is listed in
+[`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
 
 ## ▶️ Usage
 
@@ -613,7 +841,7 @@ run via `--only`, and cannot be combined with `--site`/`--device`/`--vm` (a
 filtered run would delete the out-of-scope objects the filter excluded). Device children
 (interfaces, IP addresses, front/rear ports, modules) are pruned too; cables
 are not (they are untagged and NetBox removes them when their port or device is
-deleted). See `docs/MISSING_FEATURES.md` for details.
+deleted).
 
 ## 📚 Example Files
 

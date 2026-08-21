@@ -4,8 +4,7 @@ This module is run with [OpenTofu](https://opentofu.org) (the `tofu` CLI, a
 drop-in Terraform replacement) and provisions the VMs declared in
 `inventory/virtual/<env>/*.yaml` onto Proxmox VE, using the
 [`bpg/proxmox`](https://registry.terraform.io/providers/bpg/proxmox) provider. It is the **second consumer** of the single YAML source of truth — the
-first being the NetBox controller. The two run independently (see
-`docs/PLAN_YAML_VM_PIPELINE.md`); nothing flows back from Proxmox into NetBox.
+first being the NetBox controller. The two run independently; nothing flows back from Proxmox into NetBox.
 
 ## How the data gets here
 
@@ -209,5 +208,11 @@ pipeline stays self-consistent — but a committed lock file is the durable fix.
 ## Status
 
 Scaffold — written to be correct against bpg/proxmox ~0.109 but **not yet run
-against a live Proxmox**. Validate with `tofu validate` and a `plan`
-against your environment before applying.
+against a live Proxmox at this pin**. The comments in `versions.tf` and
+`providers.tf` record a validation on the older 0.83.x line; whether it carried
+over to 0.109 is untested.
+
+[`VALIDATION.md`](VALIDATION.md) is the sequence for settling that: one
+throwaway VM in the playground environment, plan, apply, converge, destroy —
+with the five failure modes a first run tends to hit, and what to update
+afterwards.

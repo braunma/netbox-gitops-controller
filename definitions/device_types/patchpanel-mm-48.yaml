@@ -1,11 +1,11 @@
 - model: "Fiber Panel 48-Port MM (LC)"
   slug: "pp-48-mm-lc"
   manufacturer: "Generic"
-  u_height: 1 # Bei High-Density oft 1HE, sonst auf 2 ändern
+  u_height: 1 # 1U at this density; a lower-density 48-port panel is often 2U
   is_full_depth: false
   tags: ["gitops"]
 
-  # Die Front-Ports (Patchkabel)
+  # Front ports: the room side, where patch cables plug in
   front_ports:
     - name: "1"
       type: "lc"
@@ -152,7 +152,7 @@
       type: "lc"
       rear_port: "48"
 
-  # Die Rear-Ports (Verlegekabel/Spleiß)
+  # Rear ports: the building side, where the permanent cabling is spliced on
   rear_ports:
     - name: "1"
       type: "lc"

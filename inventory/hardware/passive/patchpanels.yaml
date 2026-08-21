@@ -79,7 +79,7 @@
 
 - name: "berlin-pp-mm-01"
   site_slug: "berlin-dc"
-  device_type_slug: "patchpanel-mm-48"
+  device_type_slug: "pp-48-mm-lc"
   role_slug: "patch-panel"
   rack_slug: "berlin-rack-b01"
   position: 42

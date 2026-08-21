@@ -14,6 +14,8 @@
 #
 #   NETBOX_URL    base URL, e.g. http://netbox:8080
 #   NETBOX_TOKEN  API token (v1 or v2)
+#   E2E_KEEP      set to 1 to leave the work directory in place for inspection
+#   E2E_WORK      where the binary, datasets and logs are written
 set -uo pipefail
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
@@ -325,4 +327,4 @@ else
   echo "==> ${FAILURES} rename check(s) failed (work dir: ${WORK})"
   exit 1
 fi
-rm -rf "${WORK}"
+[ "${E2E_KEEP:-0}" = "1" ] || rm -rf "${WORK}"

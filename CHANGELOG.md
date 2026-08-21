@@ -14,6 +14,103 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`netbox-gitops validate`: check the YAML against the NetBox that will
+  receive it, without writing.** The typed models carry a hardcoded copy of
+  NetBox's choice sets, which can only ever approximate a particular instance —
+  the values it accepts depend on its release and its plugins, and some sets are
+  far too large to keep by hand (NetBox 4.6 offers 216 interface types, so
+  `type` was not validated at all). A value the models let through became a
+  `400` partway through an apply, after earlier objects were already written.
+
+  `validate` reads each endpoint's `OPTIONS` response — the authority on what
+  that server accepts — and checks every choice value and string length the
+  repository declares against it, naming the near miss where there is one:
+
+  ```
+  ✗ device srv-01 interface eth0: type "25gbase-x-sfp29" is not a value this
+    NetBox accepts; did you mean "25gbase-x-sfp28"? (invalid-choice)
+  ```
+
+  References the repository does not declare itself are looked up in NetBox, so
+  a site that exists only on the server is accepted and one that exists nowhere
+  is reported. Everything wrong is reported at once rather than stopping at the
+  first rejection, one schema is fetched per endpoint rather than per object,
+  and identical references are looked up once. `--skip-references` limits it to
+  values. Every request it makes is a read, and the client runs in dry-run mode
+  throughout, so the path cannot write even if asked to.
+
+  The three checks now answer three different questions: `yamlcheck` (no NetBox
+  needed) whether the repository is coherent with itself, `validate` whether
+  this instance accepts these values, `--dry-run` what would change.
+
+- **`docs/CONFIGURATION.md`: every setting in one verified reference.** Each
+  environment variable, each flag of `netbox-gitops`, `yamlcheck` and `tfgen`,
+  each GitLab CI/CD variable and each end-to-end knob, with its default and
+  what it actually does — checked against a NetBox 4.6.7 rather than described
+  from intent. It also states the two rules that were previously folklore: how
+  a setting is resolved (default → `.env` → environment → flag) and that a
+  GitLab **project** variable outranks anything `.gitlab-ci.yml` says.
+
+- **The `.env` file the README always documented is now actually read.**
+  `--config` existed as a flag, defaulted to `.env`, and appeared in `--help`
+  — but nothing in the program ever opened it: credentials came from the
+  environment only. Following the README ("Create a `.env` file in the root
+  directory") therefore produced `NETBOX_URL and NETBOX_TOKEN environment
+  variables must be set`, which is a poor first five minutes for a new
+  colleague. The file is now read at startup, before anything looks at the
+  environment, so every setting the controller takes from there —
+  `NETBOX_URL`, `NETBOX_TOKEN`, `IGNORE_SSL_ERRORS`, `DEVICETYPE_LIBRARY`,
+  `MODULETYPE_LIBRARY`, `IGNORED_FILES` — can come from it.
+
+  Values already exported win over the file, so a stale `.env` in a working
+  directory cannot shadow a CI variable. A missing `.env` is ignored (CI has no
+  file); a `--config` path given explicitly must exist, so a typo fails instead
+  of running against the wrong NetBox. `.env.example` is the committed
+  template, and the "must be set" error now names the file to copy.
+- **`.github/workflows/ci.yml`.** The repository lives on GitHub while its
+  pipeline lives in `.gitlab-ci.yml`, so a pull request opened here ran no
+  checks at all — including `yamlcheck`, the one that catches a bad inventory
+  edit. Formatting, `go vet`, licence headers, the unit tests with the same 65%
+  coverage gate, `yamlcheck` and a stamped build now run on every push and pull
+  request. The end-to-end suite stays where it can reach a NetBox
+  (`make e2e`, or the GitLab `e2e` job). A pull request template asks for the
+  dry-run plan, which is the only reviewable form of a data change.
+
+- **Cross-object lint checks in `yamlcheck` (`pkg/lint`).** Model validation
+  sees one object at a time, so everything that is only wrong *in relation to
+  something else* used to reach the apply: a device type slug that matches no
+  definition (the device is skipped with a warning), two devices in one rack
+  unit (NetBox rejects the second, after the first has been created), an IP or
+  a name used twice (the second write silently overwrites the first), a switch
+  port claimed by two cables, an interface the device type does not have.
+  `yamlcheck` now reports all of them from the repository alone, before a merge
+  request is applied — 37 checks, listed with their severities in the README
+  section *Checking the YAML before it reaches NetBox*.
+
+  Findings that are wrong regardless of what NetBox contains are errors and
+  fail the run; ones that may be legitimate (a value the device type template
+  already supplies, a cable declared from both ends, an address outside every
+  declared prefix, a peer device this repository does not manage) are warnings
+  and fail only under `--strict`. A kind of object the repository declares none
+  of is not checked at all, so managing devices but not sites stays a supported
+  partial adoption; `--allow-undeclared-refs` covers the mixed case.
+
+  `yamlcheck` also gained proper argument handling: a directory that holds
+  `definitions/` or `inventory/` is now treated as a data directory, so
+  `yamlcheck path/to/data-dir` runs model validation and linting on it instead
+  of only checking its YAML syntax.
+- **An end-to-end test for this repository's own data**
+  (`tests/e2e/repo-data.sh`, `make e2e-repo`). The existing e2e run proves the
+  controller copes with inventories it has never seen; this proves the
+  inventory *in this repository* applies, converges and means what its
+  conventions say. Beyond the six properties `run.sh` asserts, it checks the
+  objects NetBox ends up holding: that a cable declared on one end only wires
+  both, that an interface listed without a `type` matched a template port
+  instead of creating a second one beside it, that the storage node is
+  installed in its chassis bay, that the switch port kept its access VLAN when
+  the `link:` moved to the server side, and that the parked `_new-server.yaml`
+  was not applied.
+
 - **`rename_from`: correcting an identifying field now renames the object
   instead of duplicating it.** Every object is matched against NetBox by an
   identifying field — a slug, name, model, prefix or VID — so editing that field
@@ -143,6 +240,82 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **A quoted value in `.env` followed by a comment kept its quotes.**
+  `NETBOX_TOKEN="nbt_…"   # rotated in May` was parsed as the token *with* the
+  double quotes attached, so NetBox answered `403 Invalid token` and the run
+  stopped at the first request. The inline comment was being stripped before
+  the quotes, leaving nothing to match. Quoted values now end at their closing
+  quote and whatever follows is discarded.
+- **An explicit `--data-dir` silently fell back to `example/`.** Any directory
+  without a `definitions/` subdirectory — a typo, a wrong relative path, a
+  clone where the private data had not been checked out — resolved to the
+  bundled example dataset with only a warning. The run then applied *the
+  example objects* to whatever NetBox the token pointed at, and with `--prune`
+  deleted every managed object the example does not declare. A directory named
+  explicitly must now contain `definitions/` or the run stops; the fallback
+  remains only for the default, where it is the convenience it was meant to be.
+
+- **The end-to-end CI job could have been pointed at the real NetBox and wiped
+  it.** GitLab ranks a UI-set CI/CD variable (project, group or instance level) above
+  anything in `.gitlab-ci.yml`, job-level `variables:` included — so the
+  `NETBOX_URL` and `NETBOX_TOKEN` that `go_apply` needs silently overrode the
+  throwaway values the `e2e` job declared for itself. Those scripts run
+  `--prune` against an empty data directory between seeds, which deletes every
+  `gitops`-tagged object. Enabling `RUN_E2E="true"` on a configured project
+  would have aimed that at production. The job now exports its target in the
+  job shell, where nothing outranks it, rebuilds the token from the service's
+  own bootstrap values, and refuses to run if the URL is not the CI service.
+- **`go_lint` could not fail.** Its script ran `go fmt ./...`, which *rewrites*
+  the files it visits and exits 0 either way, so unformatted code reported
+  success — and `allow_failure: true` meant even `go vet` could not block. It
+  runs `make lint` now (`gofmt -l` as a check, `go vet`, SPDX headers) and is
+  blocking.
+- **An empty `COVERAGE_THRESHOLD` silently disabled the coverage gate.** awk
+  compares a non-numeric operand as a string, so `"79.5" < ""` is false and the
+  gate passed. The threshold and the measured total are both validated as
+  numbers before the comparison, and either one being unreadable fails the job.
+- **`debug_environment` declared `dependencies: [go_build]` from the same
+  stage**, which GitLab rejects — `dependencies` may only name jobs from an
+  earlier stage. It moved to the `validate` stage, where the dependency is
+  legal and the binary it prints is actually available.
+- **TLS certificate verification was disabled on every connection.**
+  `InsecureSkipVerify: true` was hardcoded in the HTTP client, while the README
+  offered `IGNORE_SSL_ERRORS` as an opt-in "for dev environments only" that no
+  code read. Every run against every instance, production included, accepted
+  any certificate presented to it — silently. Certificates are now verified,
+  and `IGNORE_SSL_ERRORS` (`true`, `1`, `yes`, `on`) is the real opt-out; a run
+  that sets it logs a warning saying so.
+
+  > **Action required** if you sync a NetBox behind a self-signed or internal
+  > CA certificate: the run will now fail on the certificate. Either trust the
+  > CA on the machine (right) or set `IGNORE_SSL_ERRORS=true` in `.env` (quick).
+- **The sample hardware inventory could not be applied to a real NetBox at
+  all.** All three leaf switches declared `position: 40` with no `face`, and
+  NetBox answers `400 {"face": ["Must specify rack face when defining rack
+  position."]}` — so the run stopped at the first switch, and every interface,
+  IP and cable behind it was never created. It went unnoticed because the
+  end-to-end tests only ever applied *generated* data, which always emits a
+  face; `tests/e2e/repo-data.sh` now applies this repository's data too. The
+  switches declare `face: "front"`, and `position-without-face` is a lint
+  error, so the next occurrence is caught before an apply rather than by it.
+- **`tests/e2e/provision-local.sh` printed an API token that did not work.**
+  It minted the v1 token by assigning `plaintext=` directly, but
+  `Token.save()` treats an instance whose `token` attribute is None as one
+  needing a value and generates a random one, whose setter overwrites
+  `plaintext`. The instance ended up holding a token nobody knew, and every
+  call made with the printed value answered `Invalid v1 token`. The value is
+  now passed as `token=` and the script asserts it survived the save.
+- **Two device type references in the sample inventory matched no definition,
+  and one module type reference in the example data matched none either.** The
+  first lint run found them: `berlin-pp-mm-01` asked for `patchpanel-mm-48`
+  where the definition's slug is `pp-48-mm-lc`, `berlin-storage-01` asked for
+  `isilon-a300` where the definitions declare an `isilon-a300-chassis` and an
+  `isilon-a300-node`, and the example GPU server installed `ex-gpu-a100`, a
+  part number rather than a slug the module type declared. Each meant the
+  object was skipped at apply time with a warning, not an error. The references
+  are corrected, the storage system is modelled the way its device types
+  describe it (a racked chassis with a node installed into a device bay), and
+  the example module types now declare the slugs they are referenced by.
 - **A module type reference could silently resolve to the wrong vendor's
   module.** NetBox identifies a module type by manufacturer and model together
   and gives it no slug, so two vendors may ship the same model name — but the
@@ -252,6 +425,78 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **One coverage gate, in the Makefile.** `.gitlab-ci.yml` and
+  `.github/workflows/ci.yml` each carried their own copy of the shell that
+  reads the total and compares it — and they measured different things, GitLab
+  over `./pkg/...` and GitHub over `./...`, while sharing one threshold. Both
+  now call `make coverage`, so the scope and the bar are defined once; a CI
+  variable still overrides the threshold where you want a different one.
+- **The Proxmox module's status is stated consistently.** `providers.tf` and
+  `versions.tf` said it was "validated against the live cluster" while the
+  README said it had never been run against one; the validation they record was
+  on the older 0.83.x provider line, and the current `~> 0.109.0` pin has not
+  been exercised. `terraform/VALIDATION.md` is the sequence for settling
+  that — one throwaway VM through plan, apply, converge and destroy — and names
+  the failure modes a first run meets: the NetBox cluster name being passed
+  through as a Proxmox pool ID that must already exist and cannot contain
+  spaces, unmapped VLAN names, and the guest-agent default that makes an apply
+  hang until it times out when the template has no agent.
+
+- **The data directory is loaded in one place.** `yamlcheck` and the controller
+  each had their own copy of "load every definitions and inventory folder, merge
+  the type libraries"; they are now one `loader.LoadDataset`, so the two cannot
+  drift apart on which folders exist or how libraries merge. `lint.Dataset` is
+  an alias for `loader.Dataset`, so nothing that used it had to change.
+
+- **The historical planning documents are gone.** `docs/BUGFIX_PLAN.md`,
+  `docs/AUDIT_AND_ROADMAP.md`, `docs/PLAN_VIRTUALIZATION.md` and
+  `docs/PLAN_YAML_VM_PIPELINE.md` recorded work that is finished, alongside
+  status claims that had drifted out of date — a reader looking for how to
+  operate the thing found a June 2026 audit and two design records instead.
+  What they documented that is still true lives in the README (phase order,
+  the object tables) and `terraform/README.md` (the Proxmox pipeline).
+  `docs/MISSING_FEATURES.md` is now `docs/ROADMAP.md`, carrying only what is
+  actually missing.
+- **The README's *Common Errors* section leads with the errors you can still
+  hit.** Three of the four are now reported by `yamlcheck` before any request
+  is made, and it says so; the rack-face rejection that the end-to-end suite
+  found on real hardware data was added.
+
+- **Every CI/CD variable is now documented where it is set.** The header of
+  `.gitlab-ci.yml` listed six of them and omitted the two that are actually
+  required (`NETBOX_URL`, `NETBOX_TOKEN`), along with `OPENTOFU_IMAGE`,
+  `ENABLE_PROXMOX`, `COVERAGE_THRESHOLD` and `TF_ALLOW_DESTROY`. All of them
+  are listed there and in `CI_CD.md` with their defaults and exact effect,
+  including the two gotchas: the `RUN_*`/`ENABLE_*` comparisons are literal, so
+  `"False"` skips nothing and `"True"` enables nothing; and a project-level
+  variable outranks anything this file says. The stale "current coverage is
+  ~73%" note is now ~79%, measured.
+- `tests/e2e/rename.sh` honours `E2E_KEEP`, which `tests/e2e/README.md`
+  documents for the suite as a whole and the other two scripts already
+  respected.
+- **The README opens with a quickstart instead of reference material.** Build,
+  configure, dry-run against the example data, edit, check, plan — one screen at
+  the top, followed by a table mapping the task you have to the section that
+  covers it. Previously the first instruction on how to *run* the thing was at
+  line 556, after the device type library semantics, the module type ambiguity
+  rules and the rename table.
+- **The German comments in `definitions/` are in English**, like the rest of the
+  repository, and the `# NEU` markers that had stopped being new are gone.
+  The planning documents that still claimed `yamlcheck` skips model validation
+  were corrected; they have since been replaced by `docs/CONFIGURATION.md` and
+  `docs/ROADMAP.md`.
+- **The sample hardware inventory now uses the conventions the README
+  documents.** `inventory/hardware/active/` was written in the classic form
+  and predated them: it repeated `type` and `enabled: true` on every interface
+  (both already supplied by the device type template and the default), repeated
+  the site, role, device type and rack on every device, and declared each cable
+  from both ends — so adding one server meant editing two files. The files now
+  use the grouped `defaults` form, list an interface only for what is specific
+  to the device, and declare every cable from the endpoint side only; the
+  switches carry the VLANs and management IPs their ports need and no `link:`.
+  Nothing about the resulting NetBox state changes. A parked
+  `_new-server.yaml` holds a skeleton to copy from, and the Munich lab server
+  moved into its own `munich-lab.yaml` to show the one-file-per-site pattern.
 - `DeviceType.UHeight` is now a decimal rather than an integer, so half-height
   (0.5U) device types are represented correctly. Existing whole-number
   definitions are unaffected.

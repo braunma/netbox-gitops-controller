@@ -1,0 +1,57 @@
+# Starting point for a new server — NOT APPLIED.
+#
+# Filenames beginning with an underscore are parked: the loader skips them and
+# logs that it did, so this file can sit next to the real inventory without
+# ever being synced. Copy a block out of it into the file for the right rack or
+# batch, fill in the four or five fields that are actually specific to the new
+# machine, and let `defaults` in that file supply the rest.
+#
+# Before opening the merge request:
+#
+#   go run ./cmd/yamlcheck definitions inventory
+#
+# reports a name used twice, an IP used twice, two devices in one rack unit, a
+# switch port already cabled, a slug that matches nothing, and an interface the
+# device type does not have — without touching NetBox.
+
+defaults:
+  site_slug: "CHANGEME-site"
+  role_slug: "server"
+  device_type_slug: "CHANGEME-device-type"
+  rack_slug: "CHANGEME-rack"
+  face: "front"
+  status: "active"
+  tags: ["gitops"]
+
+devices:
+  - name: "CHANGEME-hostname"
+    position: 0 # lowest rack unit the chassis occupies
+    serial: "CHANGEME"
+    asset_tag: "CHANGEME"
+
+    interfaces:
+      # Only interfaces that carry device-specific data are listed. The ports
+      # themselves come from the device type template, so `type` and
+      # `enabled: true` are never repeated here.
+      - name: "idrac"
+        description: "Dell iDRAC interface"
+        ip:
+          address: "10.0.0.0/24"
+          dns_name: "CHANGEME-hostname-idrac.example.com"
+          status: "active"
+          vrf: "Management"
+
+      - name: "eth0"
+        description: "Primary production interface"
+        ip:
+          address: "10.0.0.0/24"
+          dns_name: "CHANGEME-hostname.example.com"
+          status: "active"
+          vrf: "Production"
+        address_role: "primary" # sets the device's primary IP in NetBox
+        # The endpoint side owns the cable: declaring it here wires both ends,
+        # and nothing needs to change on the switch.
+        link:
+          peer_device: "CHANGEME-switch"
+          peer_port: "Eth1/0"
+          cable_type: "dac-active"

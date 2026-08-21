@@ -11,7 +11,7 @@
       type: "1000base-t"
       mgmt_only: true
       
-    # 48x 25G SFP28 Downlinks (Ports 1 bis 48)
+    # 48x 25G SFP28 downlinks (ports 1 to 48)
     - name: "Eth1/1"
       type: "25gbase-x-sfp28"
     - name: "Eth1/2"
@@ -109,7 +109,7 @@
     - name: "Eth1/48"
       type: "25gbase-x-sfp28"
     
-    # 6x 100G Uplink Ports (Ports 49 bis 54)
+    # 6x 100G uplink ports (ports 49 to 54)
     - name: "Eth1/49"
       type: "100gbase-x-qsfp28"
     - name: "Eth1/50"
