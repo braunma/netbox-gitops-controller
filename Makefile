@@ -48,10 +48,22 @@ coverage: test ## Run the tests and fail if total coverage is below the threshol
 	 fi
 
 lint: ## Format check, vet, and SPDX headers
-	@test -z "$$(gofmt -l . )" || { echo "gofmt needed:"; gofmt -l .; exit 1; }
+	@# Both checks below run over the repository's own Go files and never
+	@# over the whole tree: CI points GOPATH at $$CI_PROJECT_DIR/.go so the module
+	@# cache can be cached between jobs, which puts the downloaded dependencies
+	@# inside the project directory. `gofmt -l .` walks into them and reports
+	@# upstream sources as needing formatting, failing the job on code this
+	@# repository does not own. --others --exclude-standard keeps new, not-yet-
+	@# staged files in scope (as `gofmt -l .` had them) while honouring
+	@# .gitignore, which is what excludes the module cache.
+	@files=$$(git ls-files --cached --others --exclude-standard '*.go'); \
+	 if [ -n "$$files" ]; then \
+	   unformatted=$$(gofmt -l $$files); \
+	   test -z "$$unformatted" || { echo "gofmt needed:"; echo "$$unformatted"; exit 1; }; \
+	   missing=$$(grep -L 'SPDX-License-Identifier' $$files); \
+	   test -z "$$missing" || { echo "missing SPDX header:"; echo "$$missing"; exit 1; }; \
+	 fi
 	$(GO) vet ./...
-	@missing=$$(git ls-files '*.go' | xargs grep -L 'SPDX-License-Identifier'); \
-	 test -z "$$missing" || { echo "missing SPDX header:"; echo "$$missing"; exit 1; }
 
 check: lint test ## Everything that does not need a NetBox
 	$(GO) run ./cmd/yamlcheck

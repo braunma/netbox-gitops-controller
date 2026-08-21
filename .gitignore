@@ -18,6 +18,10 @@ Thumbs.db
 
 # Build/test caches
 .cache/
+# CI sets GOPATH to $CI_PROJECT_DIR/.go so the module cache survives between
+# jobs; keep the downloaded dependencies out of git (and out of `git ls-files`,
+# which is what `make lint` checks).
+/.go/
 
 # Go
 *.exe
