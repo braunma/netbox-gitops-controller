@@ -516,25 +516,22 @@ the whole value of documenting infrastructure in git is that somebody looked at
 the change.
 
 ```bash
-# Read the sources in collectors.yaml and write what they report
-./netbox-gitops collect --dry-run     # print the diffs, write nothing
-./netbox-gitops collect
-
-# Or consume a scan another tool produced
-./netbox-gitops ingest --format idrac-json --input scan.json
+./netbox-gitops collect --dry-run                             # print the diffs, write nothing
+./netbox-gitops collect                                       # the sources in collectors.yaml
+./netbox-gitops ingest --format idrac-json --input scan.json  # a scan another tool produced
 ```
 
-Both end with a summary in the sync's own shape:
+Each run ends with a summary in the sync's own shape, and `--detailed-exitcode`
+exits `2` when the repository would change — which is how a scheduled CI job
+decides whether to open a merge request at all:
 
 ```text
 Facts: 12 updated, 3 new VMs, 2 parked devices, 41 unchanged
 ```
 
-### What it does with what it finds
-
-**A machine this repository already declares** has its facts written into
-*your* file, at *that machine's block* — comments, key order, quoting and every
-untouched byte preserved:
+A machine the repository **already declares** has its facts written into *your*
+file, at *that machine's block*, with comments, key order and every untouched
+byte preserved:
 
 ```diff
    - name: "srv-01"
@@ -551,48 +548,29 @@ That diff is the review gate. A fact that contradicts a declared value shows up
 as a change to that line, and merging it is what makes the fact the truth. If
 the scanned serial is wrong, reject the merge request and go fix the machine.
 
-**A virtual machine it has never heard of** becomes complete, appliable YAML
-under `inventory/discovered/virtual/<source>/`, ready to merge as it stands. To
-take one over, declare it in a file of your own — the next run keeps yours and
-removes the block from the generated file. That is the only thing ever removed
-from the YAML, and it loses nothing; a machine that simply stops answering is
-left alone, because whether it was decommissioned or merely unplugged is a fact
-for a person to interpret.
+A machine it has **never heard of** lands under `inventory/discovered/`: a
+virtual machine as complete, appliable YAML, a physical one as a *parked*
+skeleton. Parked, because a scan reaches a BMC over the network and cannot know
+which site the machine stands in, which rack or which unit — guessing would put
+a plausible fiction into NetBox, so those fields are left as `TODO`s for
+somebody who can walk into the room.
 
-**A physical machine it has never heard of** becomes a *parked* skeleton under
-`inventory/discovered/hardware/<source>/`, with the underscore prefix this
-repository already uses for files the loader must skip. It is parked because a
-scan reaches a BMC over the network and cannot know which site the machine
-stands in, which rack, which unit, which way it faces or what it is for.
-Guessing any of that would put a plausible fiction into NetBox, so those are
-left as `TODO`s for somebody who can walk into the room. Every run names the
-parked files rather than counting them.
+What a machine is allowed to say at all is a short, closed list:
 
-### What a machine is allowed to say
-
-A short, closed list — the complete set of keys any collector may ever write:
-
-| Object | Keys |
+| Object | Keys a collector may write |
 |---|---|
 | Device | `serial`, `asset_tag`, `custom_fields:` entries prefixed `hw_` |
 | Virtual machine | `vcpus`, `memory`, `disk`, `status`, `vmid` |
 
-Names, sites, racks, positions, faces, roles, device types, cabling, tags and
-tenants are **never** written by a machine. The line is what a machine can
-observe about itself: a serial is burned into the hardware, while where it
-stands and what it is for are decisions people make.
+Names, sites, racks, positions, roles, device types, cabling and tenants are
+**never** written by a machine. The line is what a machine can observe about
+itself: a serial is burned into the hardware, while where it stands and what it
+is for are decisions people make.
 
-Two properties fall out of that, both covered by golden-file tests: a fact
-equal to what the YAML already says writes nothing, so re-running an unchanged
-scan produces a zero diff; and a file whose values cannot be located and
-replaced safely is abandoned whole rather than partially rewritten.
-
-`--detailed-exitcode` exits `2` when the repository would change, which is how
-a scheduled CI job decides whether to open a merge request at all. The full
-model — matching rules, the whitelist, the parked-skeleton workflow, the
-`idrac-json` contract, and an honest note about the churn from volatile metrics
-like power draw — is in **[`docs/INGEST.md`](docs/INGEST.md)**; a commented,
-runnable pipeline is in
+**[`docs/INGEST.md`](docs/INGEST.md)** has the rest — the matching rules, the
+skeleton and adoption workflows, the `idrac-json` contract, and an honest note
+about the churn from volatile metrics like power draw. A commented, runnable
+pipeline is in
 [`.gitlab-ci.ingest.example.yml`](.gitlab-ci.ingest.example.yml).
 
 -----

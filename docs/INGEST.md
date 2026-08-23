@@ -217,6 +217,28 @@ From then on the machine is declared, so later scans **match it and refresh its
 facts in place** rather than writing a second copy. That holds even while the
 file is still parked: a skeleton stays current until somebody finishes it.
 
+## Adopting a discovered object
+
+A generated file is an ordinary inventory file: it is applied to NetBox like
+any other, and the facts of the objects in it are refreshed there in place. To
+take an object over, **declare it in a file of your own** — you do not have to
+edit the generated file at all. The next run sees two declarations of one
+object, keeps yours, and removes the block from the generated file. If that
+empties the file, the file is deleted.
+
+That is the only circumstance in which anything is ever removed from the YAML,
+and it loses nothing: every object it takes out is, by definition, declared
+somewhere else. In particular **an object that stops answering is never
+removed.** A machine missing from a scan may have been decommissioned, or its
+BMC may be unplugged; which of those it is, is a fact for a person to
+interpret, not a deletion to apply.
+
+One combination is refused rather than half-applied: a single file that has
+both new facts to write and an adopted object to remove in the same run. Both
+rewrites are computed from the same original line numbers, so applying them
+together would corrupt the file. The run says so and writes neither; merge what
+it did write and run it again.
+
 ## How a discovered object is matched
 
 Devices, in order — the first rule that finds exactly one candidate wins:
@@ -243,28 +265,6 @@ one declaration is the same error seen from the other side.
 Every object the repository declares **anywhere** is matched — including in
 parked files, and including in files a previous run generated. That is what
 keeps one machine from being declared twice.
-
-### Adopting a discovered object
-
-A generated file is an ordinary inventory file: it is applied to NetBox like
-any other, and the facts of the objects in it are refreshed there in place. To
-take an object over, **declare it in a file of your own** — you do not have to
-edit the generated file at all. The next run sees two declarations of one
-object, keeps yours, and removes the block from the generated file. If that
-empties the file, the file is deleted.
-
-That is the only circumstance in which anything is ever removed from the YAML,
-and it loses nothing: every object it takes out is, by definition, declared
-somewhere else. In particular **an object that stops answering is never
-removed.** A machine missing from a scan may have been decommissioned, or its
-BMC may be unplugged; which of those it is, is a fact for a person to
-interpret, not a deletion to apply.
-
-One combination is refused rather than half-applied: a single file that has
-both new facts to write and an adopted object to remove in the same run. Both
-rewrites are computed from the same original line numbers, so applying them
-together would corrupt the file. The run says so and writes neither; merge what
-it did write and run it again.
 
 ## Volatile metrics and churn
 

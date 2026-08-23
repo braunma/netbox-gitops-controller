@@ -89,10 +89,6 @@ Build config, already set in `.gitlab-ci.yml` and not worth overriding:
 The end-to-end scripts additionally read `E2E_SEEDS`, `E2E_KEEP` and
 `E2E_WORK` — see [`tests/e2e/README.md`](tests/e2e/README.md).
 
-Build config (already set in `.gitlab-ci.yml`): `CGO_ENABLED=1` (required for the
-`-race` detector), `GOPATH`/`GOCACHE` under `$CI_PROJECT_DIR`, module + build
-caches via the `cache:` block.
-
 ## Typical flow
 
 1. Push a feature branch → tests, lint, build and `--dry-run` validate run.
