@@ -22,3 +22,144 @@
   description: "Proxmox VE template VMID this VM was cloned from (source of truth: GitOps YAML)"
   object_types:
     - "virtualization.virtualmachine"
+
+# =============================================================================
+# Hardware inventory (`hw_*`) — written by fact ingestion, not by hand
+# =============================================================================
+#
+# These fields hold what an out-of-band scan reports about a physical machine:
+# its CPUs, memory, storage, firmware and power draw. `netbox-gitops ingest`
+# writes the values into the device's YAML block, they are reviewed as a merge
+# request diff, and a normal sync puts them in NetBox — nothing writes them
+# directly.
+#
+# The names and types match the sibling idrac-netbox-importer, so a device
+# documented through either path carries the same fields. The list is the
+# whitelist in pkg/ingest: no other custom field is ever written by a scan.
+#
+# Editing a value here by hand is pointless — the next scan overwrites it. Fix
+# the machine, or stop scanning it.
+
+- name: "hw_cpu_count"
+  type: "integer"
+  label: "CPU Count"
+  description: "Number of installed processors (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_cpu_model"
+  type: "text"
+  label: "CPU Model"
+  description: "Processor model name (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_cpu_cores"
+  type: "integer"
+  label: "CPU Cores"
+  description: "Physical cores per socket (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_ram_total_gb"
+  type: "integer"
+  label: "RAM Total (GB)"
+  description: "Installed memory in GB (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_ram_slots_total"
+  type: "integer"
+  label: "RAM Slots Total"
+  description: "Memory slots the machine has (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_ram_slots_used"
+  type: "integer"
+  label: "RAM Slots Used"
+  description: "Memory slots populated (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_ram_slots_available"
+  type: "integer"
+  label: "RAM Slots Available"
+  description: "Memory slots still free (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_memory_type"
+  type: "text"
+  label: "Memory Type"
+  description: "Memory technology, e.g. DDR4 or DDR5 (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_memory_speed_mhz"
+  type: "integer"
+  label: "Memory Speed (MHz)"
+  description: "Operating memory speed in MHz (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_disk_count"
+  type: "integer"
+  label: "Disk Count"
+  description: "Number of installed drives (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_storage_summary"
+  type: "text"
+  label: "Storage Summary"
+  description: "Drives grouped by capacity, e.g. \"2x894GB, 16x14901GB\" (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+# Text, not a decimal: it is a rendered summary ("15.32"), and NetBox's decimal
+# type would invite arithmetic on a number nobody should be doing arithmetic on.
+- name: "hw_storage_total_tb"
+  type: "text"
+  label: "Storage Total (TB)"
+  description: "Total raw storage in TB, to two decimals (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_bios_version"
+  type: "text"
+  label: "BIOS Version"
+  description: "System firmware version (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+# The three fields below change on every scan. That churn is deliberate: they
+# are written to git like any other fact, and how often the diff appears is a
+# property of the CI schedule, not of the tool. See docs/INGEST.md.
+- name: "hw_power_state"
+  type: "text"
+  label: "Power State"
+  description: "Chassis power state at the last scan, On or Off (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_power_consumed_watts"
+  type: "integer"
+  label: "Power Consumed (W)"
+  description: "Power draw at the last scan (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_power_peak_watts"
+  type: "integer"
+  label: "Power Peak (W)"
+  description: "Highest power draw the controller has recorded (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_last_inventory"
+  type: "text"
+  label: "Last Inventory"
+  description: "RFC 3339 timestamp of the last successful hardware scan (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
