@@ -153,7 +153,13 @@ func placeKey(path string, edit objectEdit, lines []string, mapping *yaml.Node, 
 		return true, nil
 	}
 
-	if valueNode.Kind != yaml.ScalarNode || valueNode.Line != keyNode.Line {
+	// A block scalar (`serial: >-` or `serial: |`) starts on the key's own line
+	// but continues onto the next ones, so the line check below does not see it.
+	// Replacing the `>-` indicator alone would orphan the continuation lines and
+	// produce a file that no longer parses — which the verifier would catch, but
+	// only after the fact and with a much worse error than this one.
+	isBlockScalar := valueNode.Style&(yaml.LiteralStyle|yaml.FoldedStyle) != 0
+	if valueNode.Kind != yaml.ScalarNode || valueNode.Line != keyNode.Line || isBlockScalar {
 		return false, fmt.Errorf(
 			"%s:%d: %s: %s is not a plain value on its own key's line, so it cannot be rewritten in place; "+
 				"simplify it by hand or remove it and let the next run write it",

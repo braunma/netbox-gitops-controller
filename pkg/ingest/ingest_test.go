@@ -735,3 +735,147 @@ func TestFactsAndRemovalInOneFileIsRefused(t *testing.T) {
 		t.Error("the refused run wrote to the file anyway")
 	}
 }
+
+// A file whose values cannot be located and replaced safely is abandoned
+// whole, with an error naming the object and the key — never rewritten from
+// scratch, and never left half edited. The two shapes below are the realistic
+// ones: a value the author wrote as a block scalar, and a flow-style mapping.
+func TestAFileThatCannotBeEditedSafelyIsAbandoned(t *testing.T) {
+	tests := []struct {
+		name    string
+		file    string
+		wantErr string
+	}{
+		{
+			"a value folded onto its own line",
+			`- name: "srv-01"
+  site_slug: "berlin-dc"
+  role_slug: "server"
+  device_type_slug: "example-server"
+  serial: >-
+    OLD-SERIAL
+`,
+			"is not a plain value on its own key's line",
+		},
+		{
+			"a flow-style custom_fields mapping",
+			`- name: "srv-01"
+  site_slug: "berlin-dc"
+  role_slug: "server"
+  device_type_slug: "example-server"
+  serial: "OLD"
+  custom_fields: {hw_cpu_count: 99}
+`,
+			"not a plain block mapping",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := repo(t, map[string]string{"inventory/hardware/active/servers.yaml": tt.file})
+
+			dl := loader.NewDataLoader(root, utils.NewLogger(true))
+			inv, err := dl.LoadInventoryWithProvenance()
+			if err != nil {
+				t.Fatalf("load: %v", err)
+			}
+			snap := &discovery.Snapshot{Source: "idrac", Devices: []discovery.Device{{
+				Name: "srv-01", Serial: "NEW-SERIAL",
+				HW: discovery.HardwareFacts{CPUCount: 1},
+			}}}
+
+			plan, err := BuildPlan(snap, inv, Options{DataDir: root})
+			if err == nil {
+				t.Fatalf("expected the file to be abandoned, got a plan: %+v", plan)
+			}
+			if !strings.Contains(err.Error(), tt.wantErr) {
+				t.Errorf("error = %q, want it to explain %q", err, tt.wantErr)
+			}
+			if !strings.Contains(err.Error(), "srv-01") {
+				t.Errorf("error = %q, want it to name the object", err)
+			}
+
+			// Nothing was written, and in particular the file was not re-emitted
+			// from the parsed model with its formatting flattened.
+			if got := read(t, root, "inventory/hardware/active/servers.yaml"); got != tt.file {
+				t.Errorf("the abandoned file was modified\n--- got ---\n%s\n--- want ---\n%s", got, tt.file)
+			}
+		})
+	}
+}
+
+// The same rule for a whole run: one unwritable file does not take the others
+// with it silently — the run fails, and no file is written.
+func TestAnUnwritableFileFailsTheRunWithoutWritingOthers(t *testing.T) {
+	good := `- name: "srv-02"
+  site_slug: "berlin-dc"
+  role_slug: "server"
+  device_type_slug: "example-server"
+  serial: "OLD-2"
+`
+	bad := `- name: "srv-01"
+  site_slug: "berlin-dc"
+  role_slug: "server"
+  device_type_slug: "example-server"
+  serial: >-
+    OLD-1
+`
+	root := repo(t, map[string]string{
+		"inventory/hardware/active/good.yaml": good,
+		"inventory/hardware/active/bad.yaml":  bad,
+	})
+
+	dl := loader.NewDataLoader(root, utils.NewLogger(true))
+	inv, err := dl.LoadInventoryWithProvenance()
+	if err != nil {
+		t.Fatalf("load: %v", err)
+	}
+	snap := &discovery.Snapshot{Source: "idrac", Devices: []discovery.Device{
+		{Name: "srv-01", Serial: "NEW-1"},
+		{Name: "srv-02", Serial: "NEW-2"},
+	}}
+
+	if _, err := BuildPlan(snap, inv, Options{DataDir: root}); err == nil {
+		t.Fatal("expected the run to fail")
+	}
+	if got := read(t, root, "inventory/hardware/active/good.yaml"); got != good {
+		t.Error("a file was written despite the run failing")
+	}
+}
+
+// The block-scalar forms specifically: a literal `|`, and a quoted value the
+// author wrapped across lines. Both start on the key's own line, so the naive
+// line check does not see them.
+func TestBlockScalarsAreRefusedByTheGuardNotTheVerifier(t *testing.T) {
+	for _, value := range []string{"|-\n    OLD", ">-\n    OLD", "\"OLD-\n    SERIAL\""} {
+		file := "- name: \"srv-01\"\n  site_slug: \"berlin-dc\"\n  role_slug: \"server\"\n" +
+			"  device_type_slug: \"example-server\"\n  serial: " + value + "\n"
+		root := repo(t, map[string]string{"inventory/hardware/active/servers.yaml": file})
+
+		dl := loader.NewDataLoader(root, utils.NewLogger(true))
+		inv, err := dl.LoadInventoryWithProvenance()
+		if err != nil {
+			t.Fatalf("load %q: %v", value, err)
+		}
+		snap := &discovery.Snapshot{Source: "idrac", Devices: []discovery.Device{{Name: "srv-01", Serial: "NEW"}}}
+
+		_, err = BuildPlan(snap, inv, Options{DataDir: root})
+		if err == nil {
+			t.Errorf("serial: %q was edited in place; it spans lines", value)
+			continue
+		}
+		// It must be refused before the rewrite, by a message that says what is
+		// wrong with the value — not by the verifier's after-the-fact "the
+		// rewritten file does not parse", which tells the reader nothing about
+		// what to go and fix.
+		if strings.Contains(err.Error(), "does not parse") {
+			t.Errorf("serial: %q was only caught by the verifier: %q", value, err)
+		}
+		if !strings.Contains(err.Error(), "srv-01") || !strings.Contains(err.Error(), "serial") {
+			t.Errorf("serial: %q gave %q, want it to name the object and the key", value, err)
+		}
+		if got := read(t, root, "inventory/hardware/active/servers.yaml"); got != file {
+			t.Errorf("serial: %q — the file was modified", value)
+		}
+	}
+}
