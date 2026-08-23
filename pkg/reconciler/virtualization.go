@@ -39,18 +39,21 @@ func (vr *VirtualizationReconciler) ReconcileClusterTypes(types []*models.Cluste
 			payload["description"] = ct.Description
 		}
 
-		lookup := map[string]interface{}{"slug": ct.Slug}
-		lookup, err := vr.client.RenamedLookup("virtualization", "cluster-types", ct.Name, lookup, "slug", client.SlugifiedRename(ct.RenameFrom))
-		if err != nil {
+		if _, err := ensure(vr.client, "virtualization", "cluster-types", ensureSpec{
+			kind:        "cluster type",
+			name:        ct.Name,
+			lookup:      map[string]interface{}{"slug": ct.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(ct.RenameFrom),
+			payload:     payload,
+			// Register so a cluster can resolve a type created in this same
+			// run, including in --dry-run where nothing is written to NetBox.
+			register: func(id int) {
+				vr.client.Cache().Register("cluster_types", id, ct.Slug, ct.Name)
+			},
+		}); err != nil {
 			return err
 		}
-		ctObj, err := vr.client.Apply("virtualization", "cluster-types", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile cluster type %s: %w", ct.Name, err)
-		}
-		// Register so a cluster can resolve a type created in this same run,
-		// including in --dry-run where nothing is written to NetBox.
-		vr.client.Cache().Register("cluster_types", utils.GetIDFromObject(ctObj), ct.Slug, ct.Name)
 	}
 
 	return nil
@@ -69,38 +72,39 @@ func (vr *VirtualizationReconciler) ReconcileClusterGroups(groups []*models.Clus
 			payload["description"] = cg.Description
 		}
 
-		lookup := map[string]interface{}{"slug": cg.Slug}
-		lookup, err := vr.client.RenamedLookup("virtualization", "cluster-groups", cg.Name, lookup, "slug", client.SlugifiedRename(cg.RenameFrom))
-		if err != nil {
+		if _, err := ensure(vr.client, "virtualization", "cluster-groups", ensureSpec{
+			kind:        "cluster group",
+			name:        cg.Name,
+			lookup:      map[string]interface{}{"slug": cg.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(cg.RenameFrom),
+			payload:     payload,
+			register: func(id int) {
+				vr.client.Cache().Register("cluster_groups", id, cg.Slug, cg.Name)
+			},
+		}); err != nil {
 			return err
 		}
-		cgObj, err := vr.client.Apply("virtualization", "cluster-groups", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile cluster group %s: %w", cg.Name, err)
-		}
-		vr.client.Cache().Register("cluster_groups", utils.GetIDFromObject(cgObj), cg.Slug, cg.Name)
 	}
 
 	return nil
 }
 
-// ReconcileClusters reconciles cluster definitions. The required type and the
-// optional group/site/tenant references are resolved with live lookups, since
-// the type and group are typically created earlier in this same run and the
-// site/tenant in the foundation phase — none are in the global cache yet.
+// ReconcileClusters reconciles cluster definitions. The required type goes
+// through the shared resolveRef; the optional group/site/tenant references
+// are resolved with live lookups, since the group is typically created
+// earlier in this same run and the site/tenant in the foundation phase.
 func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster) error {
 	vr.logger.Info("Reconciling %d clusters...", len(clusters))
 
 	for _, cl := range clusters {
-		typeID, ok := vr.lookupID("virtualization", "cluster-types", cl.TypeSlug)
+		typeID, ok := resolveRef(vr.client, reference{
+			app: "virtualization", endpoint: "cluster-types", cacheKind: "cluster_types",
+			value: cl.TypeSlug,
+			kind:  "Cluster type", forKind: "cluster", forName: cl.Name,
+			consumerApp: "virtualization", consumerEndpoint: "clusters",
+		})
 		if !ok {
-			// Fall back to a type registered earlier in this same run: in dry-run
-			// the live lookup cannot see a type that was never written to NetBox.
-			typeID, ok = vr.client.Cache().GetGlobalID("cluster_types", cl.TypeSlug)
-		}
-		if !ok {
-			vr.logger.Warning("Cluster type %s not found for cluster %s, skipping", cl.TypeSlug, cl.Name)
-			vr.client.MarkReconcileIncomplete("virtualization", "clusters")
 			continue
 		}
 
@@ -141,17 +145,20 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 			}
 		}
 
-		lookup := map[string]interface{}{"name": cl.Name}
-		lookup, err := vr.client.RenamedLookup("virtualization", "clusters", cl.Name, lookup, "name", nonEmpty(cl.RenameFrom))
-		if err != nil {
+		if _, err := ensure(vr.client, "virtualization", "clusters", ensureSpec{
+			kind:        "cluster",
+			name:        cl.Name,
+			lookup:      map[string]interface{}{"name": cl.Name},
+			renameField: "name",
+			renameFrom:  nonEmpty(cl.RenameFrom),
+			payload:     payload,
+			// Register so a VM can resolve a cluster created in this same run.
+			register: func(id int) {
+				vr.client.Cache().Register("clusters", id, cl.Name)
+			},
+		}); err != nil {
 			return err
 		}
-		clObj, err := vr.client.Apply("virtualization", "clusters", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile cluster %s: %w", cl.Name, err)
-		}
-		// Register so a VM can resolve a cluster created in this same run.
-		vr.client.Cache().Register("clusters", utils.GetIDFromObject(clObj), cl.Name)
 	}
 
 	return nil
@@ -254,15 +261,17 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 			lookup["cluster_id"] = clusterID
 		}
 
-		lookup, err := vr.client.RenamedLookup("virtualization", "virtual-machines", vm.Name, lookup, "name", nonEmpty(vm.RenameFrom))
+		vmID, err := ensure(vr.client, "virtualization", "virtual-machines", ensureSpec{
+			kind:        "VM",
+			name:        vm.Name,
+			lookup:      lookup,
+			renameField: "name",
+			renameFrom:  nonEmpty(vm.RenameFrom),
+			payload:     payload,
+		})
 		if err != nil {
 			return err
 		}
-		vmObj, err := vr.client.Apply("virtualization", "virtual-machines", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile VM %s: %w", vm.Name, err)
-		}
-		vmID := utils.GetIDFromObject(vmObj)
 
 		effectiveSiteID := siteID
 		if !hasSite {

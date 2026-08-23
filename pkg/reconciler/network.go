@@ -3,8 +3,6 @@
 package reconciler
 
 import (
-	"fmt"
-
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -41,21 +39,25 @@ func (nr *NetworkReconciler) ReconcileVRFs(vrfs []*models.VRF) error {
 			payload["description"] = vrf.Description
 		}
 
-		lookup := map[string]interface{}{"name": vrf.Name}
-		lookup, err := nr.client.RenamedLookup("ipam", "vrfs", vrf.Name, lookup, "name", nonEmpty(vrf.RenameFrom))
-		if err != nil {
+		if _, err := ensure(nr.client, "ipam", "vrfs", ensureSpec{
+			kind:        "VRF",
+			name:        vrf.Name,
+			lookup:      map[string]interface{}{"name": vrf.Name},
+			renameField: "name",
+			renameFrom:  nonEmpty(vrf.RenameFrom),
+			payload:     payload,
+			// Register so a VRF created in this same run resolves for the
+			// prefixes and interfaces that reference it later. Without this,
+			// the global cache — loaded once, before any phase — still has no
+			// entry, so on a fresh NetBox a VRF-scoped prefix was created in
+			// the global table and the next run created a second, correctly
+			// scoped copy beside it.
+			register: func(id int) {
+				nr.client.Cache().Register("vrfs", id, vrf.Name)
+			},
+		}); err != nil {
 			return err
 		}
-		vrfObj, err := nr.client.Apply("ipam", "vrfs", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile VRF %s: %w", vrf.Name, err)
-		}
-		// Register so a VRF created in this same run resolves for the prefixes
-		// and interfaces that reference it later. Without this, the global
-		// cache — loaded once, before any phase — still has no entry, so on a
-		// fresh NetBox a VRF-scoped prefix was created in the global table and
-		// the next run created a second, correctly scoped copy beside it.
-		nr.client.Cache().Register("vrfs", utils.GetIDFromObject(vrfObj), vrf.Name)
 	}
 
 	return nil
@@ -91,28 +93,32 @@ func (nr *NetworkReconciler) ReconcileVLANGroups(groups []*models.VLANGroup) err
 			}
 		}
 
-		lookup := map[string]interface{}{"slug": group.Slug}
-		lookup, err := nr.client.RenamedLookup("ipam", "vlan-groups", group.Name, lookup, "slug", client.SlugifiedRename(group.RenameFrom))
-		if err != nil {
+		if _, err := ensure(nr.client, "ipam", "vlan-groups", ensureSpec{
+			kind:        "VLAN group",
+			name:        group.Name,
+			lookup:      map[string]interface{}{"slug": group.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(group.RenameFrom),
+			payload:     payload,
+			// Seed the cache so VLANs reconciled later in this phase can
+			// resolve their group. Site caches (which hold vlan_groups) are
+			// not loaded until the device phase, so without this the group
+			// lookup in ReconcileVLANs misses and the association is silently
+			// dropped. Mirror loadResource's key scheme: site-scoped groups go
+			// under the composite site key, global groups under the plain key.
+			// Skip dry-run creates (id 0).
+			register: func(id int) {
+				if id <= 0 {
+					return
+				}
+				if siteID, ok := nr.client.Cache().GetGlobalID("sites", group.SiteSlug); group.SiteSlug != "" && ok {
+					nr.client.Cache().RegisterSite("vlan_groups", siteID, id, group.Slug, group.Name)
+				} else {
+					nr.client.Cache().Register("vlan_groups", id, group.Slug, group.Name)
+				}
+			},
+		}); err != nil {
 			return err
-		}
-		groupObj, err := nr.client.Apply("ipam", "vlan-groups", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile VLAN group %s: %w", group.Name, err)
-		}
-
-		// Seed the cache so VLANs reconciled later in this phase can resolve their
-		// group. Site caches (which hold vlan_groups) are not loaded until the
-		// device phase, so without this the group lookup in ReconcileVLANs misses
-		// and the association is silently dropped. Mirror loadResource's key
-		// scheme: site-scoped groups go under the composite site key, global
-		// groups under the plain key. Skip dry-run creates (id 0).
-		if id := utils.GetIDFromObject(groupObj); id > 0 {
-			if siteID, ok := nr.client.Cache().GetGlobalID("sites", group.SiteSlug); group.SiteSlug != "" && ok {
-				nr.client.Cache().RegisterSite("vlan_groups", siteID, id, group.Slug, group.Name)
-			} else {
-				nr.client.Cache().Register("vlan_groups", id, group.Slug, group.Name)
-			}
 		}
 	}
 
@@ -124,27 +130,13 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 	nr.logger.Info("Reconciling %d VLANs...", len(vlans))
 
 	for _, vlan := range vlans {
-		// Get site ID using LIVE lookup (not cache)
-		sites, err := nr.client.Filter("dcim", "sites", map[string]interface{}{
-			"slug": vlan.SiteSlug,
+		siteID, ok := resolveRef(nr.client, reference{
+			app: "dcim", endpoint: "sites", cacheKind: "sites",
+			value: vlan.SiteSlug,
+			kind:  "Site", forKind: "VLAN", forName: vlan.Name,
+			consumerApp: "ipam", consumerEndpoint: "vlans",
 		})
-		if err != nil || len(sites) == 0 {
-			// Fallback: Try by name
-			sites, err = nr.client.Filter("dcim", "sites", map[string]interface{}{
-				"name": vlan.SiteSlug,
-			})
-		}
-
-		if err != nil || len(sites) == 0 {
-			nr.logger.Warning("Site %s not found for VLAN %s, skipping", vlan.SiteSlug, vlan.Name)
-			nr.client.MarkReconcileIncomplete("ipam", "vlans")
-			continue
-		}
-
-		siteID := utils.GetIDFromObject(sites[0])
-		if siteID == 0 {
-			nr.logger.Warning("Site %s has invalid ID for VLAN %s, skipping", vlan.SiteSlug, vlan.Name)
-			nr.client.MarkReconcileIncomplete("ipam", "vlans")
+		if !ok {
 			continue
 		}
 
@@ -177,30 +169,31 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			payload["description"] = vlan.Description
 		}
 
-		lookup := map[string]interface{}{
-			"site_id": siteID,
-			"vid":     vlan.VID,
-		}
-
-		// A VLAN is identified by its VID, so rename_from carries the previous
-		// VID; correcting the *name* alone needs no declaration.
-		lookup, err = nr.client.RenamedLookup("ipam", "vlans", vlan.Name, lookup, "vid", nonEmpty(vlan.RenameFrom))
-		if err != nil {
+		if _, err := ensure(nr.client, "ipam", "vlans", ensureSpec{
+			kind: "VLAN",
+			name: vlan.Name,
+			lookup: map[string]interface{}{
+				"site_id": siteID,
+				"vid":     vlan.VID,
+			},
+			// A VLAN is identified by its VID, so rename_from carries the
+			// previous VID; correcting the *name* alone needs no declaration.
+			renameField: "vid",
+			renameFrom:  nonEmpty(vlan.RenameFrom),
+			payload:     payload,
+			// Seed the cache so prefixes reconciled later in this phase can
+			// resolve their VLAN. VLANs are site-scoped and not loaded into
+			// the cache until the device phase, so without this the site-aware
+			// VLAN lookup in ReconcilePrefixes misses and the association is
+			// silently dropped. Index by name under the composite site key,
+			// matching loadResource. Skip dry-run creates (id 0).
+			register: func(id int) {
+				if id > 0 {
+					nr.client.Cache().RegisterSite("vlans", siteID, id, vlan.Name)
+				}
+			},
+		}); err != nil {
 			return err
-		}
-		vlanObj, err := nr.client.Apply("ipam", "vlans", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile VLAN %s: %w", vlan.Name, err)
-		}
-
-		// Seed the cache so prefixes reconciled later in this phase can resolve
-		// their VLAN. VLANs are site-scoped and not loaded into the cache until
-		// the device phase, so without this the site-aware VLAN lookup in
-		// ReconcilePrefixes misses and the association is silently dropped. Index
-		// by name under the composite site key, matching loadResource. Skip
-		// dry-run creates (id 0).
-		if id := utils.GetIDFromObject(vlanObj); id > 0 {
-			nr.client.Cache().RegisterSite("vlans", siteID, id, vlan.Name)
 		}
 	}
 
@@ -272,13 +265,15 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 
 		// A prefix is identified by the prefix itself, so rename_from carries
 		// the previous CIDR — the case where the network was typed wrong.
-		lookup, err := nr.client.RenamedLookup("ipam", "prefixes", prefix.Prefix, lookup, "prefix", nonEmpty(prefix.RenameFrom))
-		if err != nil {
+		if _, err := ensure(nr.client, "ipam", "prefixes", ensureSpec{
+			kind:        "prefix",
+			name:        prefix.Prefix,
+			lookup:      lookup,
+			renameField: "prefix",
+			renameFrom:  nonEmpty(prefix.RenameFrom),
+			payload:     payload,
+		}); err != nil {
 			return err
-		}
-		_, err = nr.client.Apply("ipam", "prefixes", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile prefix %s: %w", prefix.Prefix, err)
 		}
 	}
 

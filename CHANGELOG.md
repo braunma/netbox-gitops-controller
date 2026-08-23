@@ -12,6 +12,20 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Changed
+
+- **A missing reference now warns and skips the object everywhere, instead of
+  sometimes failing the whole run.** The simple reconcilers resolved
+  references in accidentally different ways: racks and VLANs skipped an
+  object whose site could not be found, while a device referencing an unknown
+  site, role or device type aborted the entire sync with an error. Reference
+  resolution is now one shared helper with one behavior: resolve by slug,
+  fall back to name, and on a miss warn, mark that endpoint's reconcile
+  incomplete (which keeps `--prune` safe), and skip the object. The visible
+  change: a device with an unresolvable site, role or device type no longer
+  stops the run — it is skipped with a warning, and everything else still
+  syncs.
+
 ### Removed
 
 - **BREAKING: the Proxmox provisioning path is gone.** `cmd/tfgen`, `pkg/tfgen`,
