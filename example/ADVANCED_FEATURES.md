@@ -63,8 +63,10 @@ modules:
 
 **Features:**
 - Modules are automatically tagged with the managed `gitops` tag
-- Serial field defaults to empty string if not provided (matches NetBox requirements)
 - Module bays are auto-created from device type templates
+- A serial is sent only when the YAML declares one. Omitting it leaves whatever
+  NetBox holds — including a serial somebody read off the chassis and typed
+  into the UI — rather than clearing it on every sync
 
 ### 4. Rack/Face/Position Handling
 

@@ -9,32 +9,44 @@ The example data serves two purposes:
 1. **Test Data**: Used by automated tests to verify the GitOps controller functionality
 2. **Documentation**: Demonstrates the structure and format of definition and inventory files
 
+It is also the dataset the end-to-end suites run against, including
+`tests/e2e/ingest.sh`, which walks the whole fact-ingestion path over a
+throwaway copy of it.
+
 ## Structure
 
 ```
 example/
-├── definitions/          # NetBox object definitions
-│   ├── extras/           # Tags
-│   ├── custom_fields/    # Custom field definitions (e.g. vmid)
-│   ├── roles/            # Device and VM roles
-│   ├── platforms/        # Platforms / operating systems
-│   ├── tenant_groups/    # Tenant groupings
-│   ├── tenants/          # Tenants
-│   ├── sites/            # Data center locations
-│   ├── racks/            # Rack definitions
-│   ├── vrfs/             # Virtual Routing and Forwarding instances
-│   ├── vlan_groups/      # VLAN groupings
-│   ├── vlans/            # VLAN definitions
-│   ├── prefixes/         # IP prefixes
-│   ├── device_types/     # Device type templates
-│   ├── module_types/     # Module type templates
-│   └── virtualization/   # Cluster types, cluster groups, and clusters
-└── inventory/            # Hardware and VM inventory
+├── definitions/               # NetBox object definitions
+│   ├── extras/                # Tags
+│   ├── custom_fields/         # vmid, vm_template_id, and the 17 hw_* facts
+│   ├── roles/                 # Device and VM roles
+│   ├── platforms/             # Platforms / operating systems
+│   ├── tenant_groups/         # Tenant groupings
+│   ├── tenants/               # Tenants
+│   ├── sites/                 # Data center locations
+│   ├── racks/                 # Rack definitions
+│   ├── vrfs/                  # Virtual Routing and Forwarding instances
+│   ├── vlan_groups/           # VLAN groupings
+│   ├── vlans/                 # VLAN definitions
+│   ├── prefixes/              # IP prefixes
+│   ├── device_types/          # Device type templates (native format)
+│   ├── device_type_library/   # The same, in the community library layout
+│   ├── module_types/          # Module type templates
+│   ├── module_type_library/   # The same, in the community library layout
+│   └── virtualization/        # Cluster types, cluster groups, and clusters
+└── inventory/                 # Hardware and VM inventory
     ├── hardware/
-    │   ├── active/       # Active devices (servers, switches, etc.)
-    │   └── passive/      # Passive devices (patch panels, PDUs, etc.)
-    └── virtual/          # Virtual machines (per-env folders, one YAML per VM)
+    │   ├── active/            # Active devices (servers, switches, etc.)
+    │   └── passive/           # Passive devices (patch panels, PDUs, etc.)
+    └── virtual/               # Virtual machines (per-env folders, one per VM)
 ```
+
+A real data directory grows one more folder that this example does not ship:
+`inventory/discovered/`, where `netbox-gitops collect` and `ingest` write what
+they found. It is left out here because its contents are produced by a scan of
+live infrastructure, and a committed example of that would go stale the moment
+anyone looked at it. See [`docs/INGEST.md`](../docs/INGEST.md).
 
 ## Using Your Own Data
 

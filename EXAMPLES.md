@@ -44,10 +44,12 @@ example/
 │   ├── roles/roles.yaml
 │   ├── platforms/platforms.yaml
 │   ├── tenant_groups/, tenants/
-│   ├── custom_fields/custom_fields.yaml      # the `vmid` field
+│   ├── custom_fields/custom_fields.yaml      # vmid, vm_template_id, 17× hw_*
 │   ├── extras/tags.yaml
 │   ├── vrfs/, vlan_groups/, vlans/, prefixes/
 │   ├── module_types/module_types.yaml
+│   ├── module_type_library/                   # community library format
+│   │   └── Dell/                              # psu-750w, mezzanine-nic-4x1g
 │   ├── device_types/                          # example-*.yaml (one per type)
 │   │   ├── example-server.yaml
 │   │   ├── example-switch.yaml
