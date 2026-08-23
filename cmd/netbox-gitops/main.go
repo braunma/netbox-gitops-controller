@@ -88,6 +88,8 @@ func main() {
 	rootCmd.PersistentFlags().BoolVar(&includeIgnoredFiles, "include-ignored-files", false, "Load files that an ignore pattern would otherwise skip")
 
 	rootCmd.AddCommand(newValidateCommand())
+	rootCmd.AddCommand(newCollectCommand())
+	rootCmd.AddCommand(newIngestCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)

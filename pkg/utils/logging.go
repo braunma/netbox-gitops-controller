@@ -20,6 +20,13 @@ func SetDefaultOutput(w io.Writer) {
 	defaultOutput = w
 }
 
+// DefaultOutput is where loggers currently write. Anything that prints
+// alongside them — a diff, a plan — uses it so that --output json moves the
+// whole of a command's human-readable output off stdout together.
+func DefaultOutput() io.Writer {
+	return defaultOutput
+}
+
 // Logger provides structured logging for the application
 type Logger struct {
 	dryRun bool
