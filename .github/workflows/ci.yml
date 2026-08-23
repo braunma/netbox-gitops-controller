@@ -69,6 +69,22 @@ jobs:
       - name: yamlcheck
         run: go run ./cmd/yamlcheck
 
+  ingest:
+    name: Fact ingestion path
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+      # The whole ingestion path against the committed sample data: facts
+      # written into a hand-written file, a parked skeleton for an unknown
+      # machine, generated YAML for an unknown guest, and a zero-diff re-run.
+      # It needs no NetBox and no secrets, which is the claim it makes.
+      - name: tests/e2e/ingest.sh
+        run: ./tests/e2e/ingest.sh
+
   build:
     name: Build
     runs-on: ubuntu-latest

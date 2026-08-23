@@ -22,6 +22,20 @@ managed tag slug, API page size, retry counts and the HTTP timeout.
 
 **Wanted:** an optional YAML config for those. Effort: S.
 
+## More discovery sources
+
+`netbox-gitops collect` has one compiled-in collector (Proxmox) and `ingest`
+reads one external document format (the sibling iDRAC importer's JSON). Both
+funnel into one normalized snapshot, so a third source is one adapter and no
+change to the pipeline — see [INGEST.md](INGEST.md).
+
+**Wanted:** vCenter and a plain LLDP/SNMP switch-neighbour collector. The
+second is the interesting one: it would discover *cabling*, which is currently
+outside the whitelist entirely because no scan has been able to observe it.
+Letting a collector propose cables would need a different review affordance
+than "the diff is the gate" — a wrong cable reads as plausibly as a right one.
+Effort: M each, L for the cabling question.
+
 ## Extended IPAM coverage
 
 VRFs, VLAN groups, VLANs and prefixes are managed. Aggregates, RIRs, IP ranges,

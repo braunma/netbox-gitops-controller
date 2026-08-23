@@ -1,0 +1,179 @@
+# =============================================================================
+# Fact ingestion — scheduled jobs that open merge requests
+# =============================================================================
+#
+# This file is an EXAMPLE, not part of the pipeline. Nothing here runs until
+# you include it from .gitlab-ci.yml:
+#
+#   include:
+#     - local: .gitlab-ci.ingest.example.yml
+#
+# It is opt-in on purpose. A job that opens merge requests on a schedule is a
+# job that shows up in people's inboxes, and that should be a decision somebody
+# made rather than a default they inherited.
+#
+# WHAT THESE JOBS DO — and, more to the point, what they do not:
+#
+#   scan  →  netbox-gitops writes YAML  →  branch  →  merge request  →  a human
+#   reads the diff  →  merge  →  the normal apply pipeline syncs it to NetBox
+#
+# No job here talks to NetBox. They need NO NETBOX_TOKEN. The only credentials
+# involved are read-only ones for the systems being scanned, plus a GitLab
+# token that can push a branch and open a merge request. A discovered fact
+# reaches NetBox only by being reviewed, exactly like a hand-written line.
+#
+# See docs/INGEST.md for the model, the whitelist and the matching rules.
+#
+# REQUIRED CI/CD VARIABLES:
+#
+#   GITOPS_PUSH_TOKEN     A project access token with `write_repository` and
+#                         `api` scope, so a job can push a branch and open a
+#                         merge request. Mask it. This is the only write
+#                         credential these jobs hold.
+#   PROXMOX_TOKEN         For collect_proxmox: "user@realm!tokenid=secret".
+#                         PVEAuditor on / is enough — the collector only GETs.
+#                         Mask it.
+#   IDRAC_USERNAME        For ingest_idrac: read-only iDRAC credentials.
+#   IDRAC_PASSWORD        Mask it.
+#
+# SCHEDULE THEM, do not run them on every push: create a pipeline schedule
+# (CI/CD → Schedules) and set INGEST_SCHEDULE="true" on it. Nightly is a
+# sensible starting point. The power draw and last-inventory fields change on
+# every scan, so the interval you pick is the rate at which merge requests
+# appear — pick the one you will actually review. See docs/INGEST.md → churn.
+# =============================================================================
+
+variables:
+  # The branch the ingestion jobs push to. One branch, reused: a scan that
+  # finds nothing new force-updates it to the same content and the existing
+  # merge request simply stops changing.
+  INGEST_BRANCH: "chore/ingest-facts"
+  # The importer image for ingest_idrac. Mirror it into your own registry when
+  # running on-prem.
+  IDRAC_IMPORTER_IMAGE: "registry.example.com/idrac-netbox-importer:latest"
+
+# -----------------------------------------------------------------------------
+# Shared body: build the binary, run the ingestion, and open a merge request if
+# and only if the repository actually changed.
+# -----------------------------------------------------------------------------
+.ingest_base:
+  image: $GOLANG_IMAGE
+  tags:
+    - $GITLAB_RUNNER_TAG
+  stage: validate
+  variables:
+    GIT_STRATEGY: clone
+  before_script:
+    - go build -o netbox-gitops ./cmd/netbox-gitops/
+    - git config user.email "gitops-bot@example.com"
+    - git config user.name "NetBox GitOps"
+  # INGEST_COMMAND is set by each job below; this runs it and handles the rest.
+  script:
+    - |
+      set -e
+      # --detailed-exitcode: 0 = the repository already says what the scan
+      # found, 2 = it would change. Exit 1 is a real failure and must not be
+      # mistaken for either, so the three are handled separately.
+      set +e
+      eval "${INGEST_COMMAND} --detailed-exitcode"
+      STATUS=$?
+      set -e
+
+      if [ "${STATUS}" = "0" ]; then
+        echo "✅ Nothing changed: the repository already documents what the scan found."
+        exit 0
+      fi
+      if [ "${STATUS}" != "2" ]; then
+        echo "❌ Ingestion failed (exit ${STATUS})."
+        exit "${STATUS}"
+      fi
+
+      echo "📝 The scan changed the repository; opening a merge request."
+      git checkout -B "${INGEST_BRANCH}"
+      git add -A inventory/
+      git commit -m "chore(ingest): refresh discovered facts
+
+      Written by ${CI_JOB_NAME} from pipeline ${CI_PIPELINE_ID}.
+      Review the diff: merging it is what makes these facts NetBox truth."
+
+      # push -o merge_request.* creates the merge request in the same push, so
+      # no API call and no second token scope is needed.
+      git push -f \
+        -o merge_request.create \
+        -o merge_request.target="${CI_DEFAULT_BRANCH}" \
+        -o merge_request.title="chore(ingest): refresh discovered facts" \
+        -o merge_request.description="Facts discovered by \`${CI_JOB_NAME}\`. Nothing has been written to NetBox; merging this is what applies them." \
+        "https://gitlab-ci-token:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        "HEAD:${INGEST_BRANCH}"
+  rules:
+    # Scheduled pipelines only, and only those that opt in.
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $INGEST_SCHEDULE == "true"
+    # A manual run, for the first time you try it.
+    - when: manual
+      allow_failure: true
+
+# -----------------------------------------------------------------------------
+# Proxmox: the collector fetches the snapshot itself.
+# -----------------------------------------------------------------------------
+collect_proxmox:
+  extends: .ingest_base
+  variables:
+    INGEST_COMMAND: "./netbox-gitops collect"
+  # PROXMOX_TOKEN is read by name from collectors.yaml (token_env), so nothing
+  # here needs to know what is in it.
+
+# -----------------------------------------------------------------------------
+# iDRAC: a separate container produces the snapshot, this job consumes it.
+#
+# Two steps rather than one image, because the importer is a separate project
+# with its own release cadence. Its JSON is the contract between them; see
+# docs/INGEST.md → "The idrac-json contract".
+# -----------------------------------------------------------------------------
+scan_idrac:
+  image: $IDRAC_IMPORTER_IMAGE
+  tags:
+    - $GITLAB_RUNNER_TAG
+  stage: test
+  script:
+    # -output json is the mode this project consumes. The importer also has a
+    # direct-to-NetBox mode; do not use it here — a fact that reaches NetBox
+    # without passing a merge request has not been reviewed by anybody.
+    - idrac-inventory -config config.yaml -output json > scan.json
+    - echo "Scanned $(grep -c '"host"' scan.json) host(s)."
+  artifacts:
+    paths:
+      - scan.json
+    expire_in: 1 day
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $INGEST_SCHEDULE == "true"
+    - when: manual
+      allow_failure: true
+
+ingest_idrac:
+  extends: .ingest_base
+  variables:
+    INGEST_COMMAND: "./netbox-gitops ingest --format idrac-json --input scan.json"
+  needs:
+    - job: scan_idrac
+      artifacts: true
+
+# -----------------------------------------------------------------------------
+# A drift monitor that changes nothing: run the same scan with --dry-run and
+# keep the diffs as an artifact. Useful while you are deciding whether you want
+# the merge requests at all.
+# -----------------------------------------------------------------------------
+ingest_preview:
+  image: $GOLANG_IMAGE
+  tags:
+    - $GITLAB_RUNNER_TAG
+  stage: validate
+  script:
+    - go build -o netbox-gitops ./cmd/netbox-gitops/
+    - ./netbox-gitops collect --dry-run | tee ingest-preview.txt
+  artifacts:
+    paths:
+      - ingest-preview.txt
+    expire_in: 1 week
+  rules:
+    - when: manual
+      allow_failure: true

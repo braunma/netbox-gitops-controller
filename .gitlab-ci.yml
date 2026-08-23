@@ -336,6 +336,21 @@ go_lint:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH
 
+# The ingestion path end to end. It sits with the quality checks rather than
+# with the e2e jobs because it needs no NetBox and no credentials — which is
+# the claim it exists to make: nothing on that path can reach one.
+ingest_check:
+  extends: .go_base
+  stage: test
+  script:
+    - echo "🔎 Walking the fact-ingestion path..."
+    - ./tests/e2e/ingest.sh
+  rules:
+    - if: $RUN_QUALITY_CHECKS == "false"
+      when: never
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH
+
 yaml_check:
   extends: .go_base
   stage: test

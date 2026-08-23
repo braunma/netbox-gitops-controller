@@ -53,6 +53,7 @@ make check
 | understand why a change did nothing | [Common Errors](#common-errors) and [Phase Order](#phase-order-dependency-model) |
 | remove something | [Pruning Orphans](#6-pruning-orphans) — deletion is opt-in |
 | see every flag, variable or CI setting | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — one verified table per command |
+| document machines that already exist, without typing them in | [`docs/INGEST.md`](docs/INGEST.md) — sources → YAML → MR → NetBox |
 | know what is planned but not built | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 
 -----
@@ -68,6 +69,7 @@ make check
   * **Renames, not duplicates (`rename_from`):** Correcting a typo in a name, slug or other identifying field renames the existing object instead of creating a second one and orphaning the first. Supported on every managed object type. See the Renaming section below.
   * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
   * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
+  * **Fact ingestion (`collect` / `ingest`):** Facts discovered *about* running infrastructure — a Proxmox cluster's guests, an iDRAC scan's hardware inventory — are written **into this repository's YAML**, reviewed as a merge request, and become NetBox truth through the same reconcile every hand-written line takes. Nothing on that path writes to NetBox. See [Documenting what is actually out there](#-documenting-what-is-actually-out-there) and [`docs/INGEST.md`](docs/INGEST.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -86,22 +88,31 @@ make check
 │   ├── platforms/       # OS / firmware families
 │   ├── tenant_groups/   # Tenant Groups (tenancy)
 │   ├── tenants/         # Tenants (tenancy)
-│   ├── custom_fields/   # Custom field definitions (e.g. vmid)
+│   ├── custom_fields/   # Custom field definitions (vmid, hw_* hardware facts)
 │   ├── virtualization/  # cluster_types/, cluster_groups/, clusters/
 │   └── ...              # Other NetBox object types
 ├── inventory/           # Your Private Inventory (gitignored)
 │   ├── hardware/
 │   │   ├── active/      # Active Servers & Switches
 │   │   └── passive/     # Patch Panels, PDUs
-│   └── virtual/         # Virtual Machines
+│   ├── virtual/         # Virtual Machines
+│   └── discovered/      # Written by `collect`/`ingest`, reviewed in an MR
+│       ├── virtual/     # Unknown VMs: complete, appliable YAML
+│       └── hardware/    # Unknown servers: parked skeletons to finish by hand
 ├── example/             # Public Example Data for Tests
 │   ├── definitions/     # Example definitions (for learning/testing)
 │   └── inventory/       # Example inventory (for learning/testing)
 ├── docs/                # Reference documentation
 │   ├── CONFIGURATION.md # Every flag, variable and CI setting
+│   ├── INGEST.md        # Sources → YAML → MR → NetBox
 │   └── ROADMAP.md       # What is not built yet
+├── collectors.yaml      # Sources `collect` reads (copy the .example)
 ├── pkg/                 # Go Implementation (Core Logic)
 │   ├── client/          # NetBox API Client
+│   ├── collectors/      # Compiled-in source adapters (Proxmox)
+│   ├── discovery/       # The normalized model every source funnels into
+│   ├── ingest/          # Snapshot → YAML file changes (writes no NetBox)
+│   ├── ingestfmt/       # External scan documents (idrac-json)
 │   ├── lint/            # Cross-object checks (references, collisions)
 │   ├── loader/          # YAML Data Loader
 │   ├── models/          # Data Models
@@ -477,6 +488,106 @@ running all three through:
 | `yamlcheck` | no | Is this repository coherent with itself? |
 | `validate` | yes | Will this instance accept these values? |
 | `--dry-run` | yes | What would change? |
+
+-----
+
+## 🔎 Documenting what is actually out there
+
+Everything above runs one way: you write YAML, a merge request changes it, the
+reconciler applies it to NetBox. That works well for infrastructure you are
+adding. It works badly for the two hundred machines that were already racked
+before anybody wrote a line of this, and for the facts nobody wants to type —
+serial numbers, DIMM counts, BIOS versions, power draw.
+
+So there is a second direction. It is not a second write path:
+
+```
+  Proxmox API  ─┐
+                ├─→  Snapshot  →  match  →  YAML changes  →  MR  →  merge  →  sync  →  NetBox
+  iDRAC scan   ─┘
+```
+
+**Nothing on the discovery side writes to NetBox.** The collectors are
+read-only against their sources, and the package that writes the YAML holds no
+NetBox client and cannot acquire one. A discovered fact reaches NetBox by being
+committed, reviewed and reconciled — exactly like a hand-written line, because
+the whole value of documenting infrastructure in git is that somebody looked at
+the change.
+
+```bash
+# Read the sources in collectors.yaml and write what they report
+./netbox-gitops collect --dry-run     # print the diffs, write nothing
+./netbox-gitops collect
+
+# Or consume a scan another tool produced
+./netbox-gitops ingest --format idrac-json --input scan.json
+```
+
+Both end with a summary in the sync's own shape:
+
+```text
+Facts: 12 updated, 3 new VMs, 2 parked devices, 41 unchanged
+```
+
+### What it does with what it finds
+
+**A machine this repository already declares** has its facts written into
+*your* file, at *that machine's block* — comments, key order, quoting and every
+untouched byte preserved:
+
+```diff
+   - name: "srv-01"
+     position: 10 # lowest rack unit
+-    serial: "OLD-SERIAL"
++    serial: "CN7792048K0042"
++    asset_tag: "7XKQ2M3"
++    custom_fields:
++      hw_cpu_count: 1
++      hw_cpu_model: "AMD EPYC 9354P 32-Core Processor"
+```
+
+That diff is the review gate. A fact that contradicts a declared value shows up
+as a change to that line, and merging it is what makes the fact the truth. If
+the scanned serial is wrong, reject the merge request and go fix the machine.
+
+**A virtual machine it has never heard of** becomes complete, appliable YAML
+under `inventory/discovered/virtual/<source>/`, ready to merge as it stands.
+
+**A physical machine it has never heard of** becomes a *parked* skeleton under
+`inventory/discovered/hardware/<source>/`, with the underscore prefix this
+repository already uses for files the loader must skip. It is parked because a
+scan reaches a BMC over the network and cannot know which site the machine
+stands in, which rack, which unit, which way it faces or what it is for.
+Guessing any of that would put a plausible fiction into NetBox, so those are
+left as `TODO`s for somebody who can walk into the room. Every run names the
+parked files rather than counting them.
+
+### What a machine is allowed to say
+
+A short, closed list — the complete set of keys any collector may ever write:
+
+| Object | Keys |
+|---|---|
+| Device | `serial`, `asset_tag`, `custom_fields:` entries prefixed `hw_` |
+| Virtual machine | `vcpus`, `memory`, `disk`, `status`, `vmid` |
+
+Names, sites, racks, positions, faces, roles, device types, cabling, tags and
+tenants are **never** written by a machine. The line is what a machine can
+observe about itself: a serial is burned into the hardware, while where it
+stands and what it is for are decisions people make.
+
+Two properties fall out of that, both covered by golden-file tests: a fact
+equal to what the YAML already says writes nothing, so re-running an unchanged
+scan produces a zero diff; and a file whose values cannot be located and
+replaced safely is abandoned whole rather than partially rewritten.
+
+`--detailed-exitcode` exits `2` when the repository would change, which is how
+a scheduled CI job decides whether to open a merge request at all. The full
+model — matching rules, the whitelist, the parked-skeleton workflow, the
+`idrac-json` contract, and an honest note about the churn from volatile metrics
+like power draw — is in **[`docs/INGEST.md`](docs/INGEST.md)**; a commented,
+runnable pipeline is in
+[`.gitlab-ci.ingest.example.yml`](.gitlab-ci.ingest.example.yml).
 
 -----
 

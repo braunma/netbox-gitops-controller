@@ -22,7 +22,7 @@ few objects of each supported type:
 | Platforms         | 2     | Ubuntu 22.04 LTS, Debian 12                                      |
 | Tenant groups     | 1     | Internal                                                         |
 | Tenants           | 1     | Platform Engineering                                            |
-| Custom fields     | 2     | `vmid`, `vm_template_id` (consumed by virtual machines)         |
+| Custom fields     | 19    | `vmid`, `vm_template_id` (VMs) + 17 `hw_*` hardware facts (devices) |
 | VRFs              | 2     | Management, Production                                          |
 | VLAN groups       | 2     | Berlin DC VLANs, Test Lab VLANs                                 |
 | VLANs             | 3     | Management, Production Network, Test Network                   |
@@ -204,6 +204,16 @@ interfaces:
 Every object the controller creates is tagged `gitops`. Only tagged objects are
 eligible for deletion by `--prune`; manually created objects are protected. See
 the README for the full pruning semantics.
+
+### Hardware facts (`hw_*`)
+
+`example/definitions/custom_fields/custom_fields.yaml` declares seventeen
+`hw_*` custom fields on `dcim.device` — CPU, memory, storage, BIOS and power.
+Nobody types those in. `netbox-gitops collect` and `netbox-gitops ingest` write
+them into the device's own YAML block from a scan, the diff is reviewed as a
+merge request, and a normal sync puts them in NetBox. Copy the definitions into
+your private `definitions/custom_fields/` before the first ingest; see
+[`docs/INGEST.md`](docs/INGEST.md).
 
 ## Customizing
 

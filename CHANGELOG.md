@@ -50,6 +50,83 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`netbox-gitops collect` and `netbox-gitops ingest`: document what is
+  actually out there.** The tool's one direction was outward — you write YAML,
+  a merge request changes it, the reconciler applies it. That works well for
+  infrastructure you are adding and badly for the two hundred machines that
+  were racked before anybody wrote a line of this, and for the facts nobody
+  wants to type: serial numbers, DIMM counts, BIOS versions, power draw.
+
+  ```
+    Proxmox API  ─┐
+                  ├─→  Snapshot  →  match  →  YAML changes  →  MR  →  merge  →  sync  →  NetBox
+    iDRAC scan   ─┘
+  ```
+
+  **Nothing on the discovery side writes to NetBox.** The collectors are
+  read-only against their sources, and `pkg/ingest` holds no NetBox client and
+  has no way to acquire one; its whole effect on the world is changed files in
+  this repository. The sibling `idrac-netbox-importer` has a direct-to-NetBox
+  mode and this project deliberately does not use it, because a fact that
+  reaches NetBox without passing a merge request has not been reviewed by
+  anybody — and that review is the entire value of documenting infrastructure
+  in git.
+
+  For a machine the repository already declares, the facts are written **into
+  your file, at that machine's block**, with comments, key order, quoting and
+  every untouched byte preserved:
+
+  ```diff
+     - name: "srv-01"
+       position: 10 # lowest rack unit
+  -    serial: "OLD-SERIAL"
+  +    serial: "CN7792048K0042"
+  +    asset_tag: "7XKQ2M3"
+  +    custom_fields:
+  +      hw_cpu_count: 1
+  +      hw_cpu_model: "AMD EPYC 9354P 32-Core Processor"
+  ```
+
+  That diff is the review gate: a fact contradicting a declared value shows up
+  as a change to that line, and merging it is what makes the fact the truth. If
+  the scanned serial is wrong you reject the merge request and go fix the
+  machine.
+
+  A short, closed whitelist governs what a machine may say — `serial`,
+  `asset_tag` and the `hw_*` custom fields on a device; `vcpus`, `memory`,
+  `disk`, `status` and `vmid` on a VM. Names, sites, racks, positions, faces,
+  roles, device types and cabling are never written by a machine. The line is
+  what a machine can observe *about itself*: a serial is burned into the
+  hardware, while where it stands and what it is for are decisions people make.
+
+  Objects the repository has never heard of land under
+  `inventory/discovered/` — VMs as complete, appliable YAML, physical machines
+  as *parked* skeletons using the existing underscore convention. They are
+  parked because a scan reaches a BMC over the network and cannot know which
+  rack the machine is in; guessing would put a plausible fiction into NetBox,
+  so those fields are `TODO`s for somebody who can walk into the room. Every
+  run names the parked files rather than counting them.
+
+  `--dry-run` prints unified diffs and writes nothing; `--output json` emits
+  the change list; `--detailed-exitcode` exits `2` when the repository would
+  change, which is how a scheduled CI job decides whether to open a merge
+  request. A re-run on an unchanged scan produces a zero diff and opens
+  nothing.
+
+  Matching resolves a scanned machine to a declaration by the management
+  address it answered on, then serial, then service tag against `asset_tag`,
+  then name. **Any rule matching more than one declaration is an error naming
+  the candidates and their `file:line`** — the same bargain `rename_from`
+  strikes, because writing an observed serial into the wrong device's block
+  would be a quiet, plausible corruption of the inventory.
+
+  New: `pkg/discovery` (the normalized model), `pkg/collectors` (the Proxmox
+  collector and `collectors.yaml`), `pkg/ingestfmt/idracjson` (the importer's
+  JSON contract), `pkg/ingest` (matching and the YAML writer), seventeen `hw_*`
+  custom field definitions, [`docs/INGEST.md`](docs/INGEST.md) and a commented
+  [`.gitlab-ci.ingest.example.yml`](.gitlab-ci.ingest.example.yml). Devices
+  gained a `custom_fields:` key so the facts reach NetBox on the next sync.
+
 - **`netbox-gitops validate`: check the YAML against the NetBox that will
   receive it, without writing.** The typed models carry a hardcoded copy of
   NetBox's choice sets, which can only ever approximate a particular instance —
@@ -275,6 +352,21 @@ are about to run before applying a sync with pruning enabled.
 - This changelog.
 
 ### Fixed
+
+- **A module's serial is no longer cleared on every sync.** Module
+  reconciliation sent `serial: ""` whenever the YAML omitted one, which erased
+  the serial of every managed module on every run — including one somebody had
+  read off the chassis and typed into the NetBox UI. The plan line said
+  `1 to update` and nobody was any the wiser. NetBox's module serial is an
+  optional blank field, so omitting it on create leaves it empty just the same
+  and omitting it on update leaves what is there alone.
+
+  The rule this restores holds everywhere else already and is now locked in by
+  a regression test that checks the request bodies, not just the stored
+  objects: **the controller writes what the YAML declares and says nothing
+  about anything else.** A NetBox object is not owned exclusively by this
+  repository, and a field this repository is silent about must survive a sync
+  untouched.
 
 - **`cable-conflict` fired on every patch panel.** The check identified a cable
   end by device and port name alone, so a panel's front port "2" and its rear
