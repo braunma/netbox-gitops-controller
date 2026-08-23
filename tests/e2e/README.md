@@ -27,6 +27,23 @@ For each generated dataset:
 Then, once: an object the controller does not manage (no `gitops` tag)
 **survives** a prune that removes everything else.
 
+## The one that needs no NetBox
+
+`ingest.sh` is the odd one out and deliberately so. It walks the whole fact
+ingestion path — a scan updating a declared device inside its hand-written
+file, an unknown machine becoming a parked skeleton, an unknown guest becoming
+generated YAML, a re-run changing nothing — against a fake Proxmox it starts
+itself and a recorded importer document.
+
+It needs **no NetBox, no credentials and no network**, because that is exactly
+the claim it exists to make: nothing on the ingestion path can reach NetBox.
+So it runs in the ordinary quality-check jobs on every branch, not behind
+`RUN_E2E`.
+
+```bash
+make e2e-ingest
+```
+
 ## The three scripts
 
 | Script | Data | What it proves |

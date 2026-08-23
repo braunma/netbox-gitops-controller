@@ -1,0 +1,227 @@
+// SPDX-License-Identifier: Apache-2.0
+
+package reconciler
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strconv"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/braunma/netbox-gitops-controller/pkg/client"
+	"github.com/braunma/netbox-gitops-controller/pkg/discovery"
+	"github.com/braunma/netbox-gitops-controller/pkg/ingest"
+	"github.com/braunma/netbox-gitops-controller/pkg/loader"
+	"github.com/braunma/netbox-gitops-controller/pkg/utils"
+)
+
+// The whole point of the ingestion path, asserted end to end: a scan writes
+// facts into the YAML, and one ordinary sync afterwards makes NetBox hold them.
+//
+// Every other test stops at one of the two halves — the ingest tests check the
+// files, the reconciler tests check NetBox — so the seam between them was the
+// one thing nothing covered. It is also the seam most likely to break silently:
+// ingest could write a key the loader does not decode, or the reconciler could
+// decline to send a field the YAML now carries, and both halves would stay
+// green while the facts never arrived.
+func TestScannedFactsReachNetBoxAfterAnOrdinarySync(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	seedDeviceFoundation(t, f, c)
+	if err := c.Cache().LoadSite("berlin-dc"); err != nil {
+		t.Fatalf("LoadSite() error = %v", err)
+	}
+
+	// A repository with one hand-written device and nothing else.
+	root := t.TempDir()
+	servers := filepath.Join(root, "inventory/hardware/active/servers.yaml")
+	if err := os.MkdirAll(filepath.Dir(servers), 0o750); err != nil {
+		t.Fatal(err)
+	}
+	const original = `# Berlin servers
+defaults:
+  site_slug: "berlin-dc"
+  role_slug: "switch"
+  device_type_slug: "c9300"
+
+devices:
+  - name: "srv-01"
+    serial: "STALE"
+`
+	if err := os.WriteFile(servers, []byte(original), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	// ── Half one: the scan writes the facts into the YAML ──────────────────
+	snap := &discovery.Snapshot{
+		Source: "idrac",
+		Devices: []discovery.Device{{
+			Name:       "srv-01",
+			Serial:     "CN7792048K0042",
+			ServiceTag: "7XKQ2M3",
+			HW: discovery.HardwareFacts{
+				CPUCount: 2, CPUModel: "Intel Xeon Gold 6338", CPUCores: 32,
+				RAMTotalGB: 512, PowerState: "On", PowerConsumedWatts: 284,
+				StorageTotalTB: 1.75,
+				LastInventory:  time.Date(2026, 8, 23, 6, 14, 2, 0, time.UTC),
+			},
+		}},
+	}
+
+	dl := loader.NewDataLoader(root, utils.NewLogger(false))
+	inv, err := dl.LoadInventoryWithProvenance()
+	if err != nil {
+		t.Fatalf("LoadInventoryWithProvenance() error = %v", err)
+	}
+	plan, err := ingest.BuildPlan(snap, inv, ingest.Options{DataDir: root})
+	if err != nil {
+		t.Fatalf("BuildPlan() error = %v", err)
+	}
+	if err := ingest.Apply(plan); err != nil {
+		t.Fatalf("Apply() error = %v", err)
+	}
+
+	// This is the merge request a human would have reviewed and merged.
+	written, err := os.ReadFile(servers)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Logf("the merged diff:\n%s", written)
+
+	// ── Half two: an ordinary sync, with no knowledge of ingestion ─────────
+	devices, err := dl.LoadDevices("inventory/hardware/active")
+	if err != nil {
+		t.Fatalf("LoadDevices() error = %v", err)
+	}
+	if len(devices) != 1 {
+		t.Fatalf("loaded %d devices, want the one the scan updated", len(devices))
+	}
+	if err := NewDeviceReconciler(c).ReconcileDevices(devices); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+
+	// ── What NetBox actually holds ─────────────────────────────────────────
+	stored := f.objects("dcim", "devices")
+	if len(stored) != 1 {
+		t.Fatalf("NetBox holds %d devices, want 1", len(stored))
+	}
+	device := stored[0]
+
+	if device["serial"] != "CN7792048K0042" {
+		t.Errorf("serial in NetBox = %v, want the scanned one", device["serial"])
+	}
+	if device["asset_tag"] != "7XKQ2M3" {
+		t.Errorf("asset_tag in NetBox = %v, want the scanned service tag", device["asset_tag"])
+	}
+
+	fields, ok := device["custom_fields"].(map[string]interface{})
+	if !ok {
+		t.Fatalf("NetBox holds no custom fields for the device: %v", device)
+	}
+	for name, want := range map[string]string{
+		"hw_cpu_count":            "2",
+		"hw_cpu_model":            "Intel Xeon Gold 6338",
+		"hw_cpu_cores":            "32",
+		"hw_ram_total_gb":         "512",
+		"hw_power_state":          "On",
+		"hw_power_consumed_watts": "284",
+		"hw_storage_total_tb":     "1.75",
+		"hw_last_inventory":       "2026-08-23T06:14:02Z",
+	} {
+		if got := fields[name]; got == nil {
+			t.Errorf("%s never reached NetBox", name)
+		} else if strings.TrimSpace(strings.Trim(toString(got), `"`)) != want {
+			t.Errorf("%s in NetBox = %v, want %q", name, got, want)
+		}
+	}
+
+	// And a second sync of the same YAML has nothing left to do: the facts are
+	// as idempotent as everything else the controller writes.
+	f.resetMutations()
+	if err := NewDeviceReconciler(c).ReconcileDevices(devices); err != nil {
+		t.Fatalf("ReconcileDevices() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
+}
+
+// A guest the repository never declared: generated by ingest, then applied by
+// the ordinary virtualization phase, with its vmid landing in the custom field
+// the definitions declare for it.
+func TestGeneratedVMReachesNetBoxAfterAnOrdinarySync(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	clusterType := f.seed("virtualization", "cluster-types", client.Object{"name": "Proxmox", "slug": "proxmox"})
+	f.seed("virtualization", "clusters", client.Object{
+		"name": "berlin-prod-cluster", "type": utils.GetIDFromObject(clusterType),
+	})
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+
+	root := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(root, "inventory/virtual"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	snap := &discovery.Snapshot{Source: "pve-prod", VMs: []discovery.VM{{
+		Name: "cache-01", Cluster: "berlin-prod-cluster", Node: "pve-02",
+		Status: "active", VCPUs: 2, MemoryMB: 4096, DiskGB: 50, VMID: 104,
+	}}}
+
+	dl := loader.NewDataLoader(root, utils.NewLogger(false))
+	inv, err := dl.LoadInventoryWithProvenance()
+	if err != nil {
+		t.Fatal(err)
+	}
+	plan, err := ingest.BuildPlan(snap, inv, ingest.Options{DataDir: root})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := ingest.Apply(plan); err != nil {
+		t.Fatal(err)
+	}
+
+	// The generated file is loaded by the ordinary VM load path, with no
+	// special case anywhere — that is what putting it under inventory/ buys.
+	loaded, err := dl.LoadVMs("inventory/discovered/virtual")
+	if err != nil {
+		t.Fatalf("LoadVMs() error = %v", err)
+	}
+	if len(loaded) != 1 {
+		t.Fatalf("loaded %d VMs from the generated file, want 1", len(loaded))
+	}
+
+	if err := NewVirtualizationReconciler(c).ReconcileVMs(loaded); err != nil {
+		t.Fatalf("ReconcileVMs() error = %v", err)
+	}
+
+	stored := f.objects("virtualization", "virtual-machines")
+	if len(stored) != 1 {
+		t.Fatalf("NetBox holds %d VMs, want the generated one", len(stored))
+	}
+	vm := stored[0]
+	if vm["name"] != "cache-01" {
+		t.Errorf("name = %v", vm["name"])
+	}
+	if toString(vm["vcpus"]) != "2" || toString(vm["memory"]) != "4096" || toString(vm["disk"]) != "50" {
+		t.Errorf("sizing = %v/%v/%v, want 2/4096/50", vm["vcpus"], vm["memory"], vm["disk"])
+	}
+	fields, _ := vm["custom_fields"].(map[string]interface{})
+	if toString(fields["vmid"]) != "104" {
+		t.Errorf("vmid custom field = %v, want 104", fields["vmid"])
+	}
+}
+
+// toString renders whatever the fake's JSON round trip produced, so a value
+// compares on what it means rather than on the Go type it came back as.
+func toString(v interface{}) string {
+	switch t := v.(type) {
+	case string:
+		return t
+	case float64:
+		return strconv.FormatFloat(t, 'f', -1, 64)
+	default:
+		return fmt.Sprintf("%v", v)
+	}
+}

@@ -1,8 +1,8 @@
 # Configuration reference
 
 Every setting this project reads, in one place: the credentials, the CLI flags
-of all three commands, the GitLab CI/CD variables, and the knobs the
-end-to-end suite honours.
+of every command, the collector source configuration, the GitLab CI/CD
+variables, and the knobs the end-to-end suite honours.
 
 Every entry below has been exercised against a real NetBox 4.6.7 — see
 [How this was verified](#how-this-was-verified) at the end.
@@ -35,6 +35,10 @@ cp .env.example .env      # then fill in NETBOX_URL and NETBOX_TOKEN
 > Certificate verification is on unless you turn it off. If you reach a NetBox
 > whose certificate does not validate, the error says so — do not reach for
 > `IGNORE_SSL_ERRORS` on a production instance to make it go away.
+
+`collect` and `ingest` read none of the three. They never contact NetBox; the
+credentials they need are the read-only ones for the systems being scanned, and
+those are named in [`collectors.yaml`](#collectorsyaml).
 
 ## `netbox-gitops`
 
@@ -69,7 +73,7 @@ cp .env.example .env      # then fill in NETBOX_URL and NETBOX_TOKEN
 | Flag | Default | What it does |
 |---|---|---|
 | `--output <format>` | `text` | `text` or `json`. `json` prints the plan to stdout and moves all logging to stderr, so the plan can be piped. Any other value is rejected. |
-| `--detailed-exitcode` | off | Exit `0` when already in sync, `2` when changes are pending or were applied, `1` on error — the Terraform convention, so a scheduled `--dry-run` becomes a drift monitor. |
+| `--detailed-exitcode` | off | Exit `0` when already in sync, `2` when changes are pending or were applied, `1` on error — the `terraform plan` convention, so a scheduled `--dry-run` becomes a drift monitor. |
 | `--version` | — | Prints the version, commit and build date stamped at link time. |
 
 ### `netbox-gitops validate`
@@ -96,6 +100,80 @@ Where the three checks sit: `yamlcheck` needs no NetBox and answers "is this
 repository coherent"; `validate` needs one and answers "will this instance
 accept these values"; `--dry-run` needs one and answers "what would change".
 
+### `netbox-gitops collect` and `netbox-gitops ingest`
+
+Two front doors on one pipeline. `collect` fetches a snapshot from the sources
+in `collectors.yaml`; `ingest` is handed one another tool produced. Both then
+match it against the declared inventory, write YAML and print the same summary.
+
+**Neither talks to NetBox.** They need no `NETBOX_URL` and no `NETBOX_TOKEN`;
+their only effect is changed files in this repository. See
+[`INGEST.md`](INGEST.md).
+
+```bash
+./netbox-gitops collect --dry-run                              # print the diffs, write nothing
+./netbox-gitops collect --source pve-prod
+./netbox-gitops ingest --format idrac-json --input scan.json
+```
+
+Shared by both:
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--dry-run` | off | Prints a unified diff of every file that would change and writes nothing — not even the `inventory/discovered/` directory. |
+| `--output <format>` | `text` | `text` or `json`. `json` prints the change list (summary, per-file action, the keys written, the parked files) to stdout and moves all logging to stderr. Any other value is rejected. |
+| `--detailed-exitcode` | off | Exit `2` when the repository would change, `0` when it already says what the scan found, `1` on error. This is how a scheduled CI job decides whether to open a merge request. It reports the change under `--dry-run` too. |
+| `--custom-field-prefix <prefix>` | `hw_` | The prefix of the custom fields a scan owns. Nothing outside it is ever created, updated or reordered, so a field another team maintains on the same device is untouched. |
+
+`collect` only:
+
+| Flag | Environment | Default | What it does |
+|---|---|---|---|
+| `--collectors-config <file>` | `COLLECTORS_CONFIG` | `<data-dir>/collectors.yaml` | The source configuration. The flag beats the environment, which beats the conventional path. A missing file is an error naming the path, not a run that scans nothing. |
+| `--source <name>` | — | every configured source | Comma-separated or repeated. A name that matches nothing is an error listing what *is* configured. Each source is planned and applied on its own, so one unreachable source does not discard what the others found — the run still exits non-zero. |
+
+`ingest` only:
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--format <format>` | — | **Required.** Currently `idrac-json`: the document `idrac-inventory -output json` writes. Anything else is rejected by name. |
+| `--input <file>` | — | **Required.** The document to read; `-` reads standard input. |
+| `--source <name>` | the format's own (`idrac`) | The source name recorded on the snapshot. It names the directory generated files land in, so two scans (one per datacentre, say) can be kept apart. |
+
+Both inherit `--config`, `--data-dir`, `--ignore-file` and
+`--include-ignored-files` from the root command. `--ignore-file` affects only
+*which files the reconciler would apply*: ingest always reads parked files, or
+it would generate a second copy of a machine somebody has already started
+documenting.
+
+### `collectors.yaml`
+
+Read by `collect`. Each entry under `sources:` configures one source. No secret
+is ever written here — the file names the *environment variable* holding the
+token — so it is safe to commit. A key this parser does not recognise is an
+error naming the key: a mistyped `verify_tsl: false` that was silently dropped
+would leave you believing verification is off when it is on.
+
+```yaml
+sources:
+  - name: pve-prod
+    type: proxmox
+    url: https://pve.example.com:8006
+    token_env: PROXMOX_TOKEN
+    verify_tls: true
+    cluster: berlin-prod-cluster
+```
+
+| Key | Required | Default | What it does |
+|---|---|---|---|
+| `name` | yes | — | Identifies the source in logs, in `--source`, in the run summary and in the path of any file generated from it. Must be unique and must not contain a path separator. |
+| `type` | yes | — | Selects the collector. Currently only `proxmox`. An unknown type is an error listing the ones that exist. |
+| `url` | yes | — | The source's API base URL, e.g. `https://pve.example.com:8006`. |
+| `token_env` | yes | — | The **name** of the environment variable holding the token, never the token. For Proxmox that variable holds `user@realm!tokenid=secret`; `PVEAuditor` on `/` is enough, since every request is a GET. An unset variable is an error naming the variable. |
+| `verify_tls` | no | `true` | `false` skips TLS certificate verification for this source only, and logs a warning naming the source on every run — the same bargain `IGNORE_SSL_ERRORS` strikes for the NetBox client. |
+| `timeout_seconds` | no | `30` | Bounds a single API request. A whole scan may take longer: one request per guest is made to read its NICs. |
+| `cluster` | no | — | The NetBox cluster the source's guests belong to. Proxmox reports no name a NetBox cluster can be matched on, so it is declared rather than guessed. Guests from a source without one are written to a *parked* file, since a VM needs a cluster or a site. |
+
 ## `yamlcheck`
 
 Validates a data directory without contacting NetBox: YAML syntax, then the
@@ -115,19 +193,6 @@ go run ./cmd/yamlcheck path/to/data-dir # a directory holding definitions/ or in
 
 The full list of checks is in the README section *Checking the YAML before it
 reaches NetBox*.
-
-## `tfgen`
-
-Renders the VM YAML to OpenTofu variables for the optional Proxmox pipeline.
-
-| Flag | Default | What it does |
-|---|---|---|
-| `--data-dir <dir>` | `.` | Directory holding `inventory/virtual/`. |
-| `--group <env>` | every environment | One environment folder under `inventory/virtual/`, e.g. `prod`. A name that matches no folder is an error naming the typo — it never emits an empty file, which OpenTofu would read as "destroy everything". |
-| `--out <file>` | `terraform/generated.tfvars.json` | Output path, or `-` for stdout. |
-
-Only VMs with `provision: true` are emitted; the rest are documented in NetBox
-and skipped here.
 
 ## GitLab CI/CD variables
 
@@ -155,36 +220,38 @@ pipeline**. Two things are true of all of them:
 | Variable | Default | Effect |
 |---|---|---|
 | `RUN_TESTS` | `true` | `false` skips `go_test`. |
-| `RUN_QUALITY_CHECKS` | `true` | `false` skips `go_lint` and `yaml_check`. |
+| `RUN_QUALITY_CHECKS` | `true` | `false` skips `go_lint`, `yaml_check` and `ingest_check`. |
 | `RUN_E2E` | `false` | Exactly `true` enables `e2e`. Needs a Docker-executor runner that can pull the three service images. |
-| `ENABLE_PROXMOX` | `false` | Exactly `true` enables `tf_validate`, `tf_plan` and `tf_apply`. `tf_generate` always runs — it is pure Go and guards against tfgen regressions. |
 | `COVERAGE_THRESHOLD` | `65` (from the Makefile) | Minimum total statement coverage. `go_test` runs `make coverage`, which measures `./...` and enforces the bar; setting this variable overrides the Makefile's default. A non-numeric or empty value fails the job rather than disabling the gate. |
+
+### Fact ingestion (optional, opt-in)
+
+The scheduled jobs that scan sources and open merge requests are **not** part
+of the pipeline until you include
+[`.gitlab-ci.ingest.example.yml`](../.gitlab-ci.ingest.example.yml). A job that
+opens merge requests on a schedule should be a decision somebody made rather
+than a default they inherited.
+
+| Variable | Default | Effect |
+|---|---|---|
+| `INGEST_SCHEDULE` | unset | Exactly `true`, set on a **pipeline schedule**, is what makes the ingestion jobs run automatically. Without it they are manual only. |
+| `INGEST_BRANCH` | `chore/ingest-facts` | The branch the jobs push to and open the merge request from. One branch, reused. |
+| `GITOPS_PUSH_TOKEN` | — | A project access token with `write_repository` and `api` scope, so a job can push a branch and open a merge request. Mask it. It is the only write credential these jobs hold — **none of them holds a NetBox token**. |
+| `PROXMOX_TOKEN` | — | Read by name from `collectors.yaml` (`token_env`). `user@realm!tokenid=secret`; `PVEAuditor` on `/` is enough. Mask it. |
+| `IDRAC_USERNAME`, `IDRAC_PASSWORD` | — | Read-only iDRAC credentials for the importer container. Mask the password. |
+| `IDRAC_IMPORTER_IMAGE` | `registry.example.com/idrac-netbox-importer:latest` | The sibling importer's image. Mirror it into your own registry when running on-prem. |
 
 ### Images
 
 | Variable | Default |
 |---|---|
 | `GOLANG_IMAGE` | `golang:1.24` |
-| `OPENTOFU_IMAGE` | `ghcr.io/opentofu/opentofu:1.9` |
 | `NETBOX_IMAGE` | `netboxcommunity/netbox:v4.6-3.3.0` |
 | `POSTGRES_IMAGE` | `postgres:16-alpine` |
 | `REDIS_IMAGE` | `valkey/valkey:8-alpine` |
 
 Mirror the last three into your own registry when running on-prem; they are
 pulled only by the `e2e` job.
-
-### Proxmox provisioning
-
-Required when `ENABLE_PROXMOX="true"`:
-
-| Variable | Notes |
-|---|---|
-| `TF_VAR_proxmox_endpoint` | e.g. `https://pve.example.com:8006/api2/json` |
-| `TF_VAR_proxmox_api_token` | `user@realm!tokenid=secret` — mask it |
-| `TF_ALLOW_DESTROY` | Comma-separated environment names. `tf_apply` refuses to run a plan that destroys or replaces a VM unless that environment is listed. Destroying a VM is irreversible, so it is blocked by default. |
-
-Optional `TF_VAR_*` inputs (gateway, VLAN tags, SSH keys, CPU type) are
-documented in [`terraform/README.md`](../terraform/README.md).
 
 ## End-to-end suite
 
@@ -220,12 +287,17 @@ against NetBox 4.6.7 built from source:
 - **Credentials, `.env`, TLS, libraries, ignore patterns, filters, output,
   exit codes, prune** — driven through the built binary and checked against
   what NetBox actually held afterwards.
-- **`yamlcheck` and `tfgen` flags** — driven against fixture data directories,
-  asserting exit codes and output.
+- **`yamlcheck` flags** — driven against fixture data directories, asserting
+  exit codes and output.
+- **`collect`/`ingest` flags and `collectors.yaml`** — driven against fixture
+  data directories and a recorded Proxmox API, asserting the files written, the
+  exit codes and that `--dry-run` writes nothing.
 - **GitLab rules** — read against GitLab's documented variable precedence, with
-  the shell logic (coverage gate, destroy gate) executed directly.
+  the shell logic (the coverage gate) executed directly.
 - **The properties the sample data relies on** — asserted by
   `tests/e2e/repo-data.sh` on every e2e run.
+- **The whole ingestion path** — asserted by `tests/e2e/ingest.sh` on every
+  branch, against a fake Proxmox and a recorded importer document.
 
 Unit tests cover the parsing and resolution rules that have edge cases:
 `internal/dotenv` (quoting, comments, precedence), `resolveDataDir` (the

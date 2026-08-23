@@ -182,8 +182,9 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 		// The VMID and the clone template id are stored in NetBox as custom
 		// fields (the VM model has no native slot). Both `vmid` and
 		// `vm_template_id` custom fields must be declared in the foundation
-		// phase; see definitions/custom_fields. These are documentation only —
-		// Terraform reads them from the YAML, not from NetBox.
+		// phase; see definitions/custom_fields. Only these two are sent, so a
+		// custom field this repository says nothing about keeps whatever value
+		// NetBox holds for it.
 		customFields := map[string]interface{}{}
 		if vm.VMID > 0 {
 			customFields["vmid"] = vm.VMID

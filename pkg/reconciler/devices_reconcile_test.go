@@ -457,8 +457,11 @@ func TestReconcileDevicesInstallsModules(t *testing.T) {
 	if got := utils.GetIDFromObject(modules[0]["module_type"]); got != utils.GetIDFromObject(moduleType) {
 		t.Errorf("module module_type = %d, expected %d", got, utils.GetIDFromObject(moduleType))
 	}
-	if serial, ok := modules[0]["serial"]; !ok || serial != "" {
-		t.Errorf("module serial = %v, expected explicit empty string (avoids NetBox 400)", serial)
+	// The YAML declares no serial, so none is sent: an optional blank field
+	// NetBox fills in itself is not something this controller has an opinion
+	// about. See TestReconcileNeverClearsUndeclaredFields.
+	if serial, sent := modules[0]["serial"]; sent {
+		t.Errorf("module serial = %q was sent for a module whose YAML declares none", serial)
 	}
 }
 

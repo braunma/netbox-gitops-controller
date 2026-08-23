@@ -1,0 +1,29 @@
+# Sources the `netbox-gitops collect` command reads.
+#
+# Copy this to collectors.yaml (or point --collectors-config somewhere else)
+# and edit it. The file is safe to commit: it names the environment variable
+# holding each source's token, never the token itself, so credentials stay in
+# the CI variable store with NETBOX_TOKEN.
+#
+# Every collector is read-only against its source, and none of them can write
+# to NetBox. A run's only effect is a change to the YAML in this repository,
+# which reaches NetBox the same way every hand-written line does: through a
+# merge request and a reconcile. See docs/INGEST.md.
+
+sources:
+  - name: pve-prod # identifies the source in logs and in inventory/discovered/<name>/
+    type: proxmox
+    url: https://pve.example.com:8006
+    token_env: PROXMOX_TOKEN # holds "user@realm!tokenid=secret"; PVEAuditor on / is enough
+    verify_tls: true # never turn this off against anything you care about
+    cluster: berlin-prod-cluster # the NetBox cluster these guests belong to
+
+  # A lab behind a self-signed certificate. verify_tls: false is per-source and
+  # logs a warning on every run, so it cannot quietly spread to production.
+  # - name: pve-lab
+  #   type: proxmox
+  #   url: https://lab.example.com:8006
+  #   token_env: PVE_LAB_TOKEN
+  #   verify_tls: false
+  #   timeout_seconds: 60
+  #   cluster: lab-cluster

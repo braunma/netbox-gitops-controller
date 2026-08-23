@@ -14,7 +14,7 @@ LDFLAGS    := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildD
 COVERAGE_SCOPE     ?= ./...
 COVERAGE_THRESHOLD ?= 65
 
-.PHONY: help build version test coverage lint check e2e e2e-rename e2e-repo e2e-local clean
+.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-local clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -70,8 +70,14 @@ lint: ## Format check, vet, and SPDX headers
 	 test -z "$$missing" || { echo "missing SPDX header:"; echo "$$missing"; exit 1; }
 	$(GO) vet ./...
 
-check: lint test ## Everything that does not need a NetBox
+check: lint test e2e-ingest ## Everything that does not need a NetBox
 	$(GO) run ./cmd/yamlcheck
+
+e2e-ingest: ## Walk the whole ingestion path (needs no NetBox and no credentials)
+	./tests/e2e/ingest.sh
+
+ingest-preview: build ## Show what a collector run would write, without writing it
+	./$(BINARY) collect --dry-run
 
 e2e: ## End-to-end tests (needs NETBOX_URL and NETBOX_TOKEN)
 	./tests/e2e/run.sh

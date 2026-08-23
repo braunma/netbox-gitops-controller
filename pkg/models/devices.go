@@ -124,22 +124,30 @@ type DeviceConfig struct {
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
-	RenameFrom     string            `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
-	DeviceTypeSlug string            `yaml:"device_type_slug" json:"device_type_slug" validate:"required"`
-	RoleSlug       string            `yaml:"role_slug" json:"role_slug" validate:"required"`
-	RackSlug       string            `yaml:"rack_slug,omitempty" json:"rack_slug,omitempty"`
-	Position       int               `yaml:"position,omitempty" json:"position,omitempty"`
-	Face           string            `yaml:"face,omitempty" json:"face,omitempty"`
-	ParentDevice   string            `yaml:"parent_device,omitempty" json:"parent_device,omitempty"`
-	DeviceBay      string            `yaml:"device_bay,omitempty" json:"device_bay,omitempty"`
-	Status         string            `yaml:"status,omitempty" json:"status,omitempty"`
-	Serial         string            `yaml:"serial,omitempty" json:"serial,omitempty"`
-	AssetTag       string            `yaml:"asset_tag,omitempty" json:"asset_tag,omitempty"`
-	Tags           []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Modules        []ModuleConfig    `yaml:"modules,omitempty" json:"modules,omitempty"`
-	Interfaces     []InterfaceConfig `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
-	FrontPorts     []FrontPortConfig `yaml:"front_ports,omitempty" json:"front_ports,omitempty"`
-	RearPorts      []RearPortConfig  `yaml:"rear_ports,omitempty" json:"rear_ports,omitempty"`
+	RenameFrom     string `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
+	DeviceTypeSlug string `yaml:"device_type_slug" json:"device_type_slug" validate:"required"`
+	RoleSlug       string `yaml:"role_slug" json:"role_slug" validate:"required"`
+	RackSlug       string `yaml:"rack_slug,omitempty" json:"rack_slug,omitempty"`
+	Position       int    `yaml:"position,omitempty" json:"position,omitempty"`
+	Face           string `yaml:"face,omitempty" json:"face,omitempty"`
+	ParentDevice   string `yaml:"parent_device,omitempty" json:"parent_device,omitempty"`
+	DeviceBay      string `yaml:"device_bay,omitempty" json:"device_bay,omitempty"`
+	Status         string `yaml:"status,omitempty" json:"status,omitempty"`
+	Serial         string `yaml:"serial,omitempty" json:"serial,omitempty"`
+	AssetTag       string `yaml:"asset_tag,omitempty" json:"asset_tag,omitempty"`
+	// CustomFields holds values for NetBox custom fields defined on the device
+	// content type, keyed by field name. Only the fields declared here are
+	// written; a field NetBox holds but the YAML does not mention is left
+	// alone, so a value somebody set in the UI survives a sync.
+	//
+	// This is where the `hw_*` hardware inventory lands when facts are
+	// ingested from an out-of-band scan; see docs/INGEST.md.
+	CustomFields map[string]interface{} `yaml:"custom_fields,omitempty" json:"custom_fields,omitempty"`
+	Tags         []string               `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Modules      []ModuleConfig         `yaml:"modules,omitempty" json:"modules,omitempty"`
+	Interfaces   []InterfaceConfig      `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
+	FrontPorts   []FrontPortConfig      `yaml:"front_ports,omitempty" json:"front_ports,omitempty"`
+	RearPorts    []RearPortConfig       `yaml:"rear_ports,omitempty" json:"rear_ports,omitempty"`
 }
 
 // Slug generates a slug from the device name

@@ -780,3 +780,79 @@ func TestPositionWithoutFaceNeedsARack(t *testing.T) {
 
 	assertCheck(t, Check(ds, Options{}), "position-without-face", 0)
 }
+
+// Facts are written into a device's custom_fields by a machine now, so a
+// repository that never copied the hw_* definitions in produces YAML that
+// yamlcheck used to pass and the apply used to fail on — after earlier objects
+// were already written. This is the same class of error as unknown-site, and
+// it costs no NetBox to find.
+func TestCheckDeviceCustomFields(t *testing.T) {
+	base := func() Dataset {
+		ds := baseDataset()
+		ds.Devices = []*models.DeviceConfig{server("srv-01", 1)}
+		ds.CustomFields = []*models.CustomField{
+			{Name: "hw_cpu_count", Type: "integer", ObjectTypes: []string{"dcim.device"}},
+			{Name: "vmid", Type: "integer", ObjectTypes: []string{"virtualization.virtualmachine"}},
+		}
+		return ds
+	}
+
+	t.Run("a declared field on the right type is accepted", func(t *testing.T) {
+		ds := base()
+		ds.Devices[0].CustomFields = map[string]interface{}{"hw_cpu_count": 2}
+		findings := append(
+			findingsFor(Check(ds, Options{}), "unknown-custom-field"),
+			findingsFor(Check(ds, Options{}), "custom-field-wrong-type")...)
+		if len(findings) != 0 {
+			t.Errorf("a correctly declared custom field was reported: %s", render(findings))
+		}
+	})
+
+	t.Run("a field nothing declares is an error naming it", func(t *testing.T) {
+		ds := base()
+		ds.Devices[0].CustomFields = map[string]interface{}{"hw_cpu_cuont": 2}
+		findings := findingsFor(Check(ds, Options{}), "unknown-custom-field")
+		if len(findings) != 1 {
+			t.Fatalf("findings = %s, want the typo reported once", render(findings))
+		}
+		if findings[0].Severity != Error {
+			t.Errorf("severity = %v, want Error", findings[0].Severity)
+		}
+		if !strings.Contains(findings[0].Message, "hw_cpu_cuont") {
+			t.Errorf("message = %q, want it to name the field", findings[0].Message)
+		}
+	})
+
+	t.Run("a field declared for another content type is an error", func(t *testing.T) {
+		ds := base()
+		ds.Devices[0].CustomFields = map[string]interface{}{"vmid": 101}
+		findings := findingsFor(Check(ds, Options{}), "custom-field-wrong-type")
+		if len(findings) != 1 {
+			t.Fatalf("findings = %s, want the content-type mismatch reported", render(findings))
+		}
+		if !strings.Contains(findings[0].Message, "virtualization.virtualmachine") {
+			t.Errorf("message = %q, want it to say what the field does apply to", findings[0].Message)
+		}
+	})
+
+	t.Run("a repository declaring no custom fields at all is left alone", func(t *testing.T) {
+		// Same rule as every other reference check: a repository that manages
+		// only part of NetBox references objects created elsewhere.
+		ds := baseDataset()
+		ds.Devices = []*models.DeviceConfig{server("srv-01", 1)}
+		ds.CustomFields = nil
+		ds.Devices[0].CustomFields = map[string]interface{}{"owner_team": "platform"}
+		if findings := findingsFor(Check(ds, Options{}), "unknown-custom-field"); len(findings) != 0 {
+			t.Errorf("findings = %s, want silence when nothing is declared", render(findings))
+		}
+	})
+
+	t.Run("--allow-undeclared-refs demotes it to a warning", func(t *testing.T) {
+		ds := base()
+		ds.Devices[0].CustomFields = map[string]interface{}{"somebody_elses_field": "x"}
+		findings := findingsFor(Check(ds, Options{AllowUndeclaredRefs: true}), "unknown-custom-field")
+		if len(findings) != 1 || findings[0].Severity != Warning {
+			t.Errorf("findings = %s, want a single warning", render(findings))
+		}
+	})
+}

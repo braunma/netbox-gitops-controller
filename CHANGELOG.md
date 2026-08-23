@@ -12,7 +12,143 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: the Proxmox provisioning path is gone.** `cmd/tfgen`, `pkg/tfgen`,
+  the `terraform/` module and the `tf_*` CI jobs are removed, and with them the
+  `provision:` key on a virtual machine. The controller no longer creates
+  anything on a hypervisor; it documents infrastructure in NetBox, and nothing
+  else.
+
+  The direction is now reversed. Instead of YAML being rendered outward into
+  Terraform variables that build VMs, facts discovered *about* running
+  infrastructure are written inward into this repository's YAML, reviewed as a
+  merge request, and become NetBox truth through the same reconcile pipeline as
+  every hand-written line. See [`docs/INGEST.md`](docs/INGEST.md).
+
+  **What you have to do.** Delete `provision:` from every VM file. A file that
+  still carries it fails validation rather than being quietly ignored:
+
+  ```
+  ✗ virtual machine web-01: provision: the Proxmox provisioning path
+    (cmd/tfgen, terraform/) was removed and this key no longer does anything —
+    delete it; see CHANGELOG.md
+  ```
+
+  A key that no longer does anything is worse than an error, because the author
+  goes on believing something is still being built somewhere.
+
+  `vmid`, `vm_template_id` and `node` are kept and unchanged: they describe
+  where a VM lives on its hypervisor, the first two are stored in NetBox as
+  custom fields, and `vmid` is one of the keys a collector may now write.
+  The per-environment layout under `inventory/virtual/<env>/` is kept as well —
+  it is a directory convention, not a Terraform state boundary.
+
+  The CI variables `ENABLE_PROXMOX`, `TF_ALLOW_DESTROY`, `OPENTOFU_IMAGE` and
+  every `TF_VAR_*` are no longer read by anything; remove them from your
+  project settings.
+
 ### Added
+
+- **`netbox-gitops collect` and `netbox-gitops ingest`: document what is
+  actually out there.** The tool's one direction was outward — you write YAML,
+  a merge request changes it, the reconciler applies it. That works well for
+  infrastructure you are adding and badly for the two hundred machines that
+  were racked before anybody wrote a line of this, and for the facts nobody
+  wants to type: serial numbers, DIMM counts, BIOS versions, power draw.
+
+  ```
+    Proxmox API  ─┐
+                  ├─→  Snapshot  →  match  →  YAML changes  →  MR  →  merge  →  sync  →  NetBox
+    iDRAC scan   ─┘
+  ```
+
+  **Nothing on the discovery side writes to NetBox.** The collectors are
+  read-only against their sources, and `pkg/ingest` holds no NetBox client and
+  has no way to acquire one; its whole effect on the world is changed files in
+  this repository. The sibling `idrac-netbox-importer` has a direct-to-NetBox
+  mode and this project deliberately does not use it, because a fact that
+  reaches NetBox without passing a merge request has not been reviewed by
+  anybody — and that review is the entire value of documenting infrastructure
+  in git.
+
+  For a machine the repository already declares, the facts are written **into
+  your file, at that machine's block**, with comments, key order, quoting and
+  every untouched byte preserved:
+
+  ```diff
+     - name: "srv-01"
+       position: 10 # lowest rack unit
+  -    serial: "OLD-SERIAL"
+  +    serial: "CN7792048K0042"
+  +    asset_tag: "7XKQ2M3"
+  +    custom_fields:
+  +      hw_cpu_count: 1
+  +      hw_cpu_model: "AMD EPYC 9354P 32-Core Processor"
+  ```
+
+  That diff is the review gate: a fact contradicting a declared value shows up
+  as a change to that line, and merging it is what makes the fact the truth. If
+  the scanned serial is wrong you reject the merge request and go fix the
+  machine.
+
+  A short, closed whitelist governs what a machine may say — `serial`,
+  `asset_tag` and the `hw_*` custom fields on a device; `vcpus`, `memory`,
+  `disk`, `status` and `vmid` on a VM. Names, sites, racks, positions, faces,
+  roles, device types and cabling are never written by a machine. The line is
+  what a machine can observe *about itself*: a serial is burned into the
+  hardware, while where it stands and what it is for are decisions people make.
+
+  A generated file is an ordinary inventory file, applied like any other. To
+  take an object over you declare it in a file of your own; the next run keeps
+  yours and removes the block from the generated file, deleting that file if it
+  empties. That is the only circumstance in which anything is removed from the
+  YAML and it loses nothing, since every object it takes out is declared
+  elsewhere by definition. An object that stops answering is never removed —
+  whether it was decommissioned or merely unplugged is a fact for a person to
+  interpret.
+
+  Objects the repository has never heard of land under
+  `inventory/discovered/` — VMs as complete, appliable YAML, physical machines
+  as *parked* skeletons using the existing underscore convention. They are
+  parked because a scan reaches a BMC over the network and cannot know which
+  rack the machine is in; guessing would put a plausible fiction into NetBox,
+  so those fields are `TODO`s for somebody who can walk into the room. Every
+  run names the parked files rather than counting them.
+
+  `--dry-run` prints unified diffs and writes nothing; `--output json` emits
+  the change list; `--detailed-exitcode` exits `2` when the repository would
+  change, which is how a scheduled CI job decides whether to open a merge
+  request. A re-run on an unchanged scan produces a zero diff and opens
+  nothing.
+
+  Matching resolves a scanned machine to a declaration by the management
+  address it answered on, then serial, then service tag against `asset_tag`,
+  then name. **Any rule matching more than one declaration is an error naming
+  the candidates and their `file:line`** — the same bargain `rename_from`
+  strikes, because writing an observed serial into the wrong device's block
+  would be a quiet, plausible corruption of the inventory.
+
+  New: `pkg/discovery` (the normalized model), `pkg/collectors` (the Proxmox
+  collector and `collectors.yaml`), `pkg/ingestfmt/idracjson` (the importer's
+  JSON contract), `pkg/ingest` (matching and the YAML writer), seventeen `hw_*`
+  custom field definitions, [`docs/INGEST.md`](docs/INGEST.md) and a commented
+  [`.gitlab-ci.ingest.example.yml`](.gitlab-ci.ingest.example.yml). Devices
+  gained a `custom_fields:` key so the facts reach NetBox on the next sync.
+
+- **`yamlcheck`: a device's custom fields are checked against the definitions.**
+  Facts are written into `custom_fields:` by a machine now, which created a new
+  way to be wrong: a repository that ingests `hw_*` facts without copying the
+  definitions into `definitions/custom_fields/` produced YAML that `yamlcheck`
+  passed and the apply failed on — with a `400` partway through, after earlier
+  objects were already written.
+
+  `unknown-custom-field` reports a field nothing declares, and
+  `custom-field-wrong-type` one declared for another content type (setting
+  `vmid` on a device, say). Both follow the conventions of the reference checks
+  beside them: silent when the repository declares no custom fields at all,
+  since such a repository manages only part of NetBox, and demoted to a warning
+  by `--allow-undeclared-refs`. Neither needs a NetBox.
 
 - **`netbox-gitops validate`: check the YAML against the NetBox that will
   receive it, without writing.** The typed models carry a hardcoded copy of
@@ -239,6 +375,21 @@ are about to run before applying a sync with pruning enabled.
 - This changelog.
 
 ### Fixed
+
+- **A module's serial is no longer cleared on every sync.** Module
+  reconciliation sent `serial: ""` whenever the YAML omitted one, which erased
+  the serial of every managed module on every run — including one somebody had
+  read off the chassis and typed into the NetBox UI. The plan line said
+  `1 to update` and nobody was any the wiser. NetBox's module serial is an
+  optional blank field, so omitting it on create leaves it empty just the same
+  and omitting it on update leaves what is there alone.
+
+  The rule this restores holds everywhere else already and is now locked in by
+  a regression test that checks the request bodies, not just the stored
+  objects: **the controller writes what the YAML declares and says nothing
+  about anything else.** A NetBox object is not owned exclusively by this
+  repository, and a field this repository is silent about must survive a sync
+  untouched.
 
 - **`cable-conflict` fired on every patch panel.** The check identified a cable
   end by device and port name alone, so a panel's front port "2" and its rear

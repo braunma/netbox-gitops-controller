@@ -1,15 +1,15 @@
-# A provisioned production VM: documented in NetBox AND created in Proxmox by
-# Terraform (cloned from the template at vm_template_id), using the per-env
-# "proxmox-prod" Terraform state. One file per VM.
+# A hand-written production VM, one file per VM. The controller documents it in
+# NetBox and never creates it on a hypervisor. When a Proxmox collector run
+# finds this VM, it writes the facts it observed (vcpus, memory, disk, status,
+# vmid) into this file — see docs/INGEST.md.
 
 - name: "web-01"
-  provision: true                  # create this VM in Proxmox via Terraform
-  vmid: 101                        # Proxmox VMID to create; stored in NetBox `vmid` custom field
-  vm_template_id: 800              # template VMID to clone from (your cloud-init template)
-  node: "pve-01"                   # target Proxmox node the VM is spawned on
-  cluster: "berlin-prod-cluster"   # clustered VM; inherits the cluster's site → Proxmox pool
+  vmid: 101                        # Proxmox VMID; stored in NetBox `vmid` custom field
+  vm_template_id: 800              # template VMID this VM was cloned from (documentation)
+  node: "pve-01"                   # hypervisor node it runs on (documentation)
+  cluster: "berlin-prod-cluster"   # clustered VM; inherits the cluster's site
   role_slug: "vm"                  # role must have vm_role: true
-  platform: "ubuntu-22-04"         # NetBox documentation only (not used to clone)
+  platform: "ubuntu-22-04"
   tenant: "platform-engineering"
   status: "active"
   vcpus: 4

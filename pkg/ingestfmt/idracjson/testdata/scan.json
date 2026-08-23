@@ -1,0 +1,102 @@
+{
+  "servers": [
+    {
+      "host": "10.0.1.11",
+      "name": "",
+      "collected_at": "2026-08-23T06:14:02Z",
+      "model": "PowerEdge R7615",
+      "manufacturer": "Dell Inc.",
+      "serial_number": "CN7792048K0042",
+      "service_tag": "7XKQ2M3",
+      "bios_version": "1.14.2",
+      "hostname": "srv-berlin-01.example.com",
+      "power_state": "On",
+      "cpus": [
+        {"socket": "CPU.Socket.1", "model": "AMD EPYC 9354P 32-Core Processor", "cores": 32, "threads": 64, "max_speed_mhz": 3800, "health": "OK"}
+      ],
+      "cpu_count": 1,
+      "cpu_model": "AMD EPYC 9354P 32-Core Processor",
+      "memory": [
+        {"slot": "DIMM.Socket.A1", "capacity_mib": 32768, "type": "DDR5", "base_module_type": "RDIMM", "speed_mhz": 4800, "state": "Enabled", "health": "OK"},
+        {"slot": "DIMM.Socket.A2", "capacity_mib": 0, "type": "", "speed_mhz": 0, "state": "Absent"},
+        {"slot": "DIMM.Socket.B1", "capacity_mib": 32768, "type": "DDR5", "base_module_type": "RDIMM", "speed_mhz": 4800, "state": "Enabled", "health": "OK"}
+      ],
+      "total_memory_gib": 64,
+      "memory_slots_total": 24,
+      "memory_slots_used": 2,
+      "memory_slots_free": 22,
+      "drives": [
+        {"name": "Disk.Bay.0", "model": "MZ1L2960HCJR", "capacity_gb": 894, "media_type": "SSD", "protocol": "NVMe", "health": "OK"},
+        {"name": "Disk.Bay.1", "model": "MZ1L2960HCJR", "capacity_gb": 894, "media_type": "SSD", "protocol": "NVMe", "health": "OK"},
+        {"name": "Disk.Bay.2", "model": "ST16000NM000J", "capacity_gb": 14901, "media_type": "HDD", "protocol": "SAS", "health": "OK"}
+      ],
+      "drive_count": 3,
+      "total_storage_tb": 15.32,
+      "gpu_count": 0,
+      "power_consumed_watts": 284,
+      "power_peak_watts": 612
+    },
+    {
+      "host": "10.0.1.12",
+      "collected_at": "2026-08-23T06:14:07Z",
+      "model": "PowerEdge R740",
+      "manufacturer": "Dell Inc.",
+      "serial_number": "CN7792048K0043",
+      "service_tag": "9LMN4P2",
+      "bios_version": "2.19.0",
+      "hostname": "srv-berlin-02.example.com",
+      "power_state": "Off",
+      "cpus": [
+        {"socket": "CPU.Socket.1", "model": "Intel Xeon Gold 6248R", "cores": 24, "threads": 48, "max_speed_mhz": 3000, "health": "OK"},
+        {"socket": "CPU.Socket.2", "model": "Intel Xeon Gold 6248R", "cores": 24, "threads": 48, "max_speed_mhz": 3000, "health": "OK"}
+      ],
+      "cpu_count": 2,
+      "cpu_model": "Intel Xeon Gold 6248R",
+      "memory": [
+        {"slot": "DIMM.Socket.A1", "capacity_mib": 0, "state": "Absent"},
+        {"slot": "DIMM.Socket.A2", "capacity_mib": 65536, "type": "DDR4", "base_module_type": "RDIMM", "speed_mhz": 2933, "state": "Enabled", "health": "OK"}
+      ],
+      "total_memory_gib": 384,
+      "memory_slots_total": 24,
+      "memory_slots_used": 6,
+      "memory_slots_free": 18,
+      "drives": [],
+      "drive_count": 0,
+      "total_storage_tb": 0,
+      "gpu_count": 0
+    },
+    {
+      "host": "10.0.1.99",
+      "collected_at": "2026-08-23T06:14:09Z",
+      "error": "dial tcp 10.0.1.99:443: connect: connection refused",
+      "model": "",
+      "manufacturer": "",
+      "serial_number": "",
+      "service_tag": "",
+      "bios_version": "",
+      "hostname": "",
+      "power_state": "",
+      "cpus": null,
+      "cpu_count": 0,
+      "cpu_model": "",
+      "memory": null,
+      "total_memory_gib": 0,
+      "memory_slots_total": 0,
+      "memory_slots_used": 0,
+      "memory_slots_free": 0,
+      "drives": null,
+      "drive_count": 0,
+      "total_storage_tb": 0,
+      "gpu_count": 0
+    }
+  ],
+  "stats": {
+    "total_servers": 3,
+    "successful_count": 2,
+    "failed_count": 1,
+    "total_duration": 7420000000,
+    "average_duration": 2473333333,
+    "fastest_duration": 1980000000,
+    "slowest_duration": 3210000000
+  }
+}
