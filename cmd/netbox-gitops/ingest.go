@@ -330,6 +330,9 @@ func reportIngestPlan(plan *ingest.Plan, logger *utils.Logger) {
 	}
 	logger.Info("Facts: %d updated, %d new VMs, %d parked devices, %d unchanged",
 		s.FactsUpdated, s.NewVMs, s.ParkedDevices, s.Unchanged)
+	if s.Adopted > 0 {
+		logger.Info("Adopted: %d object(s) removed from a generated file because you now declare them yourself", s.Adopted)
+	}
 	logger.Info("═══════════════════════════════════════════════════════")
 
 	// A parked file nobody notices is a parked file nobody finishes, so they

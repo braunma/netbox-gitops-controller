@@ -174,18 +174,3 @@ func TestToken(t *testing.T) {
 		t.Error("expected an error for an empty token variable")
 	}
 }
-
-func TestEnvIsTrue(t *testing.T) {
-	for _, value := range []string{"true", "TRUE", "1", "yes", "on", " On "} {
-		t.Setenv("PROBE", value)
-		if !EnvIsTrue("PROBE") {
-			t.Errorf("EnvIsTrue(%q) = false, want true", value)
-		}
-	}
-	for _, value := range []string{"", "false", "0", "no", "maybe"} {
-		t.Setenv("PROBE", value)
-		if EnvIsTrue("PROBE") {
-			t.Errorf("EnvIsTrue(%q) = true, want false", value)
-		}
-	}
-}

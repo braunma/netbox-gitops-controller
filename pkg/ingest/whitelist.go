@@ -17,7 +17,6 @@ package ingest
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"time"
 
@@ -145,12 +144,4 @@ type keyValue struct {
 // touched, whatever a snapshot says.
 func IsWritableCustomField(name, prefix string) bool {
 	return strings.HasPrefix(name, prefix)
-}
-
-// WritableKeyList renders the whitelist for a help message or an error.
-func WritableKeyList(prefix string) string {
-	keys := append([]string{}, DeviceWritableKeys...)
-	keys = append(keys, VMWritableKeys...)
-	sort.Strings(keys)
-	return strings.Join(keys, ", ") + " (custom fields: " + strings.Join(HardwareFieldNames(prefix), ", ") + ")"
 }

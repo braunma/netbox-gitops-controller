@@ -32,9 +32,12 @@ func unifiedDiff(path, before, after string) string {
 	afterLines := splitLines(after)
 
 	var b strings.Builder
-	if before == "" {
+	switch {
+	case before == "":
 		fmt.Fprintf(&b, "--- /dev/null\n+++ %s\n", path)
-	} else {
+	case after == "":
+		fmt.Fprintf(&b, "--- %s\n+++ /dev/null\n", path)
+	default:
 		fmt.Fprintf(&b, "--- %s\n+++ %s\n", path, path)
 	}
 

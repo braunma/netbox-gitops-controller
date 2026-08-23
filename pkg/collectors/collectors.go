@@ -65,19 +65,3 @@ func New(src Source, logger *utils.Logger) (Collector, error) {
 	}
 	return factory(src, logger)
 }
-
-// Build returns one collector per configured source, in configuration order.
-// A source whose type is unknown or whose settings are incomplete fails the
-// whole build rather than being skipped: a scan that silently covers half the
-// estate would show up as objects "disappearing" from the discovered files.
-func Build(cfg *Config, logger *utils.Logger) ([]Collector, error) {
-	built := make([]Collector, 0, len(cfg.Sources))
-	for _, src := range cfg.Sources {
-		c, err := New(src, logger)
-		if err != nil {
-			return nil, err
-		}
-		built = append(built, c)
-	}
-	return built, nil
-}

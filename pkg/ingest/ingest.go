@@ -40,6 +40,10 @@ const (
 	ActionUpdate Action = "update"
 	// ActionCreate writes a file that does not exist yet.
 	ActionCreate Action = "create"
+	// ActionDelete removes a generated file whose every object is now declared
+	// in a file somebody wrote. It is the only way a file is ever removed, and
+	// it never loses an object: each one is declared elsewhere by definition.
+	ActionDelete Action = "delete"
 )
 
 // Change is one file the run would write.
@@ -65,6 +69,9 @@ type Summary struct {
 	NewVMs int `json:"new_vms"`
 	// ParkedDevices counts scanned machines written as parked skeletons.
 	ParkedDevices int `json:"parked_devices"`
+	// Adopted counts objects taken out of a generated file because a
+	// hand-managed file now declares them.
+	Adopted int `json:"adopted"`
 	// Unchanged counts discovered objects that already read the way the scan
 	// found them.
 	Unchanged int `json:"unchanged"`
@@ -72,7 +79,7 @@ type Summary struct {
 
 // HasChanges reports whether the repository would change.
 func (s Summary) HasChanges() bool {
-	return s.FactsUpdated > 0 || s.NewVMs > 0 || s.ParkedDevices > 0
+	return s.FactsUpdated > 0 || s.NewVMs > 0 || s.ParkedDevices > 0 || s.Adopted > 0
 }
 
 // Plan is what a run would do. Nothing has been written when it is returned.
@@ -130,6 +137,18 @@ func BuildPlan(snap *discovery.Snapshot, inv loader.Inventory, opts Options) (*P
 	}
 	plan.Changes = append(plan.Changes, updates...)
 	plan.Summary.FactsUpdated = updatedObjects
+
+	// An object a hand-managed file has adopted is taken out of the generated
+	// file that used to declare it, so the repository stops describing it
+	// twice. A file being rewritten for its facts in this same run cannot also
+	// be rewritten for a removal, so that combination is refused rather than
+	// half-applied.
+	adopted, adoptedCount, err := planSupersededRemovals(matches.Superseded, editsByFile)
+	if err != nil {
+		return nil, err
+	}
+	plan.Changes = append(plan.Changes, adopted...)
+	plan.Summary.Adopted = adoptedCount
 	// An object whose file turned out not to need rewriting after all (every
 	// fact already read that way) counts as unchanged, not as updated.
 	unchanged += countPlannedButUnchanged(editsByFile, updates)
@@ -218,6 +237,89 @@ func planUpdates(editsByFile map[string][]objectEdit) ([]Change, int, error) {
 	return changes, objects, errors.Join(errs...)
 }
 
+// planSupersededRemovals drops each adopted object from the generated file that
+// still declares it.
+func planSupersededRemovals(superseded []loader.Provenance, editsByFile map[string][]objectEdit) ([]Change, int, error) {
+	if len(superseded) == 0 {
+		return nil, 0, nil
+	}
+
+	byFile := map[string][]loader.Provenance{}
+	for _, prov := range superseded {
+		byFile[prov.File] = append(byFile[prov.File], prov)
+	}
+
+	files := make([]string, 0, len(byFile))
+	for file := range byFile {
+		files = append(files, file)
+	}
+	sort.Strings(files)
+
+	var changes []Change
+	var count int
+	var errs []error
+
+	for _, file := range files {
+		if _, alsoEdited := editsByFile[file]; alsoEdited {
+			// Both rewrites are computed from the same original line numbers, so
+			// applying them together would corrupt the file. Saying so and doing
+			// neither is the only safe answer; the next run does the removal.
+			errs = append(errs, fmt.Errorf(
+				"%s has both new facts and an adopted object to remove in one run; "+
+					"neither was written — re-run after merging this run's changes", file))
+			continue
+		}
+
+		content, err := os.ReadFile(file) // #nosec G304 -- the path came from the loader
+		if err != nil {
+			errs = append(errs, fmt.Errorf("cannot re-read %s: %w", file, err))
+			continue
+		}
+
+		before, err := rawObjects(string(content))
+		if err != nil {
+			errs = append(errs, fmt.Errorf("%s: %w", file, err))
+			continue
+		}
+
+		change, err := removeObjects(file, string(content), byFile[file])
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		if change == nil {
+			continue
+		}
+
+		removed := map[int]bool{}
+		var names []string
+		for _, prov := range byFile[file] {
+			removed[prov.Index] = true
+			if name, ok := before[prov.Index]["name"].(string); ok {
+				names = append(names, name)
+			}
+		}
+		sort.Strings(names)
+
+		if err := verifyRemoval(change, before, removed); err != nil {
+			errs = append(errs, err)
+			continue
+		}
+
+		action := ActionUpdate
+		if change.After == "" {
+			action = ActionDelete
+		}
+		changes = append(changes, Change{
+			Action: action, Path: file, Objects: names,
+			Before: change.Before, After: change.After,
+		})
+		count += len(removed)
+	}
+
+	return changes, count, errors.Join(errs...)
+}
+
 // deviceEdit works out which whitelisted keys of a declared device the scan
 // disagrees with. A fact equal to what the YAML already says writes nothing,
 // which is what makes a re-run on unchanged input produce a zero diff.
@@ -236,6 +338,14 @@ func deviceEdit(m DeviceMatch, prefix string) (objectEdit, bool) {
 	}
 
 	for _, kv := range hardwareCustomFields(m.Discovered.HW, prefix) {
+		// The guard is redundant today — hardwareCustomFields only ever yields
+		// prefixed keys — and that is exactly why it is here. It makes the
+		// invariant checkable at the point where a key is queued for writing,
+		// so a future fact source cannot smuggle one past the whitelist by
+		// being added somewhere else.
+		if !IsWritableCustomField(kv.Key, prefix) {
+			continue
+		}
 		if !sameValue(declared.CustomFields[kv.Key], kv.Value) {
 			edit.CustomFields = append(edit.CustomFields, kv)
 		}
@@ -414,6 +524,12 @@ func readIfExists(path string) (string, error) {
 func Apply(plan *Plan) error {
 	var errs []error
 	for _, change := range plan.Changes {
+		if change.Action == ActionDelete {
+			if err := os.Remove(change.Path); err != nil && !os.IsNotExist(err) {
+				errs = append(errs, fmt.Errorf("cannot remove %s: %w", change.Path, err))
+			}
+			continue
+		}
 		if dir := filepath.Dir(change.Path); dir != "" && dir != "." {
 			if err := os.MkdirAll(dir, 0o750); err != nil {
 				errs = append(errs, fmt.Errorf("cannot create %s: %w", dir, err))

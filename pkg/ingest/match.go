@@ -5,6 +5,7 @@ package ingest
 import (
 	"errors"
 	"fmt"
+	"path/filepath"
 	"sort"
 	"strings"
 
@@ -35,6 +36,34 @@ type VMMatch struct {
 type Matches struct {
 	Devices []DeviceMatch
 	VMs     []VMMatch
+	// Superseded lists declarations in a generated file that describe an object
+	// a hand-managed file now declares too. They are dropped from the generated
+	// file, which is how adopting a discovered object works: put the block
+	// where you want it, and the next run takes it out of the machine's file.
+	Superseded []loader.Provenance
+}
+
+// isGenerated reports whether a declaration lives in a file ingest wrote.
+//
+// This is the one place the distinction exists, and it is deliberately narrow:
+// a generated file is an ordinary declaration in every respect except that a
+// hand-managed file outranks it for the same object.
+func isGenerated(prov loader.Provenance) bool {
+	normalized := filepath.ToSlash(prov.File)
+	return strings.Contains(normalized, DiscoveredRoot+"/")
+}
+
+// preferHandManaged splits candidates into the hand-managed ones and the
+// generated ones.
+func preferHandManaged[T any](candidates []loader.Declared[T]) (hand, generated []loader.Declared[T]) {
+	for _, c := range candidates {
+		if isGenerated(c.Prov) {
+			generated = append(generated, c)
+		} else {
+			hand = append(hand, c)
+		}
+	}
+	return hand, generated
 }
 
 // Match resolves every object in a snapshot against the declared inventory.
@@ -61,11 +90,12 @@ func Match(snap *discovery.Snapshot, inv loader.Inventory) (Matches, error) {
 	claimedVM := map[*models.VMConfig]discovery.VM{}
 
 	for _, dev := range snap.Devices {
-		declared, rule, err := matchDevice(dev, inv.Devices)
+		declared, rule, superseded, err := matchDevice(dev, inv.Devices)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
+		out.Superseded = append(out.Superseded, superseded...)
 		if declared != nil {
 			if previous, taken := claimedDevice[declared.Object]; taken {
 				errs = append(errs, fmt.Errorf(
@@ -80,11 +110,12 @@ func Match(snap *discovery.Snapshot, inv loader.Inventory) (Matches, error) {
 	}
 
 	for _, vm := range snap.VMs {
-		declared, rule, err := matchVM(vm, inv.VMs)
+		declared, rule, superseded, err := matchVM(vm, inv.VMs)
 		if err != nil {
 			errs = append(errs, err)
 			continue
 		}
+		out.Superseded = append(out.Superseded, superseded...)
 		if declared != nil {
 			if previous, taken := claimedVM[declared.Object]; taken {
 				errs = append(errs, fmt.Errorf(
@@ -120,22 +151,40 @@ var deviceRules = []deviceRule{
 	{"name", candidatesByDeviceName},
 }
 
-func matchDevice(dev discovery.Device, declared []loader.Declared[*models.DeviceConfig]) (*loader.Declared[*models.DeviceConfig], string, error) {
+func matchDevice(dev discovery.Device, declared []loader.Declared[*models.DeviceConfig]) (*loader.Declared[*models.DeviceConfig], string, []loader.Provenance, error) {
 	for _, rule := range deviceRules {
 		found := rule.candidates(dev, declared)
-		switch len(found) {
-		case 0:
+		if len(found) == 0 {
 			continue
-		case 1:
-			return &found[0], rule.name, nil
-		default:
-			return nil, "", fmt.Errorf(
-				"discovered device %s matches %d declared devices by %s: %s; "+
-					"the repository cannot say which one it is, so nothing was written",
-				describeDevice(dev), len(found), rule.name, describeCandidates(found))
 		}
+		if len(found) == 1 {
+			return &found[0], rule.name, nil, nil
+		}
+
+		// Several candidates. If exactly one of them is hand-managed, the
+		// ambiguity is not a mistake: it is somebody adopting a machine this
+		// tool wrote a file for. The hand-managed declaration wins and the
+		// generated one is dropped.
+		hand, generated := preferHandManaged(found)
+		if len(hand) == 1 {
+			return &hand[0], rule.name, provenancesOf(generated), nil
+		}
+
+		return nil, "", nil, fmt.Errorf(
+			"discovered device %s matches %d declared devices by %s: %s; "+
+				"the repository cannot say which one it is, so nothing was written",
+			describeDevice(dev), len(found), rule.name, describeCandidates(found))
 	}
-	return nil, "", nil
+	return nil, "", nil, nil
+}
+
+// provenancesOf extracts the provenance of each declaration.
+func provenancesOf[T any](declared []loader.Declared[T]) []loader.Provenance {
+	provs := make([]loader.Provenance, 0, len(declared))
+	for _, d := range declared {
+		provs = append(provs, d.Prov)
+	}
+	return provs
 }
 
 // candidatesByMgmtIP finds the declarations carrying the address the device was
@@ -225,7 +274,7 @@ func candidatesByField(value string, declared []loader.Declared[*models.DeviceCo
 	return found
 }
 
-func matchVM(vm discovery.VM, declared []loader.Declared[*models.VMConfig]) (*loader.Declared[*models.VMConfig], string, error) {
+func matchVM(vm discovery.VM, declared []loader.Declared[*models.VMConfig]) (*loader.Declared[*models.VMConfig], string, []loader.Provenance, error) {
 	byName := make([]loader.Declared[*models.VMConfig], 0, 1)
 	for _, d := range declared {
 		if strings.EqualFold(strings.TrimSpace(d.Object.Name), strings.TrimSpace(vm.Name)) {
@@ -233,7 +282,7 @@ func matchVM(vm discovery.VM, declared []loader.Declared[*models.VMConfig]) (*lo
 		}
 	}
 	if len(byName) == 0 {
-		return nil, "", nil
+		return nil, "", nil, nil
 	}
 
 	// A VM name is only unique within a cluster, so try the pair first.
@@ -246,23 +295,29 @@ func matchVM(vm discovery.VM, declared []loader.Declared[*models.VMConfig]) (*lo
 		}
 		switch len(inCluster) {
 		case 1:
-			return &inCluster[0], "name+cluster", nil
+			return &inCluster[0], "name+cluster", nil, nil
 		case 0:
 			// Fall through: the VM may be declared without a cluster.
 		default:
-			return nil, "", fmt.Errorf(
+			if hand, generated := preferHandManaged(inCluster); len(hand) == 1 {
+				return &hand[0], "name+cluster", provenancesOf(generated), nil
+			}
+			return nil, "", nil, fmt.Errorf(
 				"discovered VM %q matches %d declared VMs of the same name in cluster %q: %s",
 				vm.Name, len(inCluster), vm.Cluster, describeVMCandidates(inCluster))
 		}
 	}
 
 	if len(byName) > 1 {
-		return nil, "", fmt.Errorf(
+		if hand, generated := preferHandManaged(byName); len(hand) == 1 {
+			return &hand[0], "name", provenancesOf(generated), nil
+		}
+		return nil, "", nil, fmt.Errorf(
 			"discovered VM %q matches %d declared VMs by name: %s; "+
 				"declare the cluster on each so they can be told apart",
 			vm.Name, len(byName), describeVMCandidates(byName))
 	}
-	return &byName[0], "name", nil
+	return &byName[0], "name", nil, nil
 }
 
 // isManagementInterface reports whether an interface name reads like an

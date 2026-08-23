@@ -510,3 +510,118 @@ func normalizeNumbers(value interface{}) interface{} {
 		return value
 	}
 }
+
+// removeObjects deletes whole object blocks from a file.
+//
+// It exists for exactly one case: an object a generated file declares that a
+// hand-managed file now declares too. Dropping it is how adopting a discovered
+// object works — you put the block where you want it, and the next run takes
+// it out of the machine's file rather than leaving a duplicate behind.
+//
+// Nothing else removes an object. In particular a machine that stops answering
+// is never deleted from anywhere: that is a fact for a person to interpret.
+func removeObjects(path, content string, remove []loader.Provenance) (*FileChange, error) {
+	if len(remove) == 0 {
+		return nil, nil
+	}
+
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(content), &doc); err != nil {
+		return nil, fmt.Errorf("%s: %w", path, err)
+	}
+	if len(doc.Content) == 0 {
+		return nil, nil
+	}
+	nodes, _, err := loader.ItemNodes(path, doc.Content[0])
+	if err != nil {
+		return nil, err
+	}
+
+	drop := make(map[int]bool, len(remove))
+	for _, prov := range remove {
+		if prov.Index < 0 || prov.Index >= len(nodes) {
+			return nil, fmt.Errorf("%s: entry %d is not where the loader said it was; the file was not written",
+				path, prov.Index+1)
+		}
+		drop[prov.Index] = true
+	}
+	if len(drop) == len(nodes) {
+		// Every object in the file has been adopted, so the file exists only to
+		// declare things somebody else now declares. An empty After means
+		// "delete it": leaving a generated header with nothing under it reads
+		// as a bug, and keeping a duplicate declaration defeats the point.
+		return &FileChange{Path: path, Before: content, After: ""}, nil
+	}
+
+	lines := strings.Split(content, "\n")
+	remove1 := map[int]bool{}
+	for index := range drop {
+		start, end := blockLines(nodes, index, len(lines))
+		for line := start; line <= end; line++ {
+			remove1[line] = true
+		}
+	}
+
+	kept := make([]string, 0, len(lines))
+	for i, line := range lines {
+		if !remove1[i+1] {
+			kept = append(kept, line)
+		}
+	}
+	after := strings.Join(kept, "\n")
+	if after == content {
+		return nil, nil
+	}
+
+	return &FileChange{Path: path, Before: content, After: after}, nil
+}
+
+// blockLines returns the 1-based line range one object occupies: from its own
+// first line to the line before the next object starts, so the blank line and
+// any trailing comment that belong to it go with it.
+func blockLines(nodes []*yaml.Node, index, totalLines int) (start, end int) {
+	start = nodes[index].Line
+	// A sequence entry's "- " sits one column left of the mapping it holds; the
+	// dash is on the mapping's own first line, so nothing extra is needed.
+	if index+1 < len(nodes) {
+		return start, nodes[index+1].Line - 1
+	}
+	return start, totalLines
+}
+
+// verifyRemoval checks that a removal took out exactly the intended objects and
+// left the rest untouched.
+func verifyRemoval(change *FileChange, before []map[string]interface{}, removedIndexes map[int]bool) error {
+	if change.After == "" {
+		// The file goes away entirely. That is only correct when every object in
+		// it was adopted, which is exactly what the caller established.
+		if len(removedIndexes) != len(before) {
+			return fmt.Errorf("%s: would be deleted while it still declares %d object(s) nobody adopted; it was not written",
+				change.Path, len(before)-len(removedIndexes))
+		}
+		return nil
+	}
+
+	after, err := rawObjects(change.After)
+	if err != nil {
+		return fmt.Errorf("%s: the rewritten file does not parse (%w); it was not written", change.Path, err)
+	}
+
+	var want []string
+	for i, object := range before {
+		if !removedIndexes[i] {
+			want = append(want, canonical(object))
+		}
+	}
+	if len(after) != len(want) {
+		return fmt.Errorf("%s: removing %d object(s) left %d instead of %d; it was not written",
+			change.Path, len(removedIndexes), len(after), len(want))
+	}
+	for i := range want {
+		if got := canonical(after[i]); got != want[i] {
+			return fmt.Errorf("%s: removing an object disturbed the ones around it; it was not written\nwant: %s\ngot:  %s",
+				change.Path, want[i], got)
+		}
+	}
+	return nil
+}

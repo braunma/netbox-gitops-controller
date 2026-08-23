@@ -551,7 +551,12 @@ as a change to that line, and merging it is what makes the fact the truth. If
 the scanned serial is wrong, reject the merge request and go fix the machine.
 
 **A virtual machine it has never heard of** becomes complete, appliable YAML
-under `inventory/discovered/virtual/<source>/`, ready to merge as it stands.
+under `inventory/discovered/virtual/<source>/`, ready to merge as it stands. To
+take one over, declare it in a file of your own — the next run keeps yours and
+removes the block from the generated file. That is the only thing ever removed
+from the YAML, and it loses nothing; a machine that simply stops answering is
+left alone, because whether it was decommissioned or merely unplugged is a fact
+for a person to interpret.
 
 **A physical machine it has never heard of** becomes a *parked* skeleton under
 `inventory/discovered/hardware/<source>/`, with the underscore prefix this

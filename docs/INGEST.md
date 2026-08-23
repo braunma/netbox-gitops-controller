@@ -30,7 +30,10 @@ deliberately does not use it, and consumes its JSON instead.
 The corollaries hold everywhere:
 
 - ingest **never deletes** an object from the YAML — a machine that stopped
-  answering is a fact for a human to interpret, not a deletion;
+  answering is a fact for a human to interpret, not a deletion. The single
+  exception loses nothing: a block in a *generated* file is removed once you
+  declare that object in a file of your own (see
+  [Adopting a discovered object](#adopting-a-discovered-object));
 - ingest **never removes a key it did not write**.
 
 ## Two sources, one model
@@ -230,9 +233,29 @@ one declaration is the same error seen from the other side.
 
 Every object the repository declares **anywhere** is matched — including in
 parked files, and including in files a previous run generated. That is what
-keeps one machine from being declared twice. Move a block out of a generated
-file into a hand-managed one and the next run drops it from the generated file
-and writes its facts into the file you moved it to.
+keeps one machine from being declared twice.
+
+### Adopting a discovered object
+
+A generated file is an ordinary inventory file: it is applied to NetBox like
+any other, and the facts of the objects in it are refreshed there in place. To
+take an object over, **declare it in a file of your own** — you do not have to
+edit the generated file at all. The next run sees two declarations of one
+object, keeps yours, and removes the block from the generated file. If that
+empties the file, the file is deleted.
+
+That is the only circumstance in which anything is ever removed from the YAML,
+and it loses nothing: every object it takes out is, by definition, declared
+somewhere else. In particular **an object that stops answering is never
+removed.** A machine missing from a scan may have been decommissioned, or its
+BMC may be unplugged; which of those it is, is a fact for a person to
+interpret, not a deletion to apply.
+
+One combination is refused rather than half-applied: a single file that has
+both new facts to write and an adopted object to remove in the same run. Both
+rewrites are computed from the same original line numbers, so applying them
+together would corrupt the file. The run says so and writes neither; merge what
+it did write and run it again.
 
 ## Volatile metrics and churn
 

@@ -99,6 +99,15 @@ are about to run before applying a sync with pruning enabled.
   what a machine can observe *about itself*: a serial is burned into the
   hardware, while where it stands and what it is for are decisions people make.
 
+  A generated file is an ordinary inventory file, applied like any other. To
+  take an object over you declare it in a file of your own; the next run keeps
+  yours and removes the block from the generated file, deleting that file if it
+  empties. That is the only circumstance in which anything is removed from the
+  YAML and it loses nothing, since every object it takes out is declared
+  elsewhere by definition. An object that stops answering is never removed —
+  whether it was decommissioned or merely unplugged is a fact for a person to
+  interpret.
+
   Objects the repository has never heard of land under
   `inventory/discovered/` — VMs as complete, appliable YAML, physical machines
   as *parked* skeletons using the existing underscore convention. They are

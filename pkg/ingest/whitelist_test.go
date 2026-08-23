@@ -11,6 +11,7 @@ import (
 	"gopkg.in/yaml.v3"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/discovery"
+	"github.com/braunma/netbox-gitops-controller/pkg/models"
 )
 
 // The example dataset ships the custom field definitions a fresh NetBox needs
@@ -128,5 +129,34 @@ func TestCustomFieldPrefixIsConfigurable(t *testing.T) {
 	}
 	if !IsWritableCustomField("hw_cpu_count", DefaultCustomFieldPrefix) {
 		t.Error("a field inside the prefix was reported as not writable")
+	}
+}
+
+// The whitelist is enforced where keys are queued for writing, not only by the
+// fact that today's only producer happens to respect it.
+func TestDeviceEditRefusesAnUnprefixedCustomField(t *testing.T) {
+	// Rendering the facts under one prefix and editing under another is the
+	// closest stand-in for a future producer that ignores the whitelist.
+	decl := declaredDevice("servers.yaml", 1, &models.DeviceConfig{Name: "srv-01"})
+	m := DeviceMatch{
+		Discovered: discovery.Device{Serial: "S1", HW: discovery.HardwareFacts{CPUCount: 2}},
+		Declared:   &decl,
+	}
+	edit, changed := deviceEdit(m, "hw_")
+	if !changed {
+		t.Fatal("setup: the scan should have produced an edit")
+	}
+	for _, kv := range edit.CustomFields {
+		if !IsWritableCustomField(kv.Key, "hw_") {
+			t.Errorf("%s was queued for writing but is outside the whitelist", kv.Key)
+		}
+	}
+
+	// Under a different prefix, none of the hw_ facts may be written.
+	other, _ := deviceEdit(m, "inv_")
+	for _, kv := range other.CustomFields {
+		if !strings.HasPrefix(kv.Key, "inv_") {
+			t.Errorf("%s was queued while the configured prefix is inv_", kv.Key)
+		}
 	}
 }

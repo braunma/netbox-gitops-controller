@@ -70,8 +70,8 @@ devices:
 	if first.Prov.Node == nil || first.Prov.Node.Line != 9 {
 		t.Errorf("node line = %d, want the device's own block (line 9)", nodeLine(first))
 	}
-	if first.Prov.Defaults == nil {
-		t.Error("the file's defaults block was not recorded")
+	if first.Object.RoleSlug != "server" {
+		t.Error("the file's defaults block was not merged into the device")
 	}
 	if first.Prov.Index != 0 || inv.Devices[1].Prov.Index != 1 {
 		t.Error("device indexes do not follow file order")

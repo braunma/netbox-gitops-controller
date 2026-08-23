@@ -51,10 +51,6 @@ type Provenance struct {
 	// Node is the object's own mapping node. Editing through it preserves the
 	// rest of the document byte for byte.
 	Node *yaml.Node
-	// Defaults is the file-level `defaults:` mapping in the grouped form, or
-	// nil. A key an object inherits from it is declared in the file but not on
-	// the object, which matters when deciding where a written key belongs.
-	Defaults *yaml.Node
 	// Index is the object's zero-based position among the file's objects, for
 	// error messages.
 	Index int
@@ -204,12 +200,11 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 		declared = append(declared, Declared[T]{
 			Object: object,
 			Prov: Provenance{
-				File:     path,
-				Doc:      &doc,
-				Node:     node,
-				Defaults: defaultsNode,
-				Index:    i,
-				Parked:   parked,
+				File:   path,
+				Doc:    &doc,
+				Node:   node,
+				Index:  i,
+				Parked: parked,
 			},
 		})
 	}

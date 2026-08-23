@@ -14,7 +14,7 @@
 #   2. a scanned machine the repository does not declare lands as a parked
 #      skeleton, and an unfinished one fails yamlcheck loudly when unparked;
 #   3. a Proxmox guest absent from the YAML appears as generated, appliable
-#      YAML;
+#      YAML, and declaring it yourself takes it back out again;
 #   4. re-running an unchanged scan changes nothing at all.
 #
 #   E2E_KEEP   set to 1 to leave the work directory in place for inspection
@@ -250,6 +250,52 @@ if cmp -s "${GENERATED}" "${WORK}/generated.first"; then ok "the generated file 
 kill "${PVE_PID}" 2>/dev/null
 trap cleanup EXIT
 rm "${DATA}/collectors.yaml"
+
+echo
+echo "── 3b. Adopting a discovered VM removes it from the file ────"
+mkdir -p "${DATA}/inventory/virtual/prod"
+cat > "${DATA}/inventory/virtual/prod/cache-01.yaml" <<'YAML'
+# Adopted from the generated file by declaring it here. The generated file is
+# deliberately left untouched: the next run is what removes the block from it.
+- name: "cache-01"
+  cluster: "berlin-prod-cluster"
+  role_slug: "vm"
+  vcpus: 2
+YAML
+python3 "${WORK}/fake-pve.py" "${PVE_PORT}" & PVE_PID=$!
+trap 'kill "${PVE_PID}" 2>/dev/null; cleanup' EXIT
+for _ in $(seq 1 50); do
+  curl -sS --noproxy '*' "http://127.0.0.1:${PVE_PORT}/api2/json/version" >/dev/null 2>&1 && break
+  sleep 0.1
+done
+cat > "${DATA}/collectors.yaml" <<YAML
+sources:
+  - name: pve-prod
+    type: proxmox
+    url: http://127.0.0.1:${PVE_PORT}
+    token_env: PROXMOX_TOKEN
+    cluster: berlin-prod-cluster
+YAML
+PROXMOX_TOKEN="root@pam!e2e=unused" NO_PROXY='*' no_proxy='*' \
+  "${BIN}" collect --data-dir "${DATA}" --detailed-exitcode > "${WORK}/adopt.log" 2>&1
+[ $? -eq 2 ] && ok "the adoption is reported as a change" || fail "the adoption is reported as a change" "see ${WORK}/adopt.log"
+contains "the summary names it an adoption" "${WORK}/adopt.log" "Adopted:"
+# cache-01 was the only guest in the generated file, so the file goes away.
+if [ -f "${GENERATED}" ]; then
+  absent "the adopted guest left the generated file" "${GENERATED}" 'name: "cache-01"'
+else
+  ok "the emptied generated file was removed"
+fi
+contains "the operator's own declaration survived" "${DATA}/inventory/virtual/prod/cache-01.yaml" 'role_slug: "vm"'
+go run ./cmd/yamlcheck "${DATA}" > "${WORK}/yamlcheck-adopted.log" 2>&1
+if [ $? -eq 0 ]; then ok "yamlcheck still passes after the adoption"; else fail "yamlcheck still passes after the adoption" "see ${WORK}/yamlcheck-adopted.log"; fi
+# And it stays adopted.
+PROXMOX_TOKEN="root@pam!e2e=unused" NO_PROXY='*' no_proxy='*' \
+  "${BIN}" collect --data-dir "${DATA}" --detailed-exitcode > "${WORK}/adopt2.log" 2>&1
+[ $? -eq 0 ] && ok "a further run has nothing to do" || fail "a further run has nothing to do" "expected exit 0"
+kill "${PVE_PID}" 2>/dev/null
+trap cleanup EXIT
+rm -f "${DATA}/collectors.yaml"
 
 echo
 echo "── 4. Re-running an unchanged scan changes nothing ──────────"

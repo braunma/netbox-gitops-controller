@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strconv"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -169,19 +168,4 @@ func (c *Config) SourceNames() []string {
 		names = append(names, src.Name)
 	}
 	return names
-}
-
-// EnvIsTrue reports whether an environment variable is set to something that
-// means yes, matching how the NetBox client reads IGNORE_SSL_ERRORS: what
-// strconv.ParseBool accepts, plus "yes" and "on".
-func EnvIsTrue(name string) bool {
-	value := strings.TrimSpace(strings.ToLower(os.Getenv(name)))
-	switch value {
-	case "":
-		return false
-	case "yes", "on":
-		return true
-	}
-	parsed, err := strconv.ParseBool(value)
-	return err == nil && parsed
 }
