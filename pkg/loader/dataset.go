@@ -27,6 +27,10 @@ type Dataset struct {
 	Clusters    []*models.Cluster
 	Devices     []*models.DeviceConfig
 	VMs         []*models.VMConfig
+	// CustomFields are the custom field definitions this repository declares.
+	// A device may set values into them, so a checker needs the set of names
+	// that exist to tell a real field from a typo.
+	CustomFields []*models.CustomField
 }
 
 // DatasetOptions carries the paths that are resolved outside the loader.
@@ -59,7 +63,7 @@ func (dl *DataLoader) LoadDataset(opts DatasetOptions) (Dataset, error) {
 	load(func() (e error) { ds.Racks, e = dl.LoadRacks("definitions/racks"); return })
 	load(func() (e error) { ds.Roles, e = dl.LoadRoles("definitions/roles"); return })
 	load(func() (e error) { _, e = dl.LoadTags("definitions/extras"); return })
-	load(func() (e error) { _, e = dl.LoadCustomFields("definitions/custom_fields"); return })
+	load(func() (e error) { ds.CustomFields, e = dl.LoadCustomFields("definitions/custom_fields"); return })
 	load(func() (e error) { ds.VRFs, e = dl.LoadVRFs("definitions/vrfs"); return })
 	load(func() (e error) { _, e = dl.LoadVLANGroups("definitions/vlan_groups"); return })
 	load(func() (e error) { ds.VLANs, e = dl.LoadVLANs("definitions/vlans"); return })

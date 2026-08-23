@@ -114,6 +114,15 @@ The definitions a fresh NetBox needs for these fields ship in
 private `definitions/custom_fields/` — the reconciler creates them in the
 foundation phase, before anything sets a value into one.
 
+If you forget, `yamlcheck` says so before anything is applied:
+
+```
+✗ device srv-01: custom field "hw_cpu_count" is not declared in this
+  repository (unknown-custom-field)
+```
+
+which is a better place to find out than a `400` partway through an apply.
+
 ## Facts are written into the file you wrote
 
 For an object this repository already declares, the facts are written **into

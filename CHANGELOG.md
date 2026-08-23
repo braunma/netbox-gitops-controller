@@ -136,6 +136,20 @@ are about to run before applying a sync with pruning enabled.
   [`.gitlab-ci.ingest.example.yml`](.gitlab-ci.ingest.example.yml). Devices
   gained a `custom_fields:` key so the facts reach NetBox on the next sync.
 
+- **`yamlcheck`: a device's custom fields are checked against the definitions.**
+  Facts are written into `custom_fields:` by a machine now, which created a new
+  way to be wrong: a repository that ingests `hw_*` facts without copying the
+  definitions into `definitions/custom_fields/` produced YAML that `yamlcheck`
+  passed and the apply failed on — with a `400` partway through, after earlier
+  objects were already written.
+
+  `unknown-custom-field` reports a field nothing declares, and
+  `custom-field-wrong-type` one declared for another content type (setting
+  `vmid` on a device, say). Both follow the conventions of the reference checks
+  beside them: silent when the repository declares no custom fields at all,
+  since such a repository manages only part of NetBox, and demoted to a warning
+  by `--allow-undeclared-refs`. Neither needs a NetBox.
+
 - **`netbox-gitops validate`: check the YAML against the NetBox that will
   receive it, without writing.** The typed models carry a hardcoded copy of
   NetBox's choice sets, which can only ever approximate a particular instance —

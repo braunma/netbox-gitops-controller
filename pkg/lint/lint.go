@@ -11,6 +11,7 @@ package lint
 import (
 	"fmt"
 	"net/netip"
+	"slices"
 	"sort"
 	"strings"
 
@@ -83,7 +84,10 @@ type checker struct {
 	platforms   map[string]bool
 	tenants     map[string]bool
 	clusters    map[string]bool
-	devices     map[string]*models.DeviceConfig
+	// customFields maps a declared custom field name to the object types it
+	// applies to, so a device setting one can be checked for both.
+	customFields map[string][]string
+	devices      map[string]*models.DeviceConfig
 	// vlansBySite maps a site slug to the VLAN names declared at that site;
 	// NetBox resolves an interface's VLAN within the device's site, so the same
 	// name at another site is not a match.
@@ -102,6 +106,7 @@ func Check(ds Dataset, opts Options) []Finding {
 	c.checkDefinitions()
 	c.checkDuplicateDeviceNames()
 	c.checkDeviceReferences()
+	c.checkDeviceCustomFields()
 	c.checkInterfaces()
 	c.checkModules()
 	c.checkRackPositions()
@@ -156,6 +161,10 @@ func (c *checker) index() {
 	c.clusters = make(map[string]bool, len(c.ds.Clusters))
 	for _, cl := range c.ds.Clusters {
 		c.clusters[cl.Name] = true
+	}
+	c.customFields = make(map[string][]string, len(c.ds.CustomFields))
+	for _, cf := range c.ds.CustomFields {
+		c.customFields[cf.Name] = cf.ObjectTypes
 	}
 	c.devices = make(map[string]*models.DeviceConfig, len(c.ds.Devices))
 	for _, d := range c.ds.Devices {
@@ -287,6 +296,49 @@ func (c *checker) checkDeviceReferences() {
 }
 
 // checkDeviceBay validates a child device's installation into its parent.
+// checkDeviceCustomFields reports a device setting a custom field this
+// repository does not declare, or declares for a different content type.
+//
+// It matters more since facts are ingested than it did before: `hw_cpu_count`
+// is written into a device's YAML by a machine, and if the definitions were
+// never copied into definitions/custom_fields/ the mistake surfaces as a 400
+// partway through an apply, after earlier objects are already written. This is
+// the same class of error the unknown-site and unknown-role checks catch, and
+// it costs no NetBox to find.
+func (c *checker) checkDeviceCustomFields() {
+	const deviceType = "dcim.device"
+
+	for _, d := range c.ds.Devices {
+		if len(d.CustomFields) == 0 {
+			continue
+		}
+		ref := deviceRef(d.Name)
+
+		// Sorted, so a device with several unknown fields reports them in a
+		// stable order rather than the map's.
+		names := make([]string, 0, len(d.CustomFields))
+		for name := range d.CustomFields {
+			names = append(names, name)
+		}
+		sort.Strings(names)
+
+		for _, name := range names {
+			objectTypes, declared := c.customFields[name]
+			if !declared {
+				c.reference(ref, "unknown-custom-field", "custom field", name, len(c.ds.CustomFields))
+				continue
+			}
+			// Declared, but for something else: NetBox rejects the value rather
+			// than storing it somewhere unexpected.
+			if len(objectTypes) > 0 && !slices.Contains(objectTypes, deviceType) {
+				c.add(Error, "custom-field-wrong-type", ref,
+					"custom field %q applies to %s, not to %s", name,
+					strings.Join(objectTypes, ", "), deviceType)
+			}
+		}
+	}
+}
+
 func (c *checker) checkDeviceBay(d *models.DeviceConfig) {
 	if d.ParentDevice == "" {
 		return
