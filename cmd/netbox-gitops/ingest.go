@@ -149,6 +149,12 @@ func runCollect(cmd *cobra.Command, args []string) error {
 	// Each source is planned and applied on its own, so one unreachable
 	// source's failure does not discard what the others found. The exit code
 	// still reports the failure.
+	//
+	// One tracker spans every snapshot of the run: when a later source writes
+	// a different value to a key an earlier source already wrote, the later
+	// one wins — configuration order is the precedence — but the override is
+	// warned about rather than silent.
+	tracker := ingest.NewConflictTracker()
 	var runErrs []error
 	changed := false
 	for _, src := range sources {
@@ -167,7 +173,7 @@ func runCollect(cmd *cobra.Command, args []string) error {
 			continue
 		}
 
-		didChange, err := processSnapshot(snap, logger)
+		didChange, err := processSnapshot(snap, tracker, logger)
 		if err != nil {
 			logger.Error("Failed to write what "+src.Name+" reported", err)
 			runErrs = append(runErrs, err)
@@ -222,7 +228,8 @@ func runIngest(cmd *cobra.Command, args []string) error {
 	}
 	logger.Info("Read %d server(s) from %s", len(snap.Devices), describeInput())
 
-	changed, err := processSnapshot(snap, logger)
+	// A single snapshot has no other source to conflict with, so no tracker.
+	changed, err := processSnapshot(snap, nil, logger)
 	if err != nil {
 		logger.Error("Failed to write what the scan reported", err)
 		return err
@@ -271,8 +278,9 @@ func prepareIngestRun(cmd *cobra.Command) (*utils.Logger, error) {
 }
 
 // processSnapshot resolves one snapshot against the declared inventory, prints
-// what it would do and, unless this is a dry run, writes it.
-func processSnapshot(snap *discovery.Snapshot, logger *utils.Logger) (bool, error) {
+// what it would do and, unless this is a dry run, writes it. A non-nil tracker
+// carries the cross-source bookkeeping from one snapshot of a run to the next.
+func processSnapshot(snap *discovery.Snapshot, tracker *ingest.ConflictTracker, logger *utils.Logger) (bool, error) {
 	dl := loader.NewDataLoader(dataDir, logger)
 	patterns, err := resolveIgnorePatterns()
 	if err != nil {
@@ -291,9 +299,15 @@ func processSnapshot(snap *discovery.Snapshot, logger *utils.Logger) (bool, erro
 	plan, err := ingest.BuildPlan(snap, inv, ingest.Options{
 		DataDir:           dataDir,
 		CustomFieldPrefix: customFieldPrefix,
+		Conflicts:         tracker,
 	})
 	if err != nil {
 		return false, err
+	}
+
+	for _, c := range plan.Conflicts {
+		logger.Warning("CROSS-SOURCE CONFLICT: %s (%s): %s wrote %s=%q, %s overrides it with %q — the later source wins because configuration order is precedence",
+			c.Object, c.File, c.EarlierSource, c.Key, c.EarlierValue, c.LaterSource, c.LaterValue)
 	}
 
 	if ingestDryRun {
@@ -330,6 +344,9 @@ func reportIngestPlan(plan *ingest.Plan, logger *utils.Logger) {
 	}
 	logger.Info("Facts: %d updated, %d new VMs, %d parked devices, %d unchanged",
 		s.FactsUpdated, s.NewVMs, s.ParkedDevices, s.Unchanged)
+	if s.CrossSourceConflicts > 0 {
+		logger.Warning("%d cross-source conflict(s): an earlier source of this run wrote different values; see the warnings above", s.CrossSourceConflicts)
+	}
 	if s.Adopted > 0 {
 		logger.Info("Adopted: %d object(s) removed from a generated file because you now declare them yourself", s.Adopted)
 	}
@@ -353,12 +370,13 @@ func reportIngestPlan(plan *ingest.Plan, logger *utils.Logger) {
 // writeIngestJSON emits the change list for a pipeline to act on.
 func writeIngestJSON(w io.Writer, snap *discovery.Snapshot, plan *ingest.Plan, dryRun bool) error {
 	out := struct {
-		DryRun  bool            `json:"dry_run"`
-		Source  string          `json:"source"`
-		Summary ingest.Summary  `json:"summary"`
-		Changes []ingest.Change `json:"changes"`
-		Parked  []string        `json:"parked,omitempty"`
-	}{dryRun, snap.Source, plan.Summary, plan.Changes, plan.Parked}
+		DryRun    bool              `json:"dry_run"`
+		Source    string            `json:"source"`
+		Summary   ingest.Summary    `json:"summary"`
+		Changes   []ingest.Change   `json:"changes"`
+		Parked    []string          `json:"parked,omitempty"`
+		Conflicts []ingest.Conflict `json:"conflicts,omitempty"`
+	}{dryRun, snap.Source, plan.Summary, plan.Changes, plan.Parked, plan.Conflicts}
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

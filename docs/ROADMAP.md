@@ -29,6 +29,12 @@ reads one external document format (the sibling iDRAC importer's JSON). Both
 funnel into one normalized snapshot, so a third source is one adapter and no
 change to the pipeline — see [INGEST.md](INGEST.md).
 
+**Wanted:** interface facts and a DNS source. NIC data is collected into
+`discovery.NIC` today but never written to a declared object; writing observed
+MACs onto declared interfaces, and a DNS source setting `dns_name` on declared
+IP addresses, are the designated first uses of the "new fact kind" recipe in
+[INGEST.md](INGEST.md#adding-a-source). Effort: M.
+
 **Wanted:** vCenter and a plain LLDP/SNMP switch-neighbour collector. The
 second is the interesting one: it would discover *cabling*, which is currently
 outside the whitelist entirely because no scan has been able to observe it.

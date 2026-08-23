@@ -16,6 +16,9 @@ Thumbs.db
 # Logs
 *.log
 
+# Redis dumps (a local Redis dropping its snapshot into the working directory)
+*.rdb
+
 # Build/test caches
 .cache/
 # CI sets GOPATH to $CI_PROJECT_DIR/.go so the module cache survives between

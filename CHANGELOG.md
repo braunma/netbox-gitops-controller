@@ -48,7 +48,21 @@ are about to run before applying a sync with pruning enabled.
   every `TF_VAR_*` are no longer read by anything; remove them from your
   project settings.
 
+- A stray `dump.rdb` that had been committed at the repository root. `*.rdb`
+  is ignored now, so a local Redis cannot drop its snapshot back into the
+  tree.
+
 ### Added
+
+- **`collect`: a cross-source write conflict warns instead of winning
+  silently.** Sources are planned and applied in configuration order, so when
+  two sources of one run wrote different values to the same key of the same
+  declared object, the later one quietly won. It still wins — configuration
+  order is the precedence, and identical values from two sources warrant
+  nothing — but the run now says so: a warning names the object, the key, both
+  sources and both values; the run summary counts the conflicts; and
+  `--output json` lists them in the change list. Across runs the most recent
+  scan wins as before, and the merge request diff is the record.
 
 - **`netbox-gitops collect` and `netbox-gitops ingest`: document what is
   actually out there.** The tool's one direction was outward — you write YAML,
