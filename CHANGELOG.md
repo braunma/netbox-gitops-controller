@@ -12,6 +12,42 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Removed
+
+- **BREAKING: the Proxmox provisioning path is gone.** `cmd/tfgen`, `pkg/tfgen`,
+  the `terraform/` module and the `tf_*` CI jobs are removed, and with them the
+  `provision:` key on a virtual machine. The controller no longer creates
+  anything on a hypervisor; it documents infrastructure in NetBox, and nothing
+  else.
+
+  The direction is now reversed. Instead of YAML being rendered outward into
+  Terraform variables that build VMs, facts discovered *about* running
+  infrastructure are written inward into this repository's YAML, reviewed as a
+  merge request, and become NetBox truth through the same reconcile pipeline as
+  every hand-written line. See [`docs/INGEST.md`](docs/INGEST.md).
+
+  **What you have to do.** Delete `provision:` from every VM file. A file that
+  still carries it fails validation rather than being quietly ignored:
+
+  ```
+  ✗ virtual machine web-01: provision: the Proxmox provisioning path
+    (cmd/tfgen, terraform/) was removed and this key no longer does anything —
+    delete it; see CHANGELOG.md
+  ```
+
+  A key that no longer does anything is worse than an error, because the author
+  goes on believing something is still being built somewhere.
+
+  `vmid`, `vm_template_id` and `node` are kept and unchanged: they describe
+  where a VM lives on its hypervisor, the first two are stored in NetBox as
+  custom fields, and `vmid` is one of the keys a collector may now write.
+  The per-environment layout under `inventory/virtual/<env>/` is kept as well —
+  it is a directory convention, not a Terraform state boundary.
+
+  The CI variables `ENABLE_PROXMOX`, `TF_ALLOW_DESTROY`, `OPENTOFU_IMAGE` and
+  every `TF_VAR_*` are no longer read by anything; remove them from your
+  project settings.
+
 ### Added
 
 - **`netbox-gitops validate`: check the YAML against the NetBox that will

@@ -444,19 +444,12 @@ func (v *VMConfig) Validate() error {
 		validateLength("name", v.Name, MaxDeviceNameLength),
 	)
 
-	// When a VM opts into Proxmox provisioning, the facts Terraform needs must
-	// be present up front so the error surfaces in --dry-run/yamlcheck rather
-	// than mid-apply. Documentation-only VMs are free to omit all of these.
-	if v.Provision {
-		if v.VMID <= 0 {
-			errs = append(errs, errors.New("vmid is required when provision is true (the Proxmox VMID to create)"))
-		}
-		if v.VMTemplateID <= 0 {
-			errs = append(errs, errors.New("vm_template_id is required when provision is true (the template VMID to clone, e.g. 800)"))
-		}
-		if v.Node == "" {
-			errs = append(errs, errors.New("node is required when provision is true (the target Proxmox node)"))
-		}
+	// The Proxmox provisioning path was removed, so `provision:` no longer does
+	// anything. Silently ignoring it would leave the author believing a VM is
+	// still being built somewhere, so the key is rejected outright.
+	if v.Provision != nil {
+		errs = append(errs, errors.New(
+			"provision: the Proxmox provisioning path (cmd/tfgen, terraform/) was removed and this key no longer does anything — delete it; see CHANGELOG.md"))
 	}
 
 	for i, iface := range v.Interfaces {

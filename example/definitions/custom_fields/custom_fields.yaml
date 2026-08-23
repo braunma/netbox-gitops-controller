@@ -14,8 +14,8 @@
   object_types:
     - "virtualization.virtualmachine"
 
-# The clone template each provisioned VM is cloned from. Documentation only:
-# Terraform reads it from the YAML, this just surfaces it in NetBox too.
+# The template a VM was cloned from. Documentation only: nothing in this
+# controller acts on it, it just surfaces the fact in NetBox too.
 - name: "vm_template_id"
   type: "integer"
   label: "Proxmox Template VMID"

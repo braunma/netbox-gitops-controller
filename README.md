@@ -68,7 +68,6 @@ make check
   * **Renames, not duplicates (`rename_from`):** Correcting a typo in a name, slug or other identifying field renames the existing object instead of creating a second one and orphaning the first. Supported on every managed object type. See the Renaming section below.
   * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
   * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
-  * **Proxmox provisioning (optional):** The *same* VM YAML can also provision the VMs in Proxmox via Terraform. VMs live in per-environment folders (`inventory/virtual/{prod,stage,playground}/`, one file per VM); `cmd/tfgen` renders each env to its own Terraform vars, and the `terraform/` module (`bpg/proxmox`) builds them into a separate state per environment — a second, independent consumer of one source of truth. Set `provision: true` on a VM to build it; otherwise it is documented in NetBox only. See [`terraform/README.md`](terraform/README.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -101,19 +100,16 @@ make check
 ├── docs/                # Reference documentation
 │   ├── CONFIGURATION.md # Every flag, variable and CI setting
 │   └── ROADMAP.md       # What is not built yet
-├── terraform/           # Optional Proxmox provisioning (bpg/proxmox)
 ├── pkg/                 # Go Implementation (Core Logic)
 │   ├── client/          # NetBox API Client
 │   ├── lint/            # Cross-object checks (references, collisions)
 │   ├── loader/          # YAML Data Loader
 │   ├── models/          # Data Models
 │   ├── reconciler/      # Synchronization Logic
-│   ├── tfgen/           # VM YAML → Terraform vars (Proxmox)
 │   ├── validate/        # Live checks against a NetBox instance
 │   └── utils/           # Utilities
 └── cmd/                 # Command-Line Interfaces
     ├── netbox-gitops/   # Main Entry Point (NetBox sync)
-    ├── tfgen/           # Generate Terraform vars from VM YAML
     └── yamlcheck/       # YAML syntax, model validation, cross-object lint
 ```
 
@@ -722,7 +718,7 @@ credentials.
 > `yes`, `on`) turns verification off for a self-signed instance and logs a
 > warning on every run.
 
-Every setting — the environment variables, the flags of all three commands, the
+Every setting — the environment variables, the flags of every command, the
 GitLab CI/CD variables and the end-to-end knobs — is listed in
 [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md).
 
@@ -736,7 +732,7 @@ Shows exactly what changes *would* be applied without actually touching NetBox. 
 ./netbox-gitops --dry-run
 ```
 
-Every run ends with a terraform-style plan summary:
+Every run ends with a plan summary:
 
 ```text
 Plan: 3 to create, 1 to update, 0 to delete, 41 unchanged
@@ -764,7 +760,7 @@ becomes a drift monitor with zero extra infrastructure:
 
 `--output json` prints the planned (or applied) changes as JSON on stdout;
 all logs move to stderr so stdout stays clean for parsing. Useful for posting
-a `terraform plan`-style comment on a merge request:
+a plan comment on a merge request:
 
 ```bash
 ./netbox-gitops --dry-run --output json 2>/dev/null > plan.json
@@ -863,7 +859,7 @@ few objects of each supported type:
   2 module types, 2 VM custom fields (`vmid`, `vm_template_id`)
 - 8 hardware devices — including a blade chassis with two child blades, a GPU
   server, and a patch panel (front/rear ports)
-- 2 virtual machines (one provisioned in Proxmox, one NetBox documentation-only)
+- 2 virtual machines (one clustered, one site-only)
 
 See **[EXAMPLES.md](./EXAMPLES.md)** for the full breakdown, file layout, and the
 key concepts each file demonstrates.

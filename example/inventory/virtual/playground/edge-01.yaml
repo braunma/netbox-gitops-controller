@@ -1,7 +1,7 @@
-# A documentation-only, site-only VM: tracked in NetBox, never touched by
-# Terraform (no provision flag). It may still carry a vmid for reference. Lives
-# in the playground environment folder; it is still documented in NetBox because
-# the controller scans inventory/virtual/ recursively across all environments.
+# A site-only VM: it belongs to no cluster, so it carries site_slug instead.
+# Lives in the playground environment folder; it is documented in NetBox like
+# every other VM, because the controller scans inventory/virtual/ recursively
+# across all environments.
 
 - name: "edge-01"
   vmid: 201

@@ -31,7 +31,7 @@ few objects of each supported type:
 | Module types      | 2     | 10G SFP+ module, GPU A100                                       |
 | Device types      | 6     | server, switch, GPU server, blade chassis, blade, patch panel  |
 | Hardware devices  | 8     | 2 servers, switch, GPU server, chassis + 2 blades, patch panel |
-| Virtual machines  | 2     | `web-01` (provisioned in Proxmox), `edge-01` (doc-only)        |
+| Virtual machines  | 2     | `web-01` (clustered), `edge-01` (site-only)                     |
 | Virtualization    | —     | cluster type Proxmox VE, group Production, cluster `berlin-prod-cluster` |
 
 ## File layout
@@ -64,9 +64,9 @@ example/
     │   ├── active/              # servers.yaml, switches.yaml, gpu-servers.yaml, chassis.yaml
     │   └── passive/             # patchpanels.yaml
     └── virtual/                 # per-env folders, one YAML per VM
-        ├── prod/                # web-01.yaml      (provisioned → state proxmox-prod)
+        ├── prod/                # web-01.yaml      (clustered VM)
         ├── stage/               # (empty here)
-        └── playground/          # edge-01.yaml     (NetBox documentation only)
+        └── playground/          # edge-01.yaml     (site-only VM)
 ```
 
 ## Key concepts demonstrated
@@ -156,20 +156,18 @@ or directly on a site. VM interfaces reuse the device interface semantics
 in the foundation phase and referenced here by slug.
 
 VMs are organised one file per VM under a per-environment folder
-(`inventory/virtual/{prod,stage,playground}/`); each environment is provisioned
-into its own OpenTofu state, while NetBox documents them all (the controller
-scans `inventory/virtual/` recursively).
+(`inventory/virtual/{prod,stage,playground}/`); the controller scans
+`inventory/virtual/` recursively, so every environment is documented in NetBox.
 
 ```yaml
 # inventory/virtual/prod/web-01.yaml
 - name: "web-01"
-  provision: true                  # also create this VM in Proxmox (optional)
-  vmid: 101                        # Proxmox VMID, also stored in NetBox
-  vm_template_id: 800              # template VMID to clone (provisioning only)
-  node: "pve-01"                   # target Proxmox node (provisioning only)
+  vmid: 101                        # Proxmox VMID, stored in NetBox as a custom field
+  vm_template_id: 800              # template VMID this VM was cloned from
+  node: "pve-01"                   # hypervisor node it runs on
   cluster: "berlin-prod-cluster"   # clustered VM; site inherited from cluster
   role_slug: "vm"                  # role must have vm_role: true in NetBox
-  platform: "ubuntu-22-04"         # NetBox documentation (not used to clone)
+  platform: "ubuntu-22-04"
   vcpus: 4
   memory: 8192                     # MB
   interfaces:
@@ -181,11 +179,11 @@ scans `inventory/virtual/` recursively).
       address_role: "primary"      # promotes to the VM's primary_ip4
 ```
 
-The `provision`/`vmid`/`vm_template_id`/`node` fields are only needed if you also
-provision the VMs in Proxmox from the same YAML — NetBox itself ignores them
-(except the `vmid`/`vm_template_id` it stores as custom fields). Without
-`provision: true` a VM is documentation-only. See
-[`terraform/README.md`](terraform/README.md) for that optional pipeline.
+The `vmid`, `vm_template_id` and `node` fields describe where the VM lives on
+its hypervisor. NetBox has no native slot for the first two, so they are stored
+as custom fields; `node` is documentation only. `vmid`, `vcpus`, `memory`,
+`disk` and `status` are the keys a Proxmox collector run may rewrite from
+observed facts — see [`docs/INGEST.md`](docs/INGEST.md).
 
 ### Auto-wiring
 The controller wires cables automatically from a `link:` block on any

@@ -3,9 +3,8 @@
 Two pipelines, with different jobs:
 
 - **GitLab (`.gitlab-ci.yml`)** — the pipeline of record. Tests, builds,
-  plans and applies against NetBox, and optionally provisions the VMs in
-  Proxmox via OpenTofu. Only this one holds credentials, so only this one
-  writes anything.
+  plans and applies against NetBox. Only this one holds credentials, so only
+  this one writes anything.
 - **GitHub Actions (`.github/workflows/ci.yml`)** — the review-time checks,
   for pull requests opened on GitHub: formatting, `go vet`, licence headers,
   the unit tests with the same coverage gate, `yamlcheck` (syntax, models and
@@ -29,7 +28,9 @@ NetBox only through the GitLab `apply` stage.
 | plan | `go_plan` | MRs only | auto | `--dry-run` → `plan-output.txt` artifact for review. |
 | apply | `go_apply` | default branch | **manual** | `./netbox-gitops` (production deploy). |
 
-Proxmox jobs (`tf_*`) are described below.
+The optional, scheduled fact-ingestion jobs are described in
+[`docs/INGEST.md`](docs/INGEST.md); they open a merge request rather than
+writing to NetBox.
 
 ## Variables
 
@@ -44,22 +45,17 @@ Everything the pipeline reads, and what setting it does. Set them in
 | `RUN_TESTS` | `true` | Exactly `"false"` skips `go_test`; any other value runs it. |
 | `RUN_QUALITY_CHECKS` | `true` | Exactly `"false"` skips `go_lint` and `yaml_check`. |
 | `RUN_E2E` | `false` | Exactly `"true"` enables `e2e`. Needs a Docker-executor runner. |
-| `ENABLE_PROXMOX` | `false` | Exactly `"true"` enables `tf_validate`, `tf_plan`, `tf_apply`. `tf_generate` always runs. |
 | `COVERAGE_THRESHOLD` | `65` | Minimum total statement coverage (%) for `go_test` over `./pkg/...`. Coverage there is ~79% (August 2026). A non-numeric or empty value fails the job rather than disabling the gate. |
-| `TF_ALLOW_DESTROY` | unset | Comma-separated environments (no spaces) whose `tf_apply` may destroy or replace VMs, e.g. `stage,playground`. No wildcard. Unset blocks every destroy. |
 | `GITLAB_RUNNER_TAG` | `docker` | Runner tag every job requests. |
-| `GOLANG_IMAGE` | `golang:1.24` | Toolchain image for the `go_*` jobs and `tf_generate`. |
-| `OPENTOFU_IMAGE` | `ghcr.io/opentofu/opentofu:1.9` | Image for the `tf_*` OpenTofu jobs. |
+| `GOLANG_IMAGE` | `golang:1.24` | Toolchain image for the `go_*` jobs. |
 | `NETBOX_IMAGE` | `netboxcommunity/netbox:v4.6-3.3.0` | The `e2e` job's throwaway NetBox service. |
 | `POSTGRES_IMAGE` | `postgres:16-alpine` | Its database service. |
 | `REDIS_IMAGE` | `valkey/valkey:8-alpine` | Its cache service. |
-| `TF_VAR_proxmox_endpoint` | — | Required when `ENABLE_PROXMOX="true"`. |
-| `TF_VAR_proxmox_api_token` | — | Required when `ENABLE_PROXMOX="true"`. Mask it. |
 
-The `RUN_*` and `ENABLE_*` comparisons are literal string matches: `"False"`
-does not skip anything and `"True"` does not enable anything. The two opt-outs
-(`RUN_TESTS`, `RUN_QUALITY_CHECKS`) need exactly `"false"` to skip; the two
-opt-ins (`RUN_E2E`, `ENABLE_PROXMOX`) need exactly `"true"` to run.
+The `RUN_*` comparisons are literal string matches: `"False"` does not skip
+anything and `"True"` does not enable anything. The two opt-outs (`RUN_TESTS`,
+`RUN_QUALITY_CHECKS`) need exactly `"false"` to skip; the opt-in (`RUN_E2E`)
+needs exactly `"true"` to run.
 
 > **Precedence.** A variable set in the UI — project, group or instance level —
 > outranks anything written in `.gitlab-ci.yml`, including a job's own
@@ -78,38 +74,6 @@ The end-to-end scripts additionally read `E2E_SEEDS`, `E2E_KEEP` and
 Build config (already set in `.gitlab-ci.yml`): `CGO_ENABLED=1` (required for the
 `-race` detector), `GOPATH`/`GOCACHE` under `$CI_PROJECT_DIR`, module + build
 caches via the `cache:` block.
-
-## Proxmox provisioning (optional)
-
-The same VM inventory can also be provisioned in Proxmox via OpenTofu (the
-`tofu` CLI; see [`terraform/README.md`](terraform/README.md)). These jobs run alongside the
-`go_*` jobs and are **opt-in** — they only execute when `ENABLE_PROXMOX="true"`.
-
-Each environment (`prod`, `stage`, `playground`) has its own VM folder
-(`inventory/virtual/<env>/`) and its own OpenTofu state, and is generated,
-planned and applied independently. The environment list lives in exactly one
-place — the `.proxmox_envs` YAML anchor in `.gitlab-ci.yml` — which every job's
-`parallel:matrix` references, so there is no list to keep in sync.
-
-| Job | Stage | Runs | Purpose |
-|-----|-------|------|---------|
-| `tf_generate` | validate | always (MR + branches) | One matrix job per env: renders that env's VM YAML to `terraform/generated.<env>.tfvars.json` via `cmd/tfgen`; pure Go, so it guards against tfgen regressions even when Proxmox is disabled. A mistyped env fails the job (tfgen errors on a missing folder) rather than emitting an empty, destroy-everything tfvars file. |
-| `tf_validate` | validate | `ENABLE_PROXMOX=="true"` | `tofu fmt -check -recursive` + `tofu validate` (env-agnostic, no backend). |
-| `tf_plan` | plan | `ENABLE_PROXMOX=="true"`, MRs **and** default branch | One plan per env against its own state; saves the binary `tfplan.<env>` (consumed by `tf_apply`) + a human-readable `tf-plan-<env>.txt`. |
-| `tf_apply` | apply | `ENABLE_PROXMOX=="true"`, default branch (manual) | One manual gate per env. Applies the **saved `tfplan.<env>` from `tf_plan`** — so it applies exactly the reviewed change set, never a fresh re-plan. A plan that has gone stale (state drifted) is rejected and the job fails safely. **Destroy-safe:** if the plan would destroy/replace any VM the job refuses unless re-run with `TF_ALLOW_DESTROY=<env>`; `resource_group` also serialises applies per env. See [`terraform/README.md` → Safety](terraform/README.md#safety). |
-
-State is stored in GitLab's managed HTTP state backend (the `terraform/state`
-API, used by both OpenTofu and Terraform), one state per env (`proxmox-<env>`,
-derived from the matrix `$ENV`), initialised with the `CI_JOB_TOKEN`.
-
-Required variables when enabled (Proxmox token masked):
-
-```bash
-ENABLE_PROXMOX=true
-TF_VAR_proxmox_endpoint=https://pve.example.com:8006/
-TF_VAR_proxmox_api_token=user@realm!tokenid=secret
-# Optional: TF_VAR_default_gateway, TF_VAR_vlan_tags, TF_VAR_ci_ssh_keys, …
-```
 
 ## Typical flow
 

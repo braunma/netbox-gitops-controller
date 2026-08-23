@@ -1,8 +1,8 @@
 # Configuration reference
 
 Every setting this project reads, in one place: the credentials, the CLI flags
-of all three commands, the GitLab CI/CD variables, and the knobs the
-end-to-end suite honours.
+of every command, the GitLab CI/CD variables, and the knobs the end-to-end
+suite honours.
 
 Every entry below has been exercised against a real NetBox 4.6.7 — see
 [How this was verified](#how-this-was-verified) at the end.
@@ -69,7 +69,7 @@ cp .env.example .env      # then fill in NETBOX_URL and NETBOX_TOKEN
 | Flag | Default | What it does |
 |---|---|---|
 | `--output <format>` | `text` | `text` or `json`. `json` prints the plan to stdout and moves all logging to stderr, so the plan can be piped. Any other value is rejected. |
-| `--detailed-exitcode` | off | Exit `0` when already in sync, `2` when changes are pending or were applied, `1` on error — the Terraform convention, so a scheduled `--dry-run` becomes a drift monitor. |
+| `--detailed-exitcode` | off | Exit `0` when already in sync, `2` when changes are pending or were applied, `1` on error — the `terraform plan` convention, so a scheduled `--dry-run` becomes a drift monitor. |
 | `--version` | — | Prints the version, commit and build date stamped at link time. |
 
 ### `netbox-gitops validate`
@@ -116,19 +116,6 @@ go run ./cmd/yamlcheck path/to/data-dir # a directory holding definitions/ or in
 The full list of checks is in the README section *Checking the YAML before it
 reaches NetBox*.
 
-## `tfgen`
-
-Renders the VM YAML to OpenTofu variables for the optional Proxmox pipeline.
-
-| Flag | Default | What it does |
-|---|---|---|
-| `--data-dir <dir>` | `.` | Directory holding `inventory/virtual/`. |
-| `--group <env>` | every environment | One environment folder under `inventory/virtual/`, e.g. `prod`. A name that matches no folder is an error naming the typo — it never emits an empty file, which OpenTofu would read as "destroy everything". |
-| `--out <file>` | `terraform/generated.tfvars.json` | Output path, or `-` for stdout. |
-
-Only VMs with `provision: true` are emitted; the rest are documented in NetBox
-and skipped here.
-
 ## GitLab CI/CD variables
 
 Set these under **Settings → CI/CD → Variables**, or per run under **Run
@@ -157,7 +144,6 @@ pipeline**. Two things are true of all of them:
 | `RUN_TESTS` | `true` | `false` skips `go_test`. |
 | `RUN_QUALITY_CHECKS` | `true` | `false` skips `go_lint` and `yaml_check`. |
 | `RUN_E2E` | `false` | Exactly `true` enables `e2e`. Needs a Docker-executor runner that can pull the three service images. |
-| `ENABLE_PROXMOX` | `false` | Exactly `true` enables `tf_validate`, `tf_plan` and `tf_apply`. `tf_generate` always runs — it is pure Go and guards against tfgen regressions. |
 | `COVERAGE_THRESHOLD` | `65` (from the Makefile) | Minimum total statement coverage. `go_test` runs `make coverage`, which measures `./...` and enforces the bar; setting this variable overrides the Makefile's default. A non-numeric or empty value fails the job rather than disabling the gate. |
 
 ### Images
@@ -165,26 +151,12 @@ pipeline**. Two things are true of all of them:
 | Variable | Default |
 |---|---|
 | `GOLANG_IMAGE` | `golang:1.24` |
-| `OPENTOFU_IMAGE` | `ghcr.io/opentofu/opentofu:1.9` |
 | `NETBOX_IMAGE` | `netboxcommunity/netbox:v4.6-3.3.0` |
 | `POSTGRES_IMAGE` | `postgres:16-alpine` |
 | `REDIS_IMAGE` | `valkey/valkey:8-alpine` |
 
 Mirror the last three into your own registry when running on-prem; they are
 pulled only by the `e2e` job.
-
-### Proxmox provisioning
-
-Required when `ENABLE_PROXMOX="true"`:
-
-| Variable | Notes |
-|---|---|
-| `TF_VAR_proxmox_endpoint` | e.g. `https://pve.example.com:8006/api2/json` |
-| `TF_VAR_proxmox_api_token` | `user@realm!tokenid=secret` — mask it |
-| `TF_ALLOW_DESTROY` | Comma-separated environment names. `tf_apply` refuses to run a plan that destroys or replaces a VM unless that environment is listed. Destroying a VM is irreversible, so it is blocked by default. |
-
-Optional `TF_VAR_*` inputs (gateway, VLAN tags, SSH keys, CPU type) are
-documented in [`terraform/README.md`](../terraform/README.md).
 
 ## End-to-end suite
 
@@ -220,10 +192,10 @@ against NetBox 4.6.7 built from source:
 - **Credentials, `.env`, TLS, libraries, ignore patterns, filters, output,
   exit codes, prune** — driven through the built binary and checked against
   what NetBox actually held afterwards.
-- **`yamlcheck` and `tfgen` flags** — driven against fixture data directories,
-  asserting exit codes and output.
+- **`yamlcheck` flags** — driven against fixture data directories, asserting
+  exit codes and output.
 - **GitLab rules** — read against GitLab's documented variable precedence, with
-  the shell logic (coverage gate, destroy gate) executed directly.
+  the shell logic (the coverage gate) executed directly.
 - **The properties the sample data relies on** — asserted by
   `tests/e2e/repo-data.sh` on every e2e run.
 

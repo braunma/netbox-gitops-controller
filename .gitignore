@@ -42,11 +42,14 @@ bin/
 # (Tests use example/ directory instead)
 /definitions/
 /inventory/*
-# ...except the VM definitions: these drive BOTH NetBox documentation and
-# Proxmox provisioning and are meant to be committed (one YAML per VM, per env
-# under inventory/virtual/<env>/). They contain no secrets — credentials come
-# from CI variables, not the YAML.
+# ...except the VM definitions (one YAML per VM, per env under
+# inventory/virtual/<env>/). They contain no secrets — credentials come from CI
+# variables, not the YAML.
 !/inventory/virtual/
+# ...and except what fact ingestion writes. Discovered objects only become
+# NetBox truth by being reviewed in a merge request, so they have to be
+# committed; an ignored file would make every scan produce an empty diff.
+!/inventory/discovered/
 
 # Test coverage output (make test / CI)
 coverage.out

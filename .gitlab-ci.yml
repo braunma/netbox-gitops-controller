@@ -20,10 +20,8 @@
 #
 #   GITLAB_RUNNER_TAG          Runner tag every job requests.
 #                              Default: "docker"
-#   GOLANG_IMAGE               Go toolchain image for the go_* and tf_generate
-#                              jobs. Default: "golang:1.24"
-#   OPENTOFU_IMAGE             OpenTofu image for tf_validate/tf_plan/tf_apply.
-#                              Default: "ghcr.io/opentofu/opentofu:1.9"
+#   GOLANG_IMAGE               Go toolchain image for the go_* jobs.
+#                              Default: "golang:1.24"
 #   NETBOX_IMAGE               NetBox image for the e2e job's service.
 #                              Default: "netboxcommunity/netbox:v4.6-3.3.0"
 #   POSTGRES_IMAGE             Default: "postgres:16-alpine"
@@ -40,10 +38,6 @@
 #   RUN_E2E                    "true" — and only "true" — enables the e2e job.
 #                              Default: "false". Needs a Docker-executor runner
 #                              that can pull the three images above.
-#   ENABLE_PROXMOX             "true" — and only "true" — enables tf_validate,
-#                              tf_plan and tf_apply. Default: "false".
-#                              tf_generate always runs: it is pure Go and
-#                              guards against tfgen regressions.
 #
 # THRESHOLDS AND GATES:
 #
@@ -53,14 +47,6 @@
 #                              call, so the bar is defined once. Set this to
 #                              override it. A non-numeric or empty value fails
 #                              the job rather than disabling the gate.
-#
-# PROXMOX (only read when ENABLE_PROXMOX="true"):
-#
-#   TF_VAR_proxmox_endpoint    e.g. https://pve.example.com:8006/api2/json
-#   TF_VAR_proxmox_api_token   user@realm!tokenid=secret  (mark it masked)
-#   Optional: TF_VAR_proxmox_insecure, TF_VAR_default_gateway,
-#             TF_VAR_vlan_tags, TF_VAR_ci_ssh_keys, TF_VAR_cpu_type, …
-#             See terraform/variables.tf.
 #
 # THE END-TO-END SCRIPTS also read E2E_SEEDS, E2E_KEEP and E2E_WORK; the e2e
 # job sets E2E_SEEDS and leaves the rest at their defaults. See
@@ -93,9 +79,6 @@ variables:
 
   # Container image registry paths (override in GitLab Variables for private registries)
   GOLANG_IMAGE: "golang:1.24"
-  # OpenTofu (drop-in Terraform replacement). The tf_* jobs invoke the `tofu`
-  # CLI from this image; override to pin a version or use a private mirror.
-  OPENTOFU_IMAGE: "ghcr.io/opentofu/opentofu:1.9"
 
   # END-TO-END TEST IMAGES
   # The e2e job starts a throwaway NetBox from these images as CI services.
@@ -103,12 +86,6 @@ variables:
   NETBOX_IMAGE: "netboxcommunity/netbox:v4.6-3.3.0"
   POSTGRES_IMAGE: "postgres:16-alpine"
   REDIS_IMAGE: "valkey/valkey:8-alpine"
-
-  # PROXMOX PROVISIONING (opt-in)
-  # The Terraform jobs that provision VMs in Proxmox are disabled by default so
-  # the NetBox pipeline runs standalone. Set ENABLE_PROXMOX="true" (and the
-  # TF_VAR_proxmox_* variables) to turn on tf_validate/tf_plan/tf_apply.
-  ENABLE_PROXMOX: "false"
 
   # END-TO-END TESTS (opt-in)
   # The e2e job drives the built binary against a real NetBox and asserts the
@@ -395,182 +372,3 @@ debug_environment:
     - go_build
   when: manual
   allow_failure: true
-
-# =============================================================================
-# PROXMOX PROVISIONING (OpenTofu) — second consumer of the VM YAML
-# =============================================================================
-# These jobs provision the VMs declared in inventory/virtual/*.yaml onto
-# Proxmox, in parallel with the NetBox sync (they have no dependency on the
-# go_* jobs). See terraform/README.md.
-#
-# Required CI variables when ENABLE_PROXMOX="true":
-#   TF_VAR_proxmox_endpoint    e.g. https://pve.example.com:8006/api2/json
-#   TF_VAR_proxmox_api_token   user@realm!tokenid=secret          (masked)
-# No SSH is needed: clone + cloud-init run over the API.
-# Optional: TF_VAR_proxmox_insecure, TF_VAR_default_gateway, TF_VAR_vlan_tags,
-#           TF_VAR_ci_ssh_keys, TF_VAR_cpu_type, …
-
-# Single source of truth for the environments to provision. Each gets its own
-# VM folder (inventory/virtual/<env>/) and its own GitLab-managed OpenTofu
-# state (proxmox-<env>). This anchor is referenced by every job's
-# parallel:matrix below (tf_generate/tf_plan/tf_apply), so the list lives in
-# exactly one place — there is no second copy to keep in sync.
-.proxmox_envs: &proxmox_envs ["prod", "stage", "playground"]
-
-# tf_generate turns each environment's VM YAML into a per-env tfvars file
-# (terraform/generated.<env>.tfvars.json) using the same loader as the NetBox
-# controller. Pure Go, no external deps, so it always runs and guards against
-# tfgen regressions even when Proxmox is disabled. One matrix job per env;
-# tfgen now errors on a mistyped --group, so a bad env fails the job instead of
-# silently emitting an empty (destroy-everything) tfvars file.
-tf_generate:
-  extends: .go_base
-  stage: validate
-  parallel:
-    matrix:
-      - ENV: *proxmox_envs
-  script:
-    - echo "🧩 Generating OpenTofu vars for environment '${ENV}'..."
-    - go run ./cmd/tfgen --data-dir . --group "${ENV}" --out "terraform/generated.${ENV}.tfvars.json"
-    - cat "terraform/generated.${ENV}.tfvars.json"
-  artifacts:
-    paths:
-      - terraform/generated.*.tfvars.json
-    expire_in: 1 week
-  rules:
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
-    - if: $CI_COMMIT_BRANCH
-
-# Per-environment OpenTofu: same module, one GitLab-managed state per env
-# (proxmox-<env>). The state name and backend address are derived from the
-# matrix's $ENV in the shell so there's no fragile nested CI-variable expansion.
-.opentofu_env:
-  image:
-    name: ${OPENTOFU_IMAGE}
-    entrypoint: [""]
-  before_script:
-    - cd terraform
-    - export TF_STATE_NAME="proxmox-${ENV}"
-    # GitLab's managed state backend endpoint is named ".../terraform/state/..."
-    # for both Terraform and OpenTofu — this is a GitLab API path, not a CLI name.
-    - export TF_ADDRESS="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/terraform/state/${TF_STATE_NAME}"
-    - tofu init -input=false
-      -backend-config="address=${TF_ADDRESS}"
-      -backend-config="lock_address=${TF_ADDRESS}/lock"
-      -backend-config="unlock_address=${TF_ADDRESS}/lock"
-      -backend-config="username=gitlab-ci-token"
-      -backend-config="password=${CI_JOB_TOKEN}"
-      -backend-config="lock_method=POST"
-      -backend-config="unlock_method=DELETE"
-
-# Validate the module once — env-agnostic, so no backend/state is needed.
-tf_validate:
-  image:
-    name: ${OPENTOFU_IMAGE}
-    entrypoint: [""]
-  stage: validate
-  needs:
-    - tf_generate
-  before_script:
-    - cd terraform
-    - tofu init -input=false -backend=false
-  script:
-    - tofu fmt -check -recursive
-    - tofu validate
-  rules:
-    - if: $ENABLE_PROXMOX != "true"
-      when: never
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
-    - if: $CI_COMMIT_BRANCH
-
-# One plan per environment, each against its own state. The plan is saved to a
-# binary file (tfplan.<env>) that tf_apply consumes verbatim — so what gets
-# applied is exactly what was planned and reviewed, never a fresh re-plan. This
-# runs on MRs (preview) and on the default branch (so the apply pipeline has a
-# fresh, reviewable plan to apply).
-tf_plan:
-  extends: .opentofu_env
-  stage: plan
-  needs:
-    - tf_generate
-  parallel:
-    matrix:
-      - ENV: *proxmox_envs
-  script:
-    # -no-color keeps the saved human plan free of ANSI escapes so tf_apply's
-    # destroy-detection grep below matches reliably.
-    - tofu plan -input=false -no-color -lock-timeout=120s -var-file="generated.${ENV}.tfvars.json" -out="tfplan.${ENV}" | tee "tf-plan-${ENV}.txt"
-  artifacts:
-    paths:
-      - terraform/tfplan.*
-      - terraform/tf-plan-*.txt
-      # Pass the resolved dependency lock to tf_apply so its `tofu init` selects
-      # the exact provider version this plan was built against. Without it, a
-      # patch released within `~> 0.109.0` between the two jobs would make
-      # `tofu apply <planfile>` reject the saved plan. (If a committed
-      # terraform/.terraform.lock.hcl exists, it takes precedence and this is a
-      # harmless no-op.)
-      - terraform/.terraform.lock.hcl
-    expire_in: 1 week
-  rules:
-    - if: $ENABLE_PROXMOX != "true"
-      when: never
-    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-
-# One apply per environment (manual gate), each against its own state. It applies
-# the saved plan file from tf_plan rather than re-planning, so the operator
-# approves and applies exactly the reviewed change set (no -auto-approve of an
-# unseen plan). If the state has drifted since the plan, Terraform rejects the
-# stale plan and the job fails safely instead of applying something different —
-# re-run the pipeline to get a fresh plan.
-#
-# resource_group serialises applies per environment across pipelines: GitLab
-# runs at most one tf_apply for a given env at a time, so two pipelines on the
-# default branch can never apply to the same proxmox-<env> state concurrently.
-# This is defence-in-depth on top of the backend's own state lock.
-tf_apply:
-  extends: .opentofu_env
-  stage: apply
-  needs:
-    - tf_plan
-  parallel:
-    matrix:
-      - ENV: *proxmox_envs
-  resource_group: proxmox-${ENV}
-  script:
-    # Destroy safety gate. This is a GitOps module: removing a VM from the YAML
-    # (or a replacement triggered by an immutable change) makes OpenTofu DESTROY
-    # a real, running VM — irreversible. The saved human plan from tf_plan lists
-    # one "# <addr> will be destroyed / must be replaced" line per destructive
-    # action; count them straight from that artifact (offline, no jq needed).
-    # Fail closed: a missing plan file aborts rather than applying blind.
-    - |
-      PLAN_TXT="tf-plan-${ENV}.txt"
-      if [ ! -f "${PLAN_TXT}" ]; then
-        echo "❌ Plan summary ${PLAN_TXT} is missing; refusing to apply (fail-closed)."
-        exit 1
-      fi
-      DESTROYS=$(grep -cE '^[[:space:]]*# .*(will be destroyed|must be replaced)$' "${PLAN_TXT}" || true)
-      DESTROYS=${DESTROYS:-0}
-      echo "Plan for '${ENV}' will destroy/replace ${DESTROYS} resource(s)."
-      if [ "${DESTROYS}" -gt 0 ]; then
-        case ",${TF_ALLOW_DESTROY}," in
-          *",${ENV},"*)
-            echo "⚠️  ${DESTROYS} resource(s) will be DESTROYED/REPLACED in '${ENV}' (confirmed via TF_ALLOW_DESTROY)." ;;
-          *)
-            echo "❌ Refusing to apply: ${DESTROYS} resource(s) would be DESTROYED or REPLACED in '${ENV}'."
-            echo "   Destroying a VM is irreversible, so it is blocked by default."
-            echo "   Review the destroyed resources in ${PLAN_TXT}, and if this is intended,"
-            echo "   re-run this job with the CI variable TF_ALLOW_DESTROY=${ENV} to confirm."
-            exit 1 ;;
-        esac
-      fi
-    - tofu apply -input=false -lock-timeout=120s "tfplan.${ENV}"
-  rules:
-    - if: $ENABLE_PROXMOX != "true"
-      when: never
-    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
-      when: manual
-  environment:
-    name: proxmox-${ENV}
