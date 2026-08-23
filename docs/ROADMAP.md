@@ -46,8 +46,7 @@ Effort: M each, L for the cabling question.
 
 VRFs, VLAN groups, VLANs and prefixes are managed. Aggregates, RIRs, IP ranges,
 route targets, ASNs and services are not — each is a straightforward "ensure"
-loop, and cheaper still once the repeated build-payload→lookup→apply loop in
-the simple reconcilers is factored into one helper. Effort: S–M.
+loop. Effort: S–M.
 
 ## Release and packaging
 

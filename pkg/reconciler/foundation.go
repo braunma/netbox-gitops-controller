@@ -3,8 +3,6 @@
 package reconciler
 
 import (
-	"fmt"
-
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -48,19 +46,22 @@ func (fr *FoundationReconciler) ReconcileSites(sites []*models.Site) error {
 			payload["comments"] = site.Comments
 		}
 
-		lookup := map[string]interface{}{"slug": site.Slug}
-		lookup, err := fr.client.RenamedLookup("dcim", "sites", site.Name, lookup, "slug", client.SlugifiedRename(site.RenameFrom))
-		if err != nil {
+		if _, err := ensure(fr.client, "dcim", "sites", ensureSpec{
+			kind:        "site",
+			name:        site.Name,
+			lookup:      map[string]interface{}{"slug": site.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(site.RenameFrom),
+			payload:     payload,
+			// Register so later phases (racks, VLANs, devices) can resolve a
+			// site created in this same run, including in --dry-run where it
+			// is not written to NetBox.
+			register: func(id int) {
+				fr.client.Cache().Register("sites", id, site.Slug, site.Name)
+			},
+		}); err != nil {
 			return err
 		}
-		siteObj, err := fr.client.Apply("dcim", "sites", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile site %s: %w", site.Name, err)
-		}
-		// Register so later phases (racks, VLANs, devices) can resolve a site
-		// created in this same run, including in --dry-run where it is not
-		// written to NetBox.
-		fr.client.Cache().Register("sites", utils.GetIDFromObject(siteObj), site.Slug, site.Name)
 	}
 
 	return nil
@@ -71,28 +72,13 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 	fr.logger.Info("Reconciling %d racks...", len(racks))
 
 	for _, rack := range racks {
-		// Get site ID using LIVE lookup (not cache)
-		// This is critical because the site might have been just created and not in cache yet
-		sites, err := fr.client.Filter("dcim", "sites", map[string]interface{}{
-			"slug": rack.SiteSlug,
+		siteID, ok := resolveRef(fr.client, reference{
+			app: "dcim", endpoint: "sites", cacheKind: "sites",
+			value: rack.SiteSlug,
+			kind:  "Site", forKind: "rack", forName: rack.Name,
+			consumerApp: "dcim", consumerEndpoint: "racks",
 		})
-		if err != nil || len(sites) == 0 {
-			// Fallback: Try by name
-			sites, err = fr.client.Filter("dcim", "sites", map[string]interface{}{
-				"name": rack.SiteSlug,
-			})
-		}
-
-		if err != nil || len(sites) == 0 {
-			fr.logger.Warning("Site %s not found for rack %s, skipping", rack.SiteSlug, rack.Name)
-			fr.client.MarkReconcileIncomplete("dcim", "racks")
-			continue
-		}
-
-		siteID := utils.GetIDFromObject(sites[0])
-		if siteID == 0 {
-			fr.logger.Warning("Site %s has invalid ID for rack %s, skipping", rack.SiteSlug, rack.Name)
-			fr.client.MarkReconcileIncomplete("dcim", "racks")
+		if !ok {
 			continue
 		}
 
@@ -112,24 +98,27 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 			payload["description"] = rack.Description
 		}
 
-		lookup := map[string]interface{}{
-			"site_id": siteID,
-			"name":    rack.Name,
-		}
-		lookup, err = fr.client.RenamedLookup("dcim", "racks", rack.Name, lookup, "name", nonEmpty(rack.RenameFrom))
-		if err != nil {
+		if _, err := ensure(fr.client, "dcim", "racks", ensureSpec{
+			kind: "rack",
+			name: rack.Name,
+			lookup: map[string]interface{}{
+				"site_id": siteID,
+				"name":    rack.Name,
+			},
+			renameField: "name",
+			renameFrom:  nonEmpty(rack.RenameFrom),
+			payload:     payload,
+			// NetBox racks have no slug of their own — they are identified by
+			// name within a site — so the YAML slug exists only here. Register
+			// it (and the name) site-scoped, or a device's rack_slug resolves
+			// nothing and the device is silently created with no rack,
+			// position or face.
+			register: func(id int) {
+				fr.client.Cache().RegisterSite("racks", siteID, id, rack.Slug, rack.Name)
+			},
+		}); err != nil {
 			return err
 		}
-
-		rackObj, err := fr.client.Apply("dcim", "racks", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile rack %s: %w", rack.Name, err)
-		}
-		// NetBox racks have no slug of their own — they are identified by name
-		// within a site — so the YAML slug exists only here. Register it (and
-		// the name) site-scoped, or a device's rack_slug resolves nothing and
-		// the device is silently created with no rack, position or face.
-		fr.client.Cache().RegisterSite("racks", siteID, utils.GetIDFromObject(rackObj), rack.Slug, rack.Name)
 	}
 
 	return nil
@@ -148,18 +137,21 @@ func (fr *FoundationReconciler) ReconcileRoles(roles []*models.Role) error {
 			"description": role.Description,
 		}
 
-		lookup := map[string]interface{}{"slug": role.Slug}
-		lookup, err := fr.client.RenamedLookup("dcim", "device-roles", role.Name, lookup, "slug", client.SlugifiedRename(role.RenameFrom))
-		if err != nil {
+		if _, err := ensure(fr.client, "dcim", "device-roles", ensureSpec{
+			kind:        "role",
+			name:        role.Name,
+			lookup:      map[string]interface{}{"slug": role.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(role.RenameFrom),
+			payload:     payload,
+			// Register so the device phase can resolve a role created this run
+			// (the cache otherwise reflects only roles that already existed).
+			register: func(id int) {
+				fr.client.Cache().Register("roles", id, role.Slug, role.Name)
+			},
+		}); err != nil {
 			return err
 		}
-		roleObj, err := fr.client.Apply("dcim", "device-roles", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile role %s: %w", role.Name, err)
-		}
-		// Register so the device phase can resolve a role created this run
-		// (the cache otherwise reflects only roles that already existed).
-		fr.client.Cache().Register("roles", utils.GetIDFromObject(roleObj), role.Slug, role.Name)
 	}
 
 	return nil
@@ -181,31 +173,22 @@ func (fr *FoundationReconciler) ReconcilePlatforms(platforms []*models.Platform)
 		}
 
 		if platform.Manufacturer != "" {
-			mfgID, ok := fr.client.Cache().GetGlobalID("manufacturers", platform.Manufacturer)
-			if !ok {
-				mfgObj, err := fr.client.Apply("dcim", "manufacturers",
-					map[string]interface{}{"slug": utils.Slugify(platform.Manufacturer)},
-					map[string]interface{}{
-						"name": platform.Manufacturer,
-						"slug": utils.Slugify(platform.Manufacturer),
-					})
-				if err != nil {
-					return fmt.Errorf("failed to create manufacturer %s: %w", platform.Manufacturer, err)
-				}
-				mfgID = utils.GetIDFromObject(mfgObj)
-				fr.client.Cache().Register("manufacturers", mfgID, utils.Slugify(platform.Manufacturer), platform.Manufacturer)
+			mfgID, err := ensureManufacturer(fr.client, platform.Manufacturer)
+			if err != nil {
+				return err
 			}
 			payload["manufacturer"] = mfgID
 		}
 
-		lookup := map[string]interface{}{"slug": platform.Slug}
-		lookup, err := fr.client.RenamedLookup("dcim", "platforms", platform.Name, lookup, "slug", client.SlugifiedRename(platform.RenameFrom))
-		if err != nil {
+		if _, err := ensure(fr.client, "dcim", "platforms", ensureSpec{
+			kind:        "platform",
+			name:        platform.Name,
+			lookup:      map[string]interface{}{"slug": platform.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(platform.RenameFrom),
+			payload:     payload,
+		}); err != nil {
 			return err
-		}
-		_, err = fr.client.Apply("dcim", "platforms", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile platform %s: %w", platform.Name, err)
 		}
 	}
 
@@ -235,14 +218,15 @@ func (fr *FoundationReconciler) ReconcileTenantGroups(groups []*models.TenantGro
 			}
 		}
 
-		lookup := map[string]interface{}{"slug": group.Slug}
-		lookup, err := fr.client.RenamedLookup("tenancy", "tenant-groups", group.Name, lookup, "slug", client.SlugifiedRename(group.RenameFrom))
-		if err != nil {
+		if _, err := ensure(fr.client, "tenancy", "tenant-groups", ensureSpec{
+			kind:        "tenant group",
+			name:        group.Name,
+			lookup:      map[string]interface{}{"slug": group.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(group.RenameFrom),
+			payload:     payload,
+		}); err != nil {
 			return err
-		}
-		_, err = fr.client.Apply("tenancy", "tenant-groups", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile tenant group %s: %w", group.Name, err)
 		}
 	}
 
@@ -272,14 +256,15 @@ func (fr *FoundationReconciler) ReconcileTenants(tenants []*models.Tenant) error
 			}
 		}
 
-		lookup := map[string]interface{}{"slug": tenant.Slug}
-		lookup, err := fr.client.RenamedLookup("tenancy", "tenants", tenant.Name, lookup, "slug", client.SlugifiedRename(tenant.RenameFrom))
-		if err != nil {
+		if _, err := ensure(fr.client, "tenancy", "tenants", ensureSpec{
+			kind:        "tenant",
+			name:        tenant.Name,
+			lookup:      map[string]interface{}{"slug": tenant.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(tenant.RenameFrom),
+			payload:     payload,
+		}); err != nil {
 			return err
-		}
-		_, err = fr.client.Apply("tenancy", "tenants", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile tenant %s: %w", tenant.Name, err)
 		}
 	}
 
@@ -318,13 +303,15 @@ func (fr *FoundationReconciler) ReconcileCustomFields(fields []*models.CustomFie
 			payload["description"] = cf.Description
 		}
 
-		lookup := map[string]interface{}{"name": cf.Name}
-		lookup, err := fr.client.RenamedLookup("extras", "custom-fields", cf.Name, lookup, "name", nonEmpty(cf.RenameFrom))
-		if err != nil {
+		if _, err := ensure(fr.client, "extras", "custom-fields", ensureSpec{
+			kind:        "custom field",
+			name:        cf.Name,
+			lookup:      map[string]interface{}{"name": cf.Name},
+			renameField: "name",
+			renameFrom:  nonEmpty(cf.RenameFrom),
+			payload:     payload,
+		}); err != nil {
 			return err
-		}
-		if _, err := fr.client.Apply("extras", "custom-fields", lookup, payload); err != nil {
-			return fmt.Errorf("failed to reconcile custom field %s: %w", cf.Name, err)
 		}
 	}
 
@@ -343,14 +330,15 @@ func (fr *FoundationReconciler) ReconcileTags(tags []*models.Tag) error {
 			"description": tag.Description,
 		}
 
-		lookup := map[string]interface{}{"slug": tag.Slug}
-		lookup, err := fr.client.RenamedLookup("extras", "tags", tag.Name, lookup, "slug", client.SlugifiedRename(tag.RenameFrom))
-		if err != nil {
+		if _, err := ensure(fr.client, "extras", "tags", ensureSpec{
+			kind:        "tag",
+			name:        tag.Name,
+			lookup:      map[string]interface{}{"slug": tag.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(tag.RenameFrom),
+			payload:     payload,
+		}); err != nil {
 			return err
-		}
-		_, err = fr.client.Apply("extras", "tags", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile tag %s: %w", tag.Name, err)
 		}
 	}
 

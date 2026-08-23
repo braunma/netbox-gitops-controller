@@ -514,18 +514,26 @@ func loadConfigFile(path string, explicit bool, logger *utils.Logger) error {
 	return nil
 }
 
+// resolvePath returns the first configured value for a path setting: the
+// flag's value, else the named environment variable, else the conventional
+// default path.
+func resolvePath(flagValue, envName, defaultPath string) string {
+	if flagValue != "" {
+		return flagValue
+	}
+	if env := os.Getenv(envName); env != "" {
+		return env
+	}
+	return defaultPath
+}
+
 // resolveModuleTypeLibrary returns the root of the community-format module
 // type library: the --moduletype-library flag, else MODULETYPE_LIBRARY, else
 // the conventional path inside the data directory. In a library checkout this
 // is the module-types/ directory, the sibling of device-types/.
 func resolveModuleTypeLibrary() string {
-	if moduleTypeLibrary != "" {
-		return moduleTypeLibrary
-	}
-	if env := os.Getenv("MODULETYPE_LIBRARY"); env != "" {
-		return env
-	}
-	return filepath.Join(dataDir, "definitions", "module_type_library")
+	return resolvePath(moduleTypeLibrary, "MODULETYPE_LIBRARY",
+		filepath.Join(dataDir, "definitions", "module_type_library"))
 }
 
 // resolveIgnorePatterns returns the filename globs to skip while loading:
@@ -561,13 +569,8 @@ func resolveIgnorePatterns() ([]string, error) {
 // the conventional path inside the data directory. The default is optional —
 // LoadDeviceTypeLibrary skips a root that does not exist.
 func resolveDeviceTypeLibrary() string {
-	if deviceTypeLibrary != "" {
-		return deviceTypeLibrary
-	}
-	if env := os.Getenv("DEVICETYPE_LIBRARY"); env != "" {
-		return env
-	}
-	return filepath.Join(dataDir, "definitions", "device_type_library")
+	return resolvePath(deviceTypeLibrary, "DEVICETYPE_LIBRARY",
+		filepath.Join(dataDir, "definitions", "device_type_library"))
 }
 
 // runDevices loads the device inventory, applies the --site/--device

@@ -158,33 +158,51 @@ func TestReconcileDevicesSetsPrimaryIPDeclaredInsideIPMapping(t *testing.T) {
 	}
 }
 
-func TestReconcileDevicesErrorsOnUnresolvedReferences(t *testing.T) {
+// TestReconcileDevicesSkipsUnresolvedReferences pins the unified
+// missing-reference behavior: a device whose site, role or device type does
+// not resolve is warned about and skipped — marking the endpoint's reconcile
+// incomplete so pruning stays safe — instead of failing the whole run, which
+// is what these cases used to do.
+func TestReconcileDevicesSkipsUnresolvedReferences(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	dr := NewDeviceReconciler(c)
 
 	device := testDevice("sw-01")
 
-	err := dr.ReconcileDevices([]*models.DeviceConfig{device})
-	if err == nil || !strings.Contains(err.Error(), "site berlin-dc not found") {
-		t.Errorf("error = %v, expected unknown site error", err)
+	requireSkipped := func(stage string) {
+		t.Helper()
+		if err := dr.ReconcileDevices([]*models.DeviceConfig{device}); err != nil {
+			t.Fatalf("%s: ReconcileDevices() error = %v, expected the device to be skipped without error", stage, err)
+		}
+		if got := len(f.objects("dcim", "devices")); got != 0 {
+			t.Fatalf("%s: expected no devices created, got %d", stage, got)
+		}
 	}
+
+	requireSkipped("unknown site")
 
 	f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})
 	if err := c.Cache().LoadGlobal(); err != nil {
 		t.Fatalf("LoadGlobal() error = %v", err)
 	}
-	err = dr.ReconcileDevices([]*models.DeviceConfig{device})
-	if err == nil || !strings.Contains(err.Error(), "role switch not found") {
-		t.Errorf("error = %v, expected unknown role error", err)
-	}
+	requireSkipped("unknown role")
 
 	f.seed("dcim", "device-roles", client.Object{"name": "Switch", "slug": "switch"})
 	if err := c.Cache().LoadGlobal(); err != nil {
 		t.Fatalf("LoadGlobal() error = %v", err)
 	}
-	err = dr.ReconcileDevices([]*models.DeviceConfig{device})
-	if err == nil || !strings.Contains(err.Error(), "device type c9300 not found") {
-		t.Errorf("error = %v, expected unknown device type error", err)
+	requireSkipped("unknown device type")
+
+	// With every reference resolvable the device reconciles normally.
+	f.seed("dcim", "device-types", client.Object{"model": "C9300", "slug": "c9300"})
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+	if err := dr.ReconcileDevices([]*models.DeviceConfig{device}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+	if got := len(f.objects("dcim", "devices")); got != 1 {
+		t.Errorf("expected 1 device once all references resolve, got %d", got)
 	}
 }
 

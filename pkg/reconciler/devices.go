@@ -132,22 +132,38 @@ func sortDevicesByDependency(devices []*models.DeviceConfig) ([]*models.DeviceCo
 	return sorted, nil
 }
 
-// reconcileDevice reconciles a single device
+// reconcileDevice reconciles a single device. A missing required reference
+// (site, role, device type) warns and skips the device, marking the endpoint's
+// reconcile incomplete — the shared behavior of resolveRef.
 func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
-	// Get required IDs
-	siteID, ok := dr.client.Cache().GetGlobalID("sites", device.SiteSlug)
+	siteID, ok := resolveRef(dr.client, reference{
+		app: "dcim", endpoint: "sites", cacheKind: "sites",
+		value: device.SiteSlug,
+		kind:  "Site", forKind: "device", forName: device.Name,
+		consumerApp: "dcim", consumerEndpoint: "devices",
+	})
 	if !ok {
-		return fmt.Errorf("site %s not found", device.SiteSlug)
+		return nil
 	}
 
-	roleID, ok := dr.client.Cache().GetGlobalID("roles", device.RoleSlug)
+	roleID, ok := resolveRef(dr.client, reference{
+		app: "dcim", endpoint: "device-roles", cacheKind: "roles",
+		value: device.RoleSlug,
+		kind:  "Role", forKind: "device", forName: device.Name,
+		consumerApp: "dcim", consumerEndpoint: "devices",
+	})
 	if !ok {
-		return fmt.Errorf("role %s not found", device.RoleSlug)
+		return nil
 	}
 
-	deviceTypeID, ok := dr.client.Cache().GetGlobalID("device_types", device.DeviceTypeSlug)
+	deviceTypeID, ok := resolveRef(dr.client, reference{
+		app: "dcim", endpoint: "device-types", cacheKind: "device_types",
+		value: device.DeviceTypeSlug,
+		kind:  "Device type", forKind: "device", forName: device.Name,
+		consumerApp: "dcim", consumerEndpoint: "devices",
+	})
 	if !ok {
-		return fmt.Errorf("device type %s not found", device.DeviceTypeSlug)
+		return nil
 	}
 
 	// A. Rack & Parent Logic

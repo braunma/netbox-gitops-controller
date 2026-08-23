@@ -59,18 +59,6 @@ type Tag struct {
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
 
-// Manufacturer represents a hardware manufacturer
-type Manufacturer struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
-	Slug string `yaml:"slug" json:"slug" validate:"required"`
-	// RenameFrom is this object's previous name or slug. Set it to correct a typo
-	// so the existing object is renamed instead of a second one being
-	// created; remove it once the sync has run.
-	RenameFrom  string   `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
-	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
-	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
-}
-
 // Platform represents a NetBox platform (e.g. an OS or firmware family that a
 // device or virtual machine runs). Referenced by slug from VMs and devices.
 type Platform struct {

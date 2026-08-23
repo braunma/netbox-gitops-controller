@@ -72,24 +72,3 @@ func GetIDFromObject(obj interface{}) int {
 
 	return 0
 }
-
-// IsManaged checks if an object is managed by gitops
-func IsManaged(obj map[string]interface{}, managedTagID int) bool {
-	tags, ok := obj["tags"].([]interface{})
-	if !ok {
-		return false
-	}
-
-	for _, tag := range tags {
-		if id := GetIDFromObject(tag); id == managedTagID {
-			return true
-		}
-		if tagMap, ok := tag.(map[string]interface{}); ok {
-			if slug, ok := tagMap["slug"].(string); ok && slug == "gitops" {
-				return true
-			}
-		}
-	}
-
-	return false
-}

@@ -157,22 +157,9 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 	}
 
 	for _, mt := range moduleTypes {
-		// Get manufacturer ID
-		mfgID, ok := dtr.client.Cache().GetGlobalID("manufacturers", mt.Manufacturer)
-		if !ok {
-			// Create manufacturer if it doesn't exist
-			mfgPayload := map[string]interface{}{
-				"name": mt.Manufacturer,
-				"slug": utils.Slugify(mt.Manufacturer),
-			}
-			mfgObj, err := dtr.client.Apply("dcim", "manufacturers", map[string]interface{}{"slug": utils.Slugify(mt.Manufacturer)}, mfgPayload)
-			if err != nil {
-				return fmt.Errorf("failed to create manufacturer %s: %w", mt.Manufacturer, err)
-			}
-			mfgID = utils.GetIDFromObject(mfgObj)
-			// Register so a manufacturer created here is reused (not re-created)
-			// by later types in this same run, including in --dry-run.
-			dtr.client.Cache().Register("manufacturers", mfgID, utils.Slugify(mt.Manufacturer), mt.Manufacturer)
+		mfgID, err := ensureManufacturer(dtr.client, mt.Manufacturer)
+		if err != nil {
+			return err
 		}
 
 		// NetBox module types are identified by manufacturer + model and have no
@@ -217,15 +204,7 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 		// just planned. NetBox rejects manufacturer_id=0 as an invalid choice,
 		// which used to abort the very first dry-run against an empty NetBox;
 		// matching on model alone is enough to plan against.
-		lookup, err := dtr.client.RenamedLookup("dcim", "module-types", mt.Model, lookup, "model", nonEmpty(mt.RenameFrom))
-		if err != nil {
-			return err
-		}
-		mtObj, err := dtr.client.Apply("dcim", "module-types", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile module type %s: %w", mt.Model, err)
-		}
-		mtID := utils.GetIDFromObject(mtObj)
+
 		// Register so the device phase can resolve a module type created this
 		// run. The qualified key is always available; the bare slug and model
 		// are withheld when another manufacturer claims the same name, so that
@@ -235,7 +214,20 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 		if _, clash := ambiguous[mt.Slug]; !clash {
 			identifiers = append(identifiers, mt.Slug, mt.Model)
 		}
-		dtr.client.Cache().Register("module_types", mtID, identifiers...)
+		mtID, err := ensure(dtr.client, "dcim", "module-types", ensureSpec{
+			kind:        "module type",
+			name:        mt.Model,
+			lookup:      lookup,
+			renameField: "model",
+			renameFrom:  nonEmpty(mt.RenameFrom),
+			payload:     payload,
+			register: func(id int) {
+				dtr.client.Cache().Register("module_types", id, identifiers...)
+			},
+		})
+		if err != nil {
+			return err
+		}
 		if mtID == 0 {
 			// --dry-run: nothing was written, so there is no owner to hang the
 			// component templates off yet.
@@ -268,20 +260,9 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 	dtr.logger.Info("Reconciling %d device types...", len(deviceTypes))
 
 	for _, dt := range deviceTypes {
-		// Get manufacturer ID
-		mfgID, ok := dtr.client.Cache().GetGlobalID("manufacturers", dt.Manufacturer)
-		if !ok {
-			// Create manufacturer if it doesn't exist
-			mfgPayload := map[string]interface{}{
-				"name": dt.Manufacturer,
-				"slug": utils.Slugify(dt.Manufacturer),
-			}
-			mfgObj, err := dtr.client.Apply("dcim", "manufacturers", map[string]interface{}{"slug": utils.Slugify(dt.Manufacturer)}, mfgPayload)
-			if err != nil {
-				return fmt.Errorf("failed to create manufacturer %s: %w", dt.Manufacturer, err)
-			}
-			mfgID = utils.GetIDFromObject(mfgObj)
-			dtr.client.Cache().Register("manufacturers", mfgID, utils.Slugify(dt.Manufacturer), dt.Manufacturer)
+		mfgID, err := ensureManufacturer(dtr.client, dt.Manufacturer)
+		if err != nil {
+			return err
 		}
 
 		payload := map[string]interface{}{
@@ -319,21 +300,24 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 			dtr.logger.Warning("Device type %s declares weight_unit %q without a weight; not setting a weight", dt.Slug, dt.WeightUnit)
 		}
 
-		lookup := map[string]interface{}{"slug": dt.Slug}
-		lookup, err := dtr.client.RenamedLookup("dcim", "device-types", dt.Model, lookup, "slug", client.SlugifiedRename(dt.RenameFrom))
+		dtID, err := ensure(dtr.client, "dcim", "device-types", ensureSpec{
+			kind:        "device type",
+			name:        dt.Model,
+			lookup:      map[string]interface{}{"slug": dt.Slug},
+			renameField: "slug",
+			renameFrom:  client.SlugifiedRename(dt.RenameFrom),
+			payload:     payload,
+			// Register before the dry-run short-circuit below so the device
+			// phase can resolve a device type added in this same run (id is 0
+			// in --dry-run; the key's presence is what lets a dependent device
+			// validate).
+			register: func(id int) {
+				dtr.client.Cache().Register("device_types", id, dt.Slug, dt.Model)
+			},
+		})
 		if err != nil {
 			return err
 		}
-		dtObj, err := dtr.client.Apply("dcim", "device-types", lookup, payload)
-		if err != nil {
-			return fmt.Errorf("failed to reconcile device type %s: %w", dt.Model, err)
-		}
-
-		dtID := utils.GetIDFromObject(dtObj)
-		// Register before the dry-run short-circuit below so the device phase can
-		// resolve a device type added in this same run (id is 0 in --dry-run; the
-		// key's presence is what lets a dependent device validate).
-		dtr.client.Cache().Register("device_types", dtID, dt.Slug, dt.Model)
 		if dtID == 0 {
 			continue
 		}

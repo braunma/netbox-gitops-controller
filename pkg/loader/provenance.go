@@ -120,7 +120,7 @@ func (dl *DataLoader) LoadInventoryWithProvenance() (Inventory, error) {
 }
 
 // loadDeclared reads every YAML file under a folder and returns its objects
-// with provenance. A missing folder yields nothing, matching loadFromFolder.
+// with provenance. A missing folder yields nothing, matching loadKind.
 func loadDeclared[T models.Validator](dl *DataLoader, folder string) ([]Declared[T], error) {
 	targetDir := filepath.Join(dl.basePath, folder)
 	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
@@ -164,8 +164,8 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 		return nil, err
 	}
 
-	// The file's defaults, decoded once, so each item merges against the same
-	// map the reconciler's loader would have built.
+	// The file's defaults, decoded once, so every item of the file merges
+	// against the same map.
 	var defaults map[string]interface{}
 	if defaultsNode != nil {
 		if err := defaultsNode.Decode(&defaults); err != nil {
@@ -215,8 +215,7 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 	return declared, nil
 }
 
-// decodeMerged turns a defaults-merged mapping into the typed model, by the
-// same route the reconciler's loader takes, so the two cannot drift.
+// decodeMerged turns a defaults-merged mapping into the typed model.
 func decodeMerged[T models.Validator](raw map[string]interface{}) (T, error) {
 	var zero T
 	data, err := yaml.Marshal(raw)
@@ -231,8 +230,16 @@ func decodeMerged[T models.Validator](raw map[string]interface{}) (T, error) {
 }
 
 // ItemNodes returns the object nodes of a document, and the file's `defaults`
-// mapping if it has one. It accepts the same three shapes decodeItems does: a
-// list, a single mapping, and the grouped defaults/devices form.
+// mapping if it has one. Three top-level document shapes are accepted:
+//
+//  1. A list of mappings (the classic form).
+//  2. A single mapping, treated as a one-element list (e.g. one device type
+//     per file).
+//  3. A grouped form with an optional `defaults` mapping and a `devices`
+//     list. The defaults are merged into every entry: entry values win over
+//     defaults, and `tags` are combined (union) instead of replaced. This
+//     form exists so inventory files don't have to repeat shared fields
+//     (site_slug, role_slug, rack_slug, tags, ...) on every device.
 //
 // It is exported because anything that rewrites an inventory file has to split
 // it into objects by exactly these rules, or it would edit a different block
@@ -262,6 +269,11 @@ func ItemNodes(path string, root *yaml.Node) ([]*yaml.Node, *yaml.Node, error) {
 		return devices.Content, mappingValue(root, "defaults"), nil
 
 	default:
+		// An explicit empty document (`---` or `null`) declares nothing, like a
+		// file of nothing but comments.
+		if root.Kind == yaml.ScalarNode && root.Tag == "!!null" {
+			return nil, nil, nil
+		}
 		return nil, nil, fmt.Errorf("%s: expected a list or a mapping at the top level", path)
 	}
 }
