@@ -189,11 +189,6 @@ func Parse(r io.Reader, opts Options) (*discovery.Snapshot, error) {
 	return snap, nil
 }
 
-// ParseBytes is Parse over an in-memory document.
-func ParseBytes(data []byte, opts Options) (*discovery.Snapshot, error) {
-	return Parse(strings.NewReader(string(data)), opts)
-}
-
 // deviceKey orders devices by the most stable identifier each one carries.
 func deviceKey(d discovery.Device) string {
 	switch {

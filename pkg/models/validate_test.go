@@ -95,22 +95,6 @@ func TestTagValidate(t *testing.T) {
 	}
 }
 
-func TestManufacturerValidate(t *testing.T) {
-	tests := []struct {
-		name         string
-		manufacturer Manufacturer
-		wantErrs     []string
-	}{
-		{"valid", Manufacturer{Name: "Cisco", Slug: "cisco"}, nil},
-		{"missing slug", Manufacturer{Name: "Cisco"}, []string{"slug is required"}},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			checkValidation(t, tt.manufacturer.Validate(), tt.wantErrs)
-		})
-	}
-}
-
 func TestVLANValidate(t *testing.T) {
 	tests := []struct {
 		name     string

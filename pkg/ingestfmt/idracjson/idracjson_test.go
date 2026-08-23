@@ -3,6 +3,7 @@
 package idracjson
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -129,7 +130,7 @@ func TestUnknownSchemaVersionWarnsButParses(t *testing.T) {
 	], "stats": {"total_servers": 1, "successful_count": 1}}`
 
 	var warnings []string
-	snap, err := ParseBytes([]byte(doc), Options{Warnf: func(format string, args ...interface{}) {
+	snap, err := Parse(bytes.NewReader([]byte(doc)), Options{Warnf: func(format string, args ...interface{}) {
 		warnings = append(warnings, fmtSprintf(format, args...))
 	}})
 	if err != nil {
@@ -147,7 +148,7 @@ func TestUnknownSchemaVersionWarnsButParses(t *testing.T) {
 // entirely normal.
 func TestAbsentSchemaVersionIsSilent(t *testing.T) {
 	var warnings []string
-	_, err := ParseBytes([]byte(`{"servers": [], "stats": {}}`), Options{
+	_, err := Parse(bytes.NewReader([]byte(`{"servers": [], "stats": {}}`)), Options{
 		Warnf: func(format string, args ...interface{}) { warnings = append(warnings, fmtSprintf(format, args...)) },
 	})
 	if err != nil {
@@ -159,7 +160,7 @@ func TestAbsentSchemaVersionIsSilent(t *testing.T) {
 }
 
 func TestParseRejectsNonImporterDocuments(t *testing.T) {
-	if _, err := ParseBytes([]byte("this is not JSON"), Options{}); err == nil {
+	if _, err := Parse(bytes.NewReader([]byte("this is not JSON")), Options{}); err == nil {
 		t.Fatal("expected an error for a document that is not the importer's JSON")
 	}
 }
@@ -169,7 +170,7 @@ func TestParseRejectsNonImporterDocuments(t *testing.T) {
 // datacentre.
 func TestStatsMismatchIsReported(t *testing.T) {
 	var warnings []string
-	_, err := ParseBytes([]byte(`{"servers":[{"host":"10.0.0.1","serial_number":"S1"}],"stats":{"total_servers":9}}`),
+	_, err := Parse(bytes.NewReader([]byte(`{"servers":[{"host":"10.0.0.1","serial_number":"S1"}],"stats":{"total_servers":9}}`)),
 		Options{Warnf: func(format string, args ...interface{}) { warnings = append(warnings, fmtSprintf(format, args...)) }})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
@@ -180,7 +181,7 @@ func TestStatsMismatchIsReported(t *testing.T) {
 }
 
 func TestSourceOverride(t *testing.T) {
-	snap, err := ParseBytes([]byte(`{"servers":[],"stats":{}}`), Options{Source: "idrac-berlin"})
+	snap, err := Parse(bytes.NewReader([]byte(`{"servers":[],"stats":{}}`)), Options{Source: "idrac-berlin"})
 	if err != nil {
 		t.Fatalf("Parse: %v", err)
 	}

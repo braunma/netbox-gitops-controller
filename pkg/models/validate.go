@@ -77,16 +77,6 @@ func (t *Tag) Validate() error {
 	return wrap("tag", t.Name, errs)
 }
 
-// Validate checks required fields of a Manufacturer.
-func (m *Manufacturer) Validate() error {
-	errs := requireFields(map[string]string{
-		"name": m.Name,
-		"slug": m.Slug,
-	})
-	errs = appendNonNil(errs, validateRename("slug", m.RenameFrom, m.Slug))
-	return wrap("manufacturer", m.Name, errs)
-}
-
 // Validate checks required fields and VID range of a VLAN.
 func (v *VLAN) Validate() error {
 	errs := requireFields(map[string]string{
