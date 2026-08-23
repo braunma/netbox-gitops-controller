@@ -88,47 +88,6 @@ func TestRackFaceLogic(t *testing.T) {
 	}
 }
 
-// TestModuleSerialHandling tests that module serial is always set
-func TestModuleSerialHandling(t *testing.T) {
-	tests := []struct {
-		name           string
-		module         models.ModuleConfig
-		expectedSerial string
-	}{
-		{
-			name: "module with serial",
-			module: models.ModuleConfig{
-				Name:           "GPU-1",
-				ModuleTypeSlug: "gpu-a100",
-				Serial:         "ABC123",
-			},
-			expectedSerial: "ABC123",
-		},
-		{
-			name: "module without serial should use empty string",
-			module: models.ModuleConfig{
-				Name:           "GPU-2",
-				ModuleTypeSlug: "gpu-a100",
-			},
-			expectedSerial: "",
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Build payload like the actual code does
-			serial := tt.module.Serial
-			if serial == "" {
-				serial = "" // Explicitly set to empty string
-			}
-
-			if serial != tt.expectedSerial {
-				t.Errorf("Expected serial=%q, got %q", tt.expectedSerial, serial)
-			}
-		})
-	}
-}
-
 // TestDeviceBayValidation tests device bay configuration validation
 func TestDeviceBayValidation(t *testing.T) {
 	tests := []struct {

@@ -663,12 +663,15 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 			"status":      status,
 		}
 
-		// Add serial - always set to empty string if not provided
-		// This avoids 400 errors from NetBox API
+		// Only a declared serial is sent. This used to send an explicit empty
+		// string whenever the YAML omitted one, which cleared the serial of
+		// every module on every sync — including one somebody had typed into
+		// the NetBox UI. NetBox's module serial is an optional blank field, so
+		// omitting it on create leaves it empty just the same, and omitting it
+		// on update leaves whatever is there alone. Saying nothing is how this
+		// controller declines to have an opinion.
 		if module.Serial != "" {
 			payload["serial"] = module.Serial
-		} else {
-			payload["serial"] = ""
 		}
 
 		if module.AssetTag != "" {

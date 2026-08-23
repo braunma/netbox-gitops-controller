@@ -133,6 +133,15 @@ func (f *fakeNetBox) handle(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		for k, v := range body {
+			// NetBox merges a partial custom_fields mapping into what the
+			// object already holds rather than replacing it, which is what
+			// makes it safe to send only the fields the YAML declares. The
+			// fake has to do the same or a test would "prove" a guarantee the
+			// real server provides and the fake does not.
+			if k == "custom_fields" {
+				obj[k] = mergeCustomFields(obj[k], v)
+				continue
+			}
 			obj[k] = v
 		}
 		json.NewEncoder(w).Encode(obj)
@@ -320,4 +329,25 @@ func (f *fakeNetBox) requireMutationCount(t *testing.T, n int) []recordedRequest
 		t.Fatalf("expected %d mutating request(s), got %d: %+v", n, len(muts), muts)
 	}
 	return muts
+}
+
+// mergeCustomFields returns the existing custom field mapping with the patched
+// entries applied, mirroring NetBox's partial-update semantics.
+func mergeCustomFields(existing, patch interface{}) interface{} {
+	patched, ok := patch.(map[string]interface{})
+	if !ok {
+		return patch
+	}
+	current, ok := existing.(map[string]interface{})
+	if !ok {
+		return patch
+	}
+	merged := make(map[string]interface{}, len(current)+len(patched))
+	for key, value := range current {
+		merged[key] = value
+	}
+	for key, value := range patched {
+		merged[key] = value
+	}
+	return merged
 }
