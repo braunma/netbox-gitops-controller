@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 
+// Package loader reads the YAML data directory into the typed models. Every
+// kind is decoded through one node-based path that records provenance (file
+// and node) for each object, which is the prerequisite for in-place fact
+// editing of further kinds later (e.g. DNS names on IP addresses).
 package loader
 
 import (
-	"errors"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"sync"
-
-	"gopkg.in/yaml.v3"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -112,8 +112,7 @@ func (dl *DataLoader) IgnoredFiles() []string {
 
 // LoadSites loads site definitions from a folder
 func (dl *DataLoader) LoadSites(folder string) ([]*models.Site, error) {
-	var sites []*models.Site
-	err := dl.loadFromFolder(folder, &sites)
+	sites, err := loadKind[*models.Site](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -123,8 +122,7 @@ func (dl *DataLoader) LoadSites(folder string) ([]*models.Site, error) {
 
 // LoadRacks loads rack definitions from a folder
 func (dl *DataLoader) LoadRacks(folder string) ([]*models.Rack, error) {
-	var racks []*models.Rack
-	err := dl.loadFromFolder(folder, &racks)
+	racks, err := loadKind[*models.Rack](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -134,8 +132,7 @@ func (dl *DataLoader) LoadRacks(folder string) ([]*models.Rack, error) {
 
 // LoadRoles loads role definitions from a folder
 func (dl *DataLoader) LoadRoles(folder string) ([]*models.Role, error) {
-	var roles []*models.Role
-	err := dl.loadFromFolder(folder, &roles)
+	roles, err := loadKind[*models.Role](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -145,8 +142,7 @@ func (dl *DataLoader) LoadRoles(folder string) ([]*models.Role, error) {
 
 // LoadTags loads tag definitions from a folder
 func (dl *DataLoader) LoadTags(folder string) ([]*models.Tag, error) {
-	var tags []*models.Tag
-	err := dl.loadFromFolder(folder, &tags)
+	tags, err := loadKind[*models.Tag](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -156,8 +152,7 @@ func (dl *DataLoader) LoadTags(folder string) ([]*models.Tag, error) {
 
 // LoadVLANs loads VLAN definitions from a folder
 func (dl *DataLoader) LoadVLANs(folder string) ([]*models.VLAN, error) {
-	var vlans []*models.VLAN
-	err := dl.loadFromFolder(folder, &vlans)
+	vlans, err := loadKind[*models.VLAN](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -167,8 +162,7 @@ func (dl *DataLoader) LoadVLANs(folder string) ([]*models.VLAN, error) {
 
 // LoadVLANGroups loads VLAN group definitions from a folder
 func (dl *DataLoader) LoadVLANGroups(folder string) ([]*models.VLANGroup, error) {
-	var groups []*models.VLANGroup
-	err := dl.loadFromFolder(folder, &groups)
+	groups, err := loadKind[*models.VLANGroup](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -178,8 +172,7 @@ func (dl *DataLoader) LoadVLANGroups(folder string) ([]*models.VLANGroup, error)
 
 // LoadVRFs loads VRF definitions from a folder
 func (dl *DataLoader) LoadVRFs(folder string) ([]*models.VRF, error) {
-	var vrfs []*models.VRF
-	err := dl.loadFromFolder(folder, &vrfs)
+	vrfs, err := loadKind[*models.VRF](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -189,8 +182,7 @@ func (dl *DataLoader) LoadVRFs(folder string) ([]*models.VRF, error) {
 
 // LoadPrefixes loads prefix definitions from a folder
 func (dl *DataLoader) LoadPrefixes(folder string) ([]*models.Prefix, error) {
-	var prefixes []*models.Prefix
-	err := dl.loadFromFolder(folder, &prefixes)
+	prefixes, err := loadKind[*models.Prefix](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -200,8 +192,7 @@ func (dl *DataLoader) LoadPrefixes(folder string) ([]*models.Prefix, error) {
 
 // LoadDeviceTypes loads device type definitions from a folder
 func (dl *DataLoader) LoadDeviceTypes(folder string) ([]*models.DeviceType, error) {
-	var deviceTypes []*models.DeviceType
-	err := dl.loadFromFolder(folder, &deviceTypes)
+	deviceTypes, err := loadKind[*models.DeviceType](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -211,8 +202,7 @@ func (dl *DataLoader) LoadDeviceTypes(folder string) ([]*models.DeviceType, erro
 
 // LoadModuleTypes loads module type definitions from a folder
 func (dl *DataLoader) LoadModuleTypes(folder string) ([]*models.ModuleType, error) {
-	var moduleTypes []*models.ModuleType
-	err := dl.loadFromFolder(folder, &moduleTypes)
+	moduleTypes, err := loadKind[*models.ModuleType](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -222,8 +212,7 @@ func (dl *DataLoader) LoadModuleTypes(folder string) ([]*models.ModuleType, erro
 
 // LoadDevices loads device configurations from a folder
 func (dl *DataLoader) LoadDevices(folder string) ([]*models.DeviceConfig, error) {
-	var devices []*models.DeviceConfig
-	err := dl.loadFromFolder(folder, &devices)
+	devices, err := loadKind[*models.DeviceConfig](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -233,8 +222,7 @@ func (dl *DataLoader) LoadDevices(folder string) ([]*models.DeviceConfig, error)
 
 // LoadCustomFields loads custom field definitions from a folder
 func (dl *DataLoader) LoadCustomFields(folder string) ([]*models.CustomField, error) {
-	var fields []*models.CustomField
-	err := dl.loadFromFolder(folder, &fields)
+	fields, err := loadKind[*models.CustomField](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -244,8 +232,7 @@ func (dl *DataLoader) LoadCustomFields(folder string) ([]*models.CustomField, er
 
 // LoadPlatforms loads platform definitions from a folder
 func (dl *DataLoader) LoadPlatforms(folder string) ([]*models.Platform, error) {
-	var platforms []*models.Platform
-	err := dl.loadFromFolder(folder, &platforms)
+	platforms, err := loadKind[*models.Platform](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -255,8 +242,7 @@ func (dl *DataLoader) LoadPlatforms(folder string) ([]*models.Platform, error) {
 
 // LoadTenantGroups loads tenant group definitions from a folder
 func (dl *DataLoader) LoadTenantGroups(folder string) ([]*models.TenantGroup, error) {
-	var groups []*models.TenantGroup
-	err := dl.loadFromFolder(folder, &groups)
+	groups, err := loadKind[*models.TenantGroup](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -266,8 +252,7 @@ func (dl *DataLoader) LoadTenantGroups(folder string) ([]*models.TenantGroup, er
 
 // LoadTenants loads tenant definitions from a folder
 func (dl *DataLoader) LoadTenants(folder string) ([]*models.Tenant, error) {
-	var tenants []*models.Tenant
-	err := dl.loadFromFolder(folder, &tenants)
+	tenants, err := loadKind[*models.Tenant](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -277,8 +262,7 @@ func (dl *DataLoader) LoadTenants(folder string) ([]*models.Tenant, error) {
 
 // LoadClusterTypes loads cluster type definitions from a folder
 func (dl *DataLoader) LoadClusterTypes(folder string) ([]*models.ClusterType, error) {
-	var clusterTypes []*models.ClusterType
-	err := dl.loadFromFolder(folder, &clusterTypes)
+	clusterTypes, err := loadKind[*models.ClusterType](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -288,8 +272,7 @@ func (dl *DataLoader) LoadClusterTypes(folder string) ([]*models.ClusterType, er
 
 // LoadClusterGroups loads cluster group definitions from a folder
 func (dl *DataLoader) LoadClusterGroups(folder string) ([]*models.ClusterGroup, error) {
-	var clusterGroups []*models.ClusterGroup
-	err := dl.loadFromFolder(folder, &clusterGroups)
+	clusterGroups, err := loadKind[*models.ClusterGroup](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -299,8 +282,7 @@ func (dl *DataLoader) LoadClusterGroups(folder string) ([]*models.ClusterGroup, 
 
 // LoadClusters loads cluster definitions from a folder
 func (dl *DataLoader) LoadClusters(folder string) ([]*models.Cluster, error) {
-	var clusters []*models.Cluster
-	err := dl.loadFromFolder(folder, &clusters)
+	clusters, err := loadKind[*models.Cluster](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -310,8 +292,7 @@ func (dl *DataLoader) LoadClusters(folder string) ([]*models.Cluster, error) {
 
 // LoadVMs loads virtual machine configurations from a folder
 func (dl *DataLoader) LoadVMs(folder string) ([]*models.VMConfig, error) {
-	var vms []*models.VMConfig
-	err := dl.loadFromFolder(folder, &vms)
+	vms, err := loadKind[*models.VMConfig](dl, folder)
 	if err != nil {
 		return nil, err
 	}
@@ -319,319 +300,43 @@ func (dl *DataLoader) LoadVMs(folder string) ([]*models.VMConfig, error) {
 	return vms, nil
 }
 
-// loadFromFolder loads YAML files from a folder and unmarshals into the target
-func (dl *DataLoader) loadFromFolder(folder string, target interface{}) error {
+// loadKind loads every YAML file of one kind under a folder through the
+// node-based decoder (see declaredFromFile) and unwraps the objects, so call
+// sites that only need the models are untouched by provenance. Files matching
+// an ignore pattern are skipped and recorded, unlike the ingest path, which
+// loads them as parked.
+func loadKind[T models.Validator](dl *DataLoader, folder string) ([]T, error) {
 	targetDir := filepath.Join(dl.basePath, folder)
 
 	// Check if directory exists
 	if _, err := os.Stat(targetDir); os.IsNotExist(err) {
 		dl.logger.Warning("Folder %s not found, skipping", folder)
-		return nil
+		return nil, nil
 	}
 
 	// Find all YAML files recursively
 	yamlFiles, err := dl.findYAMLFiles(targetDir)
 	if err != nil {
-		return fmt.Errorf("failed to find YAML files in %s: %w", targetDir, err)
+		return nil, fmt.Errorf("failed to find YAML files in %s: %w", targetDir, err)
 	}
 	yamlFiles = dl.filterIgnored(yamlFiles)
 
 	if len(yamlFiles) == 0 {
 		dl.logger.Warning("No YAML files found in %s", folder)
-		return nil
+		return nil, nil
 	}
 
-	// Load each file
+	var objects []T
 	for _, file := range yamlFiles {
-		if err := dl.loadFile(file, target); err != nil {
-			return fmt.Errorf("failed to load %s: %w", file, err)
+		declared, err := declaredFromFile[T](file, false)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load %s: %w", file, err)
+		}
+		for _, d := range declared {
+			objects = append(objects, d.Object)
 		}
 	}
-
-	return nil
-}
-
-// validateItems runs model validation on every item loaded from a file.
-// All failures in a file are aggregated so the user sees them at once
-// instead of fixing them one sync run at a time.
-func validateItems[T models.Validator](path string, items []T) error {
-	var errs []error
-	for i, item := range items {
-		if err := item.Validate(); err != nil {
-			errs = append(errs, fmt.Errorf("%s: entry %d: %w", path, i+1, err))
-		}
-	}
-	return errors.Join(errs...)
-}
-
-// loadFile loads a single YAML file and appends items to target
-func (dl *DataLoader) loadFile(path string, target interface{}) error {
-	file, err := os.Open(path)
-	if err != nil {
-		return fmt.Errorf("failed to open file: %w", err)
-	}
-	defer file.Close()
-
-	content, err := io.ReadAll(file)
-	if err != nil {
-		return fmt.Errorf("failed to read file: %w", err)
-	}
-
-	items, err := decodeItems(content)
-	if err != nil {
-		return err
-	}
-
-	// Get current target slice and append items from this file
-	// We need to use reflection to append to the slice properly
-	switch t := target.(type) {
-	case *[]*models.Site:
-		var newItems []*models.Site
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal sites: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.Rack:
-		var newItems []*models.Rack
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal racks: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.Role:
-		var newItems []*models.Role
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal roles: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.Tag:
-		var newItems []*models.Tag
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal tags: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.VLAN:
-		var newItems []*models.VLAN
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal vlans: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.VLANGroup:
-		var newItems []*models.VLANGroup
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal vlan groups: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.VRF:
-		var newItems []*models.VRF
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal vrfs: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.Prefix:
-		var newItems []*models.Prefix
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal prefixes: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.DeviceType:
-		var newItems []*models.DeviceType
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal device types: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.ModuleType:
-		var newItems []*models.ModuleType
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal module types: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.DeviceConfig:
-		var newItems []*models.DeviceConfig
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal devices: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.CustomField:
-		var newItems []*models.CustomField
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal custom fields: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.Platform:
-		var newItems []*models.Platform
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal platforms: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.TenantGroup:
-		var newItems []*models.TenantGroup
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal tenant groups: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.Tenant:
-		var newItems []*models.Tenant
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal tenants: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.ClusterType:
-		var newItems []*models.ClusterType
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal cluster types: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.ClusterGroup:
-		var newItems []*models.ClusterGroup
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal cluster groups: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.Cluster:
-		var newItems []*models.Cluster
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal clusters: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	case *[]*models.VMConfig:
-		var newItems []*models.VMConfig
-		data, _ := yaml.Marshal(items)
-		if err := yaml.Unmarshal(data, &newItems); err != nil {
-			return fmt.Errorf("failed to unmarshal virtual machines: %w", err)
-		}
-		if err := validateItems(path, newItems); err != nil {
-			return err
-		}
-		*t = append(*t, newItems...)
-	default:
-		return fmt.Errorf("unsupported target type: %T", target)
-	}
-
-	return nil
-}
-
-// decodeItems parses YAML file content into a list of raw item mappings.
-// Three top-level document shapes are accepted:
-//
-//  1. A list of mappings (the classic form).
-//  2. A single mapping, treated as a one-element list (e.g. one device type
-//     per file).
-//  3. A grouped form with an optional `defaults` mapping and a `devices`
-//     list. The defaults are merged into every entry: entry values win over
-//     defaults, and `tags` are combined (union) instead of replaced.
-//
-// The grouped form exists so inventory files don't have to repeat shared
-// fields (site_slug, role_slug, rack_slug, tags, ...) on every device.
-func decodeItems(content []byte) ([]map[string]interface{}, error) {
-	var items []map[string]interface{}
-	listErr := yaml.Unmarshal(content, &items)
-	if listErr == nil {
-		return items, nil
-	}
-
-	var single map[string]interface{}
-	if err := yaml.Unmarshal(content, &single); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal YAML as list (%v) or single mapping: %w", listErr, err)
-	}
-
-	if _, hasDevices := single["devices"]; !hasDevices {
-		return []map[string]interface{}{single}, nil
-	}
-
-	// Grouped form: only `defaults` and `devices` are allowed at the top level
-	// so typos (e.g. a stray device field next to `devices`) fail loudly
-	// instead of being silently dropped.
-	for key := range single {
-		if key != "defaults" && key != "devices" {
-			return nil, fmt.Errorf("grouped form only allows 'defaults' and 'devices' at the top level, found %q", key)
-		}
-	}
-
-	var grouped struct {
-		Defaults map[string]interface{}   `yaml:"defaults"`
-		Devices  []map[string]interface{} `yaml:"devices"`
-	}
-	if err := yaml.Unmarshal(content, &grouped); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal grouped defaults/devices form: %w", err)
-	}
-
-	merged := make([]map[string]interface{}, 0, len(grouped.Devices))
-	for _, device := range grouped.Devices {
-		merged = append(merged, mergeDefaults(grouped.Defaults, device))
-	}
-	return merged, nil
+	return objects, nil
 }
 
 // mergeDefaults applies file-level defaults to a single item mapping. Item

@@ -5,6 +5,7 @@ package loader
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -93,6 +94,91 @@ devices:
 		if web02.Tags[i] != tag {
 			t.Errorf("web-02 tags = %v, expected %v", web02.Tags, expectedTags)
 			break
+		}
+	}
+}
+
+// TestLoadSitesGroupedDefaults verifies that the grouped form is not a
+// device-only feature: every kind decodes through the same path, so defaults
+// merging and tag union behave identically for, e.g., sites.
+func TestLoadSitesGroupedDefaults(t *testing.T) {
+	dir := t.TempDir()
+	siteDir := filepath.Join(dir, "sites")
+	if err := os.MkdirAll(siteDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `
+defaults:
+  status: "active"
+  region: "europe"
+  tags: ["gitops"]
+
+devices:
+  - name: "Berlin DC"
+    slug: "berlin-dc"
+
+  - name: "Munich DC"
+    slug: "munich-dc"
+    status: "planned"
+    tags: ["lab", "gitops"]
+`
+	if err := os.WriteFile(filepath.Join(siteDir, "sites.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewDataLoader(dir, utils.NewLogger(false))
+	sites, err := loader.LoadSites("sites")
+	if err != nil {
+		t.Fatalf("LoadSites() error = %v", err)
+	}
+	if len(sites) != 2 {
+		t.Fatalf("LoadSites() returned %d sites, expected 2", len(sites))
+	}
+
+	berlin := sites[0]
+	if berlin.Status != "active" || berlin.Region != "europe" {
+		t.Errorf("berlin-dc defaults not applied: %+v", berlin)
+	}
+	if len(berlin.Tags) != 1 || berlin.Tags[0] != "gitops" {
+		t.Errorf("berlin-dc tags = %v, expected [gitops]", berlin.Tags)
+	}
+
+	munich := sites[1]
+	if munich.Status != "planned" {
+		t.Errorf("munich-dc status = %q, site value should win over default", munich.Status)
+	}
+	expectedTags := []string{"gitops", "lab"}
+	if len(munich.Tags) != len(expectedTags) || munich.Tags[0] != expectedTags[0] || munich.Tags[1] != expectedTags[1] {
+		t.Errorf("munich-dc tags = %v, expected %v", munich.Tags, expectedTags)
+	}
+}
+
+// TestLoadSitesAggregatesValidationErrors verifies that every invalid entry of
+// one file is reported at once, with the file and the entry index.
+func TestLoadSitesAggregatesValidationErrors(t *testing.T) {
+	dir := t.TempDir()
+	siteDir := filepath.Join(dir, "sites")
+	if err := os.MkdirAll(siteDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `
+- name: "No Slug"
+- slug: "no-name"
+`
+	if err := os.WriteFile(filepath.Join(siteDir, "sites.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewDataLoader(dir, utils.NewLogger(false))
+	_, err := loader.LoadSites("sites")
+	if err == nil {
+		t.Fatal("LoadSites() = nil, want both invalid entries rejected")
+	}
+	for _, want := range []string{"entry 1", "slug is required", "entry 2", "name is required"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q does not mention %q; all failures should be reported at once", err, want)
 		}
 	}
 }
