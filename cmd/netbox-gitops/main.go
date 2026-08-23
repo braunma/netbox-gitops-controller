@@ -571,19 +571,15 @@ func resolveDeviceTypeLibrary() string {
 // runDevices loads the device inventory, applies the --site/--device
 // filters, loads the required site caches and reconciles the devices.
 func runDevices(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
-	activeDevices, err := dataLoader.LoadDevices("inventory/hardware/active")
-	if err != nil {
-		logger.Error("Failed to load active devices", err)
-		return err
+	var allDevices []*models.DeviceConfig
+	for _, folder := range loader.DeviceFolders {
+		devices, err := dataLoader.LoadDevices(folder)
+		if err != nil {
+			logger.Error("Failed to load devices from "+folder, err)
+			return err
+		}
+		allDevices = append(allDevices, devices...)
 	}
-
-	passiveDevices, err := dataLoader.LoadDevices("inventory/hardware/passive")
-	if err != nil {
-		logger.Error("Failed to load passive devices", err)
-		return err
-	}
-
-	allDevices := append(activeDevices, passiveDevices...)
 	logger.Info("Loaded %d devices from inventory", len(allDevices))
 
 	if siteFilter != "" || deviceFilter != "" {
@@ -655,10 +651,14 @@ func runVirtualization(c *client.NetBoxClient, dataLoader *loader.DataLoader, lo
 		return err
 	}
 
-	vms, err := dataLoader.LoadVMs("inventory/virtual")
-	if err != nil {
-		logger.Error("Failed to load virtual machines", err)
-		return err
+	var vms []*models.VMConfig
+	for _, folder := range loader.VMFolders {
+		found, err := dataLoader.LoadVMs(folder)
+		if err != nil {
+			logger.Error("Failed to load virtual machines from "+folder, err)
+			return err
+		}
+		vms = append(vms, found...)
 	}
 
 	if siteFilter != "" || vmFilter != "" {

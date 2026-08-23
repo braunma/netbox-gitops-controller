@@ -13,6 +13,26 @@ import (
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 )
 
+// DeviceFolders and VMFolders are every folder of the data directory that
+// declares concrete objects, in load order.
+//
+// inventory/discovered/ is where fact ingestion writes what it found. It sits
+// beside the hand-written folders and mirrors their split, so a generated VM is
+// loaded like any VM and a completed skeleton is loaded like any device the
+// moment its parking underscore comes off — no special case anywhere in the
+// reconciler.
+var (
+	DeviceFolders = []string{
+		"inventory/hardware/active",
+		"inventory/hardware/passive",
+		"inventory/discovered/hardware",
+	}
+	VMFolders = []string{
+		"inventory/virtual",
+		"inventory/discovered/virtual",
+	}
+)
+
 // Provenance records where a declared object came from: which file, and which
 // node inside it.
 //
@@ -24,6 +44,10 @@ type Provenance struct {
 	// File is the path the object was read from, as the loader saw it
 	// (data-dir relative to the process, not to the data directory).
 	File string
+	// Doc is the document node the object's node belongs to. Every object read
+	// from one file shares it, which is what lets an editor find the whole
+	// file's structure from any one object in it.
+	Doc *yaml.Node
 	// Node is the object's own mapping node. Editing through it preserves the
 	// rest of the document byte for byte.
 	Node *yaml.Node
@@ -75,7 +99,7 @@ func (dl *DataLoader) LoadInventoryWithProvenance() (Inventory, error) {
 	var inv Inventory
 	var errs []error
 
-	for _, folder := range []string{"inventory/hardware/active", "inventory/hardware/passive"} {
+	for _, folder := range DeviceFolders {
 		devices, err := loadDeclared[*models.DeviceConfig](dl, folder)
 		if err != nil {
 			errs = append(errs, err)
@@ -84,11 +108,14 @@ func (dl *DataLoader) LoadInventoryWithProvenance() (Inventory, error) {
 		inv.Devices = append(inv.Devices, devices...)
 	}
 
-	vms, err := loadDeclared[*models.VMConfig](dl, "inventory/virtual")
-	if err != nil {
-		errs = append(errs, err)
+	for _, folder := range VMFolders {
+		vms, err := loadDeclared[*models.VMConfig](dl, folder)
+		if err != nil {
+			errs = append(errs, err)
+			continue
+		}
+		inv.VMs = append(inv.VMs, vms...)
 	}
-	inv.VMs = append(inv.VMs, vms...)
 
 	if err := errors.Join(errs...); err != nil {
 		return Inventory{}, err
@@ -136,7 +163,7 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 		return nil, nil
 	}
 
-	itemNodes, defaultsNode, err := itemNodes(path, doc.Content[0])
+	itemNodes, defaultsNode, err := ItemNodes(path, doc.Content[0])
 	if err != nil {
 		return nil, err
 	}
@@ -178,6 +205,7 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 			Object: object,
 			Prov: Provenance{
 				File:     path,
+				Doc:      &doc,
 				Node:     node,
 				Defaults: defaultsNode,
 				Index:    i,
@@ -207,10 +235,14 @@ func decodeMerged[T models.Validator](raw map[string]interface{}) (T, error) {
 	return object, nil
 }
 
-// itemNodes returns the object nodes of a document, and the file's `defaults`
+// ItemNodes returns the object nodes of a document, and the file's `defaults`
 // mapping if it has one. It accepts the same three shapes decodeItems does: a
 // list, a single mapping, and the grouped defaults/devices form.
-func itemNodes(path string, root *yaml.Node) ([]*yaml.Node, *yaml.Node, error) {
+//
+// It is exported because anything that rewrites an inventory file has to split
+// it into objects by exactly these rules, or it would edit a different block
+// than the loader read.
+func ItemNodes(path string, root *yaml.Node) ([]*yaml.Node, *yaml.Node, error) {
 	switch root.Kind {
 	case yaml.SequenceNode:
 		return root.Content, nil, nil

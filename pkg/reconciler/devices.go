@@ -281,6 +281,14 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		payload["asset_tag"] = device.AssetTag
 	}
 
+	// Only the custom fields the YAML declares are sent. NetBox returns every
+	// defined field on an object, and the client compares the declared subset
+	// against it (see mapSubsetEqual), so a field this repository says nothing
+	// about keeps whatever value it has — including one a human set in the UI.
+	if len(device.CustomFields) > 0 {
+		payload["custom_fields"] = device.CustomFields
+	}
+
 	// C. Create or update device
 	lookup := map[string]interface{}{
 		"name":    device.Name,
