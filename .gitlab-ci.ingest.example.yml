@@ -64,6 +64,8 @@ variables:
   variables:
     GIT_STRATEGY: clone
   before_script:
+    # Do not add `set -x` to these jobs: it would print the Authorization
+    # header assembled below into the job log.
     - go build -o netbox-gitops ./cmd/netbox-gitops/
     - git config user.email "gitops-bot@example.com"
     - git config user.name "NetBox GitOps"
@@ -96,14 +98,21 @@ variables:
       Written by ${CI_JOB_NAME} from pipeline ${CI_PIPELINE_ID}.
       Review the diff: merging it is what makes these facts NetBox truth."
 
+      # The token goes in a request header, not in the remote URL. A URL with
+      # credentials in it is echoed back by git in its own error messages
+      # ("fatal: unable to access 'https://gitlab-ci-token:glpat-...@...'"),
+      # which puts the secret in the job log of every failed push — and job
+      # logs outlive the token.
+      AUTH=$(printf 'gitlab-ci-token:%s' "${GITOPS_PUSH_TOKEN}" | base64 | tr -d '\n')
+
       # push -o merge_request.* creates the merge request in the same push, so
       # no API call and no second token scope is needed.
-      git push -f \
+      git -c http.extraheader="Authorization: Basic ${AUTH}" push -f \
         -o merge_request.create \
         -o merge_request.target="${CI_DEFAULT_BRANCH}" \
         -o merge_request.title="chore(ingest): refresh discovered facts" \
         -o merge_request.description="Facts discovered by \`${CI_JOB_NAME}\`. Nothing has been written to NetBox; merging this is what applies them." \
-        "https://gitlab-ci-token:${GITOPS_PUSH_TOKEN}@${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
         "HEAD:${INGEST_BRANCH}"
   rules:
     # Scheduled pipelines only, and only those that opt in.

@@ -3,15 +3,19 @@
 package ingest
 
 import (
+	"context"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/braunma/netbox-gitops-controller/pkg/collectors"
 	"github.com/braunma/netbox-gitops-controller/pkg/discovery"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
+	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
 // The example dataset ships the custom field definitions a fresh NetBox needs
@@ -158,5 +162,73 @@ func TestDeviceEditRefusesAnUnprefixedCustomField(t *testing.T) {
 		if !strings.HasPrefix(kv.Key, "inv_") {
 			t.Errorf("%s was queued while the configured prefix is inv_", kv.Key)
 		}
+	}
+}
+
+// Every value that reaches a generated path comes from outside: a source name
+// from configuration, a serial and a hostname from a BMC answering over the
+// network. None of them may steer a write out of inventory/discovered/.
+func TestGeneratedPathsCannotEscapeTheDiscoveredDirectory(t *testing.T) {
+	hostile := []string{
+		"../../etc/passwd", "..", ".", "/", "//", "....//....",
+		"a/b/c", `..\..\windows\system32`, "", "   ", "-._-",
+		"$(whoami)", "a\x00b", "\n../evil", strings.Repeat("../", 40) + "root",
+	}
+
+	for _, value := range hostile {
+		dev := discovery.Device{Serial: value}
+		for _, got := range []string{
+			parkedDevicePath("idrac", dev),
+			parkedDevicePath(value, discovery.Device{Serial: "S1"}),
+			generatedVMPath("pve", value),
+			generatedVMPath(value, "cluster"),
+		} {
+			cleaned := path.Clean(got)
+			if !strings.HasPrefix(cleaned, DiscoveredRoot+"/") {
+				t.Errorf("%q produced %q, which is outside %s", value, got, DiscoveredRoot)
+			}
+			if strings.Contains(cleaned, "..") {
+				t.Errorf("%q produced %q, which can traverse", value, got)
+			}
+			// The path must stay inside the data directory once joined with it.
+			joined := filepath.Clean(filepath.Join("/data", cleaned))
+			if !strings.HasPrefix(joined, filepath.Clean("/data")+string(filepath.Separator)) {
+				t.Errorf("%q produced %q, which escapes the data directory", value, joined)
+			}
+		}
+	}
+}
+
+// A source token is a secret. It must not reach a log line or an error, even
+// when the source is unreachable and the error is about the token.
+func TestSourceTokensAreNeverPutIntoAMessage(t *testing.T) {
+	const secret = "root@pam!gitops=super-secret-value"
+	t.Setenv("PROBE_TOKEN", secret)
+
+	src := collectors.Source{Name: "pve", Type: "proxmox", URL: "https://127.0.0.1:1", TokenEnv: "PROBE_TOKEN"}
+	got, err := src.Token()
+	if err != nil || got != secret {
+		t.Fatalf("Token() = %q, %v", got, err)
+	}
+
+	var logged strings.Builder
+	previous := utils.DefaultOutput()
+	utils.SetDefaultOutput(&logged)
+	defer utils.SetDefaultOutput(previous)
+
+	collector, err := collectors.New(src, utils.NewLogger(false))
+	if err != nil {
+		t.Fatalf("New: %v", err)
+	}
+	_, collectErr := collector.Collect(context.Background())
+	if collectErr == nil {
+		t.Fatal("expected the unreachable source to fail")
+	}
+
+	if strings.Contains(collectErr.Error(), secret) {
+		t.Errorf("the token appears in an error: %v", collectErr)
+	}
+	if strings.Contains(logged.String(), secret) {
+		t.Errorf("the token appears in the log: %s", logged.String())
 	}
 }
