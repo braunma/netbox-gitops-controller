@@ -293,7 +293,7 @@ func TestProcessSnapshotWithNothingFound(t *testing.T) {
 	resetIngestFlags(t, root)
 	captureOutput(t)
 
-	changed, err := processSnapshot(&discovery.Snapshot{Source: "pve-prod"}, utils.NewLogger(false))
+	changed, err := processSnapshot(&discovery.Snapshot{Source: "pve-prod"}, nil, utils.NewLogger(false))
 	if err != nil {
 		t.Fatalf("processSnapshot: %v", err)
 	}

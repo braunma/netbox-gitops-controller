@@ -45,7 +45,14 @@ The corollaries hold everywhere:
 
 Both produce a `discovery.Snapshot` (`pkg/discovery`), and everything after
 that point is source-agnostic. Adding a third source means writing one adapter,
-not touching the pipeline.
+not touching the pipeline — see [Adding a source](#adding-a-source).
+
+Within one `collect` run the sources are planned and applied in configuration
+order, and that order is the precedence: when two sources write different
+values to the same key of the same declared object, the later one wins and the
+run warns about the conflict instead of letting the override pass silently.
+Across runs the most recent scan wins, and the merge request diff is the
+record of what it overrode.
 
 ### The idrac-json contract
 
@@ -64,6 +71,51 @@ It is deliberately forgiving of that contract:
   cannot break every ingest pipeline at once;
 - a `stats` block that disagrees with the entries is reported, because that is
   what a truncated artifact looks like.
+
+## Adding a source
+
+Two very different cases hide behind that sentence, with very different costs.
+
+### A new source of an existing fact kind
+
+OpenStack reporting its guests with the same whitelisted keys as Proxmox,
+another BMC vendor reporting device hardware: write **one adapter producing a
+`discovery.Snapshot`, and nothing else changes** — matching, the whitelist,
+the writers and the review gate are already there. Where the adapter lives
+depends on how the facts arrive:
+
+- a **compiled-in collector** that fetches the snapshot itself lives in
+  `pkg/collectors`, registers its `type:` in that package's registry, and is
+  configured as a source in `collectors.yaml`;
+- an **external document format** handed to `ingest` lives in
+  `pkg/ingestfmt/<name>` and becomes a new `--format` value.
+
+### A new fact kind
+
+Facts about a kind of object the pipeline does not write yet — interface-level
+facts such as observed MACs, or IP-level facts such as a DNS name — are more
+than an adapter. The per-kind shape of the pipeline is deliberate (matching,
+whitelist and editing are written out for devices and for VMs rather than
+genericized), so a new kind is added by extending each touch point additively:
+
+- a new slice on `discovery.Snapshot`, or new fields on a kind it already has;
+- a matching rule in `pkg/ingest/match.go` that resolves the discovered object
+  against the declared inventory — never a guess, same bargain as the rest;
+- a whitelist entry in `pkg/ingest/whitelist.go` naming the keys the fact may
+  write;
+- rendering in the generated and parked writers, where the kind can appear in
+  a file ingest creates;
+- custom-field definitions in `definitions/custom_fields/` if the fact is
+  stored in one;
+- a row in the key table under
+  [What a collector may write](#what-a-collector-may-write);
+- an assertion in `tests/e2e/ingest.sh` proving the fact lands.
+
+The first uses of this recipe are already in sight: NIC data is collected into
+`discovery.NIC` today (the Proxmox collector fills each VM's `interfaces`, and
+generated and parked files render what was seen) but is **not yet written to
+declared objects**. Interface MACs, and `dns_name` on an IP address fed by a
+DNS source, are the designated first extensions.
 
 ## What a collector may write
 

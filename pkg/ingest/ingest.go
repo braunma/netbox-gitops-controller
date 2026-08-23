@@ -22,6 +22,12 @@ type Options struct {
 	// CustomFieldPrefix is the prefix of the custom fields ingest owns.
 	// Everything outside it belongs to somebody else and is never touched.
 	CustomFieldPrefix string
+	// Conflicts, when set, tracks writes across the snapshots of one run so a
+	// later source rewriting an earlier source's value is reported rather than
+	// silently winning. Configuration order stays the precedence; the tracker
+	// only makes the override visible. Nil means no tracking, which is right
+	// for a run that processes a single snapshot.
+	Conflicts *ConflictTracker
 }
 
 // prefix returns the configured custom field prefix, or the default.
@@ -75,6 +81,10 @@ type Summary struct {
 	// Unchanged counts discovered objects that already read the way the scan
 	// found them.
 	Unchanged int `json:"unchanged"`
+	// CrossSourceConflicts counts keys an earlier source of the same run had
+	// already written with a different value. The later source's value is the
+	// one in the file.
+	CrossSourceConflicts int `json:"cross_source_conflicts"`
 }
 
 // HasChanges reports whether the repository would change.
@@ -89,6 +99,9 @@ type Plan struct {
 	// Parked lists the skeleton files the run would write, so the summary can
 	// name them: a file nobody notices is a file nobody finishes.
 	Parked []string `json:"parked,omitempty"`
+	// Conflicts lists the keys this snapshot rewrote after an earlier snapshot
+	// of the same run wrote a different value to them (Options.Conflicts).
+	Conflicts []Conflict `json:"conflicts,omitempty"`
 }
 
 // BuildPlan resolves a snapshot against the declared inventory and works out
@@ -129,6 +142,14 @@ func BuildPlan(snap *discovery.Snapshot, inv loader.Inventory, opts Options) (*P
 			continue
 		}
 		editsByFile[m.Declared.Prov.File] = append(editsByFile[m.Declared.Prov.File], edit)
+	}
+
+	// Cross-source bookkeeping happens on the planned edits, before any of
+	// them can be abandoned: a value another source disagrees with is worth
+	// reporting even when the file it lives in refuses the rewrite.
+	if opts.Conflicts != nil {
+		plan.Conflicts = opts.Conflicts.observeEdits(snap.Source, editsByFile)
+		plan.Summary.CrossSourceConflicts = len(plan.Conflicts)
 	}
 
 	updates, updatedObjects, err := planUpdates(editsByFile)
