@@ -14,6 +14,16 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **Every YAML kind is decoded through one path.** The loader had two
+  decoders for the same file format: a plain one for most kinds and a
+  node-based, provenance-recording one for devices and VMs. Everything now
+  goes through the provenance-based decoder, so defaults merging, the grouped
+  `defaults:` form, per-file error aggregation and ignore/parking behavior
+  cannot drift between kinds. Nothing changes in what the files mean; as a
+  side benefit every kind now carries file/node provenance, the prerequisite
+  for in-place fact editing of further kinds (e.g. DNS names on IP
+  addresses).
+
 - **A missing reference now warns and skips the object everywhere, instead of
   sometimes failing the whole run.** The simple reconcilers resolved
   references in accidentally different ways: racks and VLANs skipped an
@@ -65,6 +75,14 @@ are about to run before applying a sync with pruning enabled.
 - A stray `dump.rdb` that had been committed at the repository root. `*.rdb`
   is ignored now, so a local Redis cannot drop its snapshot back into the
   tree.
+
+- Dead code found by a whole-program analysis: the `Manufacturer` model
+  (manufacturers are created implicitly through the device types, module
+  types and platforms that name them — nothing ever loaded this struct),
+  `utils.IsManaged` and `utils.GetCableColor` (duplicates of the
+  implementations actually used in `pkg/client` and the cable reconciler),
+  and the test-only `idracjson.ParseBytes`. No YAML key and no behavior is
+  affected.
 
 ### Added
 
