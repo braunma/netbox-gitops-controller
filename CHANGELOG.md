@@ -50,17 +50,9 @@ are about to run before applying a sync with pruning enabled.
   merge request, and become NetBox truth through the same reconcile pipeline as
   every hand-written line. See [`docs/INGEST.md`](docs/INGEST.md).
 
-  **What you have to do.** Delete `provision:` from every VM file. A file that
-  still carries it fails validation rather than being quietly ignored:
-
-  ```
-  ✗ virtual machine web-01: provision: the Proxmox provisioning path
-    (cmd/tfgen, terraform/) was removed and this key no longer does anything —
-    delete it; see CHANGELOG.md
-  ```
-
-  A key that no longer does anything is worse than an error, because the author
-  goes on believing something is still being built somewhere.
+  **What you have to do.** Delete `provision:` from every VM file. The key is
+  no longer part of the VM schema, so it is simply ignored — nothing reads it,
+  and it builds nothing.
 
   `vmid`, `vm_template_id` and `node` are kept and unchanged: they describe
   where a VM lives on its hypervisor, the first two are stored in NetBox as

@@ -73,7 +73,7 @@ those are named in [`collectors.yaml`](#collectorsyaml).
 | Flag | Default | What it does |
 |---|---|---|
 | `--output <format>` | `text` | `text` or `json`. `json` prints the plan to stdout and moves all logging to stderr, so the plan can be piped. Any other value is rejected. |
-| `--detailed-exitcode` | off | Exit `0` when already in sync, `2` when changes are pending or were applied, `1` on error — the `terraform plan` convention, so a scheduled `--dry-run` becomes a drift monitor. |
+| `--detailed-exitcode` | off | Exit `0` when already in sync, `2` when changes are pending or were applied, `1` on error — the plan/apply exit-code convention, so a scheduled `--dry-run` becomes a drift monitor. |
 | `--version` | — | Prints the version, commit and build date stamped at link time. |
 
 ### `netbox-gitops validate`

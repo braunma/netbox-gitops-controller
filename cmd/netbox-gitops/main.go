@@ -842,7 +842,7 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 }
 
 // writePlanJSON emits the collected changes as a machine-readable plan,
-// e.g. for posting a terraform-plan-style comment on a merge request.
+// e.g. for posting a plan-style summary comment on a merge request.
 func writePlanJSON(w io.Writer, dryRun bool, summary client.ChangeSummary, changes []client.ChangeRecord) error {
 	plan := struct {
 		DryRun  bool                  `json:"dry_run"`

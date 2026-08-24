@@ -434,14 +434,6 @@ func (v *VMConfig) Validate() error {
 		validateLength("name", v.Name, MaxDeviceNameLength),
 	)
 
-	// The Proxmox provisioning path was removed, so `provision:` no longer does
-	// anything. Silently ignoring it would leave the author believing a VM is
-	// still being built somewhere, so the key is rejected outright.
-	if v.Provision != nil {
-		errs = append(errs, errors.New(
-			"provision: the Proxmox provisioning path (cmd/tfgen, terraform/) was removed and this key no longer does anything — delete it; see CHANGELOG.md"))
-	}
-
 	for i, iface := range v.Interfaces {
 		if iface.Name == "" {
 			errs = append(errs, fmt.Errorf("interface %d: name is required", i+1))

@@ -92,12 +92,6 @@ type VMConfig struct {
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
 	RenameFrom string `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
-	// Provision is the removed Proxmox provisioning opt-in. It is still parsed
-	// so that a file which still carries the key fails validation with a
-	// pointer at the changelog, instead of being silently ignored and leaving
-	// the author believing something is still being provisioned. Remove the
-	// key; nothing replaces it.
-	Provision *bool `yaml:"provision,omitempty" json:"-"`
 	// VMID is the hypervisor's numeric identifier for this VM (the Proxmox
 	// VMID). NetBox's virtual-machine model has no native slot for it, so it is
 	// stored in the `vmid` custom field. Collectors may write this key.

@@ -514,18 +514,6 @@ func TestVMConfigValidate(t *testing.T) {
 			nil,
 		},
 		{
-			// The removed key must fail loudly rather than be ignored, whichever
-			// value it carries.
-			"removed provision key, true",
-			VMConfig{Name: "web-01", Cluster: "prod-cluster", Provision: boolPtr(true)},
-			[]string{"provision: the Proxmox provisioning path"},
-		},
-		{
-			"removed provision key, false",
-			VMConfig{Name: "web-01", Cluster: "prod-cluster", Provision: boolPtr(false)},
-			[]string{"provision: the Proxmox provisioning path"},
-		},
-		{
 			"documentation-only vm with hypervisor identifiers",
 			VMConfig{Name: "web-01", Cluster: "prod-cluster",
 				VMID: 101, VMTemplateID: 800, Node: "pve-01"},
@@ -621,7 +609,3 @@ func TestValidateAcceptsAbsentRenameFrom(t *testing.T) {
 		t.Errorf("rack without rename_from was rejected: %v", err)
 	}
 }
-
-// boolPtr returns a pointer to b, for the optional-bool fields that have to
-// tell "absent" from "set to false".
-func boolPtr(b bool) *bool { return &b }
