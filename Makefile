@@ -83,6 +83,10 @@ e2e: ## End-to-end tests (needs NETBOX_URL and NETBOX_TOKEN)
 	./tests/e2e/run.sh
 	./tests/e2e/rename.sh
 	./tests/e2e/repo-data.sh
+	./tests/e2e/import.sh
+
+e2e-import: ## Reverse-sync round trip only (needs NETBOX_URL and NETBOX_TOKEN)
+	./tests/e2e/import.sh
 
 e2e-rename: ## Rename coverage only (needs NETBOX_URL and NETBOX_TOKEN)
 	./tests/e2e/rename.sh
