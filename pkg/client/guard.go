@@ -108,7 +108,7 @@ func (c *NetBoxClient) checkSiteGuard(endpoint string, existing Object, payload 
 	}
 
 	// The desired site (from the payload) must be allowed.
-	if id, ok := payloadSiteID(payload); ok && !c.assertSiteIDs[id] {
+	if id, ok := c.writeSiteID(endpoint, payload); ok && !c.assertSiteIDs[id] {
 		return &SiteGuardError{fmt.Sprintf(
 			"--assert-site: refusing to write %s into site id %d, which is not in the allowed set %s",
 			endpoint, id, c.allowedSitesString())}
@@ -116,7 +116,7 @@ func (c *NetBoxClient) checkSiteGuard(endpoint string, existing Object, payload 
 	// An existing object's current site must be allowed too, or this update
 	// would move a production object.
 	if existing != nil {
-		if id := objectSiteID(existing); id != 0 && !c.assertSiteIDs[id] {
+		if id := c.currentSiteID(endpoint, existing); id != 0 && !c.assertSiteIDs[id] {
 			return &SiteGuardError{fmt.Sprintf(
 				"--assert-site: refusing to update %s %q, which currently lives in site id %d, outside the allowed set %s",
 				endpoint, objectLabel(existing), id, c.allowedSitesString())}
@@ -214,4 +214,55 @@ func (c *NetBoxClient) CheckObjectSite(endpoint, label string, obj Object) error
 			endpoint, label, id, c.allowedSitesString())}
 	}
 	return nil
+}
+
+// writeSiteID resolves the site a create/update payload targets. For most
+// site-scoped endpoints that is a direct site field or a NetBox 4.2 scope; for
+// a virtual machine, whose site may be carried only by its cluster, it falls
+// back to the cluster's site so a clustered VM cannot slip past the guard.
+func (c *NetBoxClient) writeSiteID(endpoint string, payload map[string]interface{}) (int, bool) {
+	if id, ok := payloadSiteID(payload); ok {
+		return id, true
+	}
+	if endpoint == "virtual-machines" {
+		if clusterID := utils.GetIDFromObject(payload["cluster"]); clusterID != 0 {
+			return c.clusterSiteID(clusterID)
+		}
+	}
+	return 0, false
+}
+
+// currentSiteID resolves the site a fetched object currently sits in, with the
+// same VM-via-cluster fallback as writeSiteID.
+func (c *NetBoxClient) currentSiteID(endpoint string, obj Object) int {
+	if id := objectSiteID(obj); id != 0 {
+		return id
+	}
+	if endpoint == "virtual-machines" {
+		if clusterID := utils.GetIDFromObject(obj["cluster"]); clusterID != 0 {
+			if id, ok := c.clusterSiteID(clusterID); ok {
+				return id
+			}
+		}
+	}
+	return 0
+}
+
+// clusterSiteID fetches a cluster and returns the site it is scoped to. A
+// cluster with no site (a site-less cluster is legal in NetBox) yields ok=false,
+// which the guard treats as "no site to check" — consistent with how it treats
+// any other site-less object.
+func (c *NetBoxClient) clusterSiteID(clusterID int) (int, bool) {
+	cluster, err := c.Get("virtualization", "clusters", clusterID)
+	if err != nil {
+		// Cannot verify: fail closed by reporting the zero site, which the
+		// caller does not treat as allowed-or-denied. The direct-update guard
+		// already refuses when it cannot fetch; here, on the Apply path, a
+		// missing cluster means the VM's own create will fail anyway.
+		return 0, false
+	}
+	if id := objectSiteID(cluster); id != 0 {
+		return id, true
+	}
+	return 0, false
 }
