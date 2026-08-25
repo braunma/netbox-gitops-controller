@@ -271,6 +271,23 @@ func primaryIPIDs(o client.Object) map[int]bool {
 	return ids
 }
 
+// moduleRefSlug resolves the slug a module references its type by. NetBox's
+// nested module_type carries model (and no slug), so it is slugified to match
+// moduleTypeSlug in the emitted module-type definition.
+func moduleRefSlug(o client.Object) string {
+	mt := nested(o, "module_type")
+	if mt == nil {
+		return ""
+	}
+	if s, _ := mt["slug"].(string); s != "" {
+		return s
+	}
+	if model, _ := mt["model"].(string); model != "" {
+		return utils.Slugify(model)
+	}
+	return ""
+}
+
 // mapModules maps a device's installed modules.
 func mapModules(objs []client.Object) []models.ModuleConfig {
 	sort.SliceStable(objs, func(i, j int) bool {
@@ -280,7 +297,7 @@ func mapModules(objs []client.Object) []models.ModuleConfig {
 	for _, o := range objs {
 		out = append(out, models.ModuleConfig{
 			Name:           refName(o, "module_bay"),
-			ModuleTypeSlug: refSlug(o, "module_type"),
+			ModuleTypeSlug: moduleRefSlug(o),
 			Status:         choiceValue(o, "status"),
 			Serial:         str(o, "serial"),
 			AssetTag:       str(o, "asset_tag"),
@@ -453,11 +470,13 @@ func (rc *runContext) mapPassivePorts(devID int, idx deviceIndex) ([]models.Fron
 		if link == nil {
 			continue
 		}
+		rpName, rpPos := frontPortRearPort(p, idx)
 		fronts = append(fronts, models.FrontPortConfig{
-			Name:     str(p, "name"),
-			Type:     choiceValue(p, "type"),
-			RearPort: refName(p, "rear_port"),
-			Link:     link,
+			Name:             str(p, "name"),
+			Type:             choiceValue(p, "type"),
+			RearPort:         rpName,
+			RearPortPosition: rpPos,
+			Link:             link,
 		})
 	}
 	var rears []models.RearPortConfig
@@ -475,6 +494,27 @@ func (rc *runContext) mapPassivePorts(devID int, idx deviceIndex) ([]models.Fron
 		})
 	}
 	return fronts, rears
+}
+
+// frontPortRearPort resolves the rear port a front port maps to. NetBox 4.6
+// returns this as a `rear_ports` list of {rear_port: <id>, rear_port_position},
+// carrying the rear port's id rather than its name, so the id is resolved to a
+// name through the port index.
+func frontPortRearPort(fp client.Object, idx deviceIndex) (string, int) {
+	raw, ok := fp["rear_ports"].([]interface{})
+	if !ok || len(raw) == 0 {
+		return "", 0
+	}
+	entry, ok := raw[0].(map[string]interface{})
+	if !ok {
+		return "", 0
+	}
+	pos := utils.GetIDFromObject(entry["rear_port_position"])
+	rpID := utils.GetIDFromObject(entry["rear_port"])
+	if rp, ok := idx.portByID[rpID]; ok {
+		return str(rp, "name"), pos
+	}
+	return "", pos
 }
 
 // cableFor returns the LinkConfig to emit on a termination, or nil. A cable is

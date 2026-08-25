@@ -152,8 +152,13 @@ func (rc *runContext) importModuleTypes() error {
 		id := idOf(o)
 		mfg := refName(o, "manufacturer")
 		mt := &models.ModuleType{
-			Model:              str(o, "model"),
-			Slug:               str(o, "slug"),
+			Model: str(o, "model"),
+			// NetBox has no slug for a module type (its identity is
+			// manufacturer + model), but this schema references one by slug and
+			// --strict rejects a module type without it. Synthesise the same
+			// slug the loader derives, so the definition and every module
+			// reference agree.
+			Slug:               moduleTypeSlug(o),
 			Manufacturer:       mfg,
 			PartNumber:         str(o, "part_number"),
 			Airflow:            choiceValue(o, "airflow"),
@@ -316,6 +321,16 @@ func enabledPtr(o client.Object) *bool {
 // sortByName sorts template objects by their name field.
 func sortByName(objs []client.Object) {
 	sort.SliceStable(objs, func(i, j int) bool { return str(objs[i], "name") < str(objs[j], "name") })
+}
+
+// moduleTypeSlug is the slug this schema references a module type by: NetBox's
+// own slug when present (it has none today), else the model slugified, matching
+// what the loader derives for a module type declared without a slug.
+func moduleTypeSlug(o client.Object) string {
+	if s := str(o, "slug"); s != "" {
+		return s
+	}
+	return utils.Slugify(str(o, "model"))
 }
 
 // fileSeg makes a value safe as a path segment, slugifying and defaulting an
