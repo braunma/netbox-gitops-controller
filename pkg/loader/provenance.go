@@ -235,11 +235,14 @@ func decodeMerged[T models.Validator](raw map[string]interface{}) (T, error) {
 //  1. A list of mappings (the classic form).
 //  2. A single mapping, treated as a one-element list (e.g. one device type
 //     per file).
-//  3. A grouped form with an optional `defaults` mapping and a `devices`
-//     list. The defaults are merged into every entry: entry values win over
-//     defaults, and `tags` are combined (union) instead of replaced. This
-//     form exists so inventory files don't have to repeat shared fields
-//     (site_slug, role_slug, rack_slug, tags, ...) on every device.
+//  3. A grouped form with an optional `defaults` mapping and a list under
+//     either `devices` or its synonym `items`. The defaults are merged into
+//     every entry: entry values win over defaults, and `tags` are combined
+//     (union) instead of replaced. This form exists so a file doesn't have to
+//     repeat shared fields (site_slug, role_slug, rack_slug, tags, ...) on
+//     every entry. `devices` reads naturally for inventory; `items` reads
+//     naturally for definition kinds (sites, roles, ...) that a reverse
+//     import writes. A file uses one spelling or the other, never both.
 //
 // It is exported because anything that rewrites an inventory file has to split
 // it into objects by exactly these rules, or it would edit a different block
@@ -250,23 +253,35 @@ func ItemNodes(path string, root *yaml.Node) ([]*yaml.Node, *yaml.Node, error) {
 		return root.Content, nil, nil
 
 	case yaml.MappingNode:
+		// The grouped form's list may be spelled `devices:` (the original,
+		// natural for inventory) or `items:` (its synonym, natural for
+		// definition kinds like sites or roles that a reverse import writes).
+		// They are exact synonyms; a file may use one or the other, never both.
 		devices := mappingValue(root, "devices")
-		if devices == nil {
+		items := mappingValue(root, "items")
+		if devices != nil && items != nil {
+			return nil, nil, fmt.Errorf("%s: use either 'devices' or 'items' for the grouped list, not both", path)
+		}
+		listKey, list := "devices", devices
+		if items != nil {
+			listKey, list = "items", items
+		}
+		if list == nil {
 			// A single object per file.
 			return []*yaml.Node{root}, nil, nil
 		}
-		// Grouped form. Only defaults and devices may appear, so a stray
-		// device field next to `devices` fails here as loudly as it does in
-		// the reconciler's loader rather than being silently dropped.
+		// Grouped form. Only defaults and the chosen list key may appear, so a
+		// stray field next to it fails here as loudly as it does in the
+		// reconciler's loader rather than being silently dropped.
 		for i := 0; i < len(root.Content)-1; i += 2 {
-			if key := root.Content[i].Value; key != "defaults" && key != "devices" {
-				return nil, nil, fmt.Errorf("%s: grouped form only allows 'defaults' and 'devices' at the top level, found %q", path, key)
+			if key := root.Content[i].Value; key != "defaults" && key != listKey {
+				return nil, nil, fmt.Errorf("%s: grouped form only allows 'defaults' and %q at the top level, found %q", path, listKey, key)
 			}
 		}
-		if devices.Kind != yaml.SequenceNode {
-			return nil, nil, fmt.Errorf("%s: 'devices' must be a list", path)
+		if list.Kind != yaml.SequenceNode {
+			return nil, nil, fmt.Errorf("%s: %q must be a list", path, listKey)
 		}
-		return devices.Content, mappingValue(root, "defaults"), nil
+		return list.Content, mappingValue(root, "defaults"), nil
 
 	default:
 		// An explicit empty document (`---` or `null`) declares nothing, like a

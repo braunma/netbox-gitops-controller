@@ -278,6 +278,11 @@ Since the ports already come from the device type template, an interface is
 only listed here when it carries device-specific data — IPs, VLANs, cabling —
 without repeating `type` or `enabled`.
 
+The list under a grouped file may be spelled `devices:` or, as an exact
+synonym, `items:`. `devices:` reads naturally for inventory; `items:` reads
+naturally for definition kinds (sites, roles, …) and is what `import` writes.
+Use one spelling or the other, never both.
+
 ```yaml
 defaults:
   site_slug: "berlin"
