@@ -70,8 +70,16 @@ func main() {
 		// and printing the whole flag list after it buries the actual error.
 		SilenceUsage: true,
 		Version:      fmt.Sprintf("%s (commit %s, built %s)", version, commit, buildDate),
+		// Presentation is resolved once, before any subcommand runs, so
+		// --log-format / --no-color and their environment variables apply
+		// everywhere. Subcommands do not define their own PersistentPreRunE,
+		// so this one runs for all of them.
+		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			return applyPresentation(cmd)
+		},
 	}
 
+	addPresentationFlags(rootCmd)
 	rootCmd.Flags().BoolVar(&dryRun, "dry-run", false, "Simulate changes without applying them")
 	rootCmd.PersistentFlags().StringVar(&configFile, "config", defaultConfigFile, "KEY=value file read into the environment; values already exported win over it")
 	rootCmd.PersistentFlags().StringVar(&dataDir, "data-dir", ".", "Base directory for definitions and inventory (e.g., 'example' for test data)")
@@ -91,10 +99,8 @@ func main() {
 	rootCmd.AddCommand(newCollectCommand())
 	rootCmd.AddCommand(newIngestCommand())
 
-	if err := rootCmd.Execute(); err != nil {
-		os.Exit(1)
-	}
-	os.Exit(exitCode)
+	err := rootCmd.Execute()
+	os.Exit(exitCodeFor(err))
 }
 
 func runSync(cmd *cobra.Command, args []string) error {
