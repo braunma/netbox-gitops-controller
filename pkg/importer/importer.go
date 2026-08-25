@@ -97,6 +97,7 @@ func Import(c *client.NetBoxClient, opts Options) (*Result, error) {
 		fn   func(*runContext) error
 	}{
 		{"foundation", (*runContext).foundation},
+		{"network", (*runContext).network},
 	}
 	for _, p := range phaseFns {
 		if !opts.Phases[p.name] {
