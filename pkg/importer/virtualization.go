@@ -44,7 +44,7 @@ func (rc *runContext) importClusterTypes() error {
 		}
 		items = append(items, &models.ClusterType{
 			Name: str(o, "name"), Slug: str(o, "slug"),
-			Description: str(o, "description"), Tags: tagSlugs(o, rc.strip),
+			Description: str(o, "description"), Tags: rc.tags(o),
 		})
 		exported++
 	}
@@ -69,7 +69,7 @@ func (rc *runContext) importClusterGroups() error {
 		}
 		items = append(items, &models.ClusterGroup{
 			Name: str(o, "name"), Slug: str(o, "slug"),
-			Description: str(o, "description"), Tags: tagSlugs(o, rc.strip),
+			Description: str(o, "description"), Tags: rc.tags(o),
 		})
 		exported++
 	}
@@ -97,14 +97,14 @@ func (rc *runContext) importClusters() error {
 			continue
 		}
 		items = append(items, &models.Cluster{
-			Name:        str(o, "name"),
+			Name:        rc.nameOut(str(o, "name")),
 			TypeSlug:    refSlug(o, "type"),
 			GroupSlug:   refSlug(o, "group"),
-			SiteSlug:    siteSlug,
+			SiteSlug:    rc.siteOut(siteSlug),
 			Tenant:      refName(o, "tenant"),
 			Status:      choiceValue(o, "status"),
 			Description: str(o, "description"),
-			Tags:        tagSlugs(o, rc.strip),
+			Tags:        rc.tags(o),
 		})
 		exported++
 	}
@@ -151,7 +151,11 @@ func (rc *runContext) importVMs() error {
 			continue
 		}
 		vm := rc.mapVM(o, ifByVM, ipsByIface)
-		files[rc.vmPath(clusterName, siteSlug)] = append(files[rc.vmPath(clusterName, siteSlug)], vm)
+		// Placement uses the rewritten cluster/site so a sandbox VM lands in a
+		// sandbox file, not under its production cluster's name.
+		p := rc.vmPath(vm.Cluster, vm.SiteSlug)
+		files[p] = append(files[p], vm)
+		_ = clusterName
 		exported++
 	}
 	rc.report.count("virtualization/virtual-machines", len(vms), exported)
@@ -178,11 +182,11 @@ func (rc *runContext) importVMs() error {
 func (rc *runContext) mapVM(o client.Object, ifByVM, ipsByIface map[int][]client.Object) *models.VMConfig {
 	cf, _ := o["custom_fields"].(map[string]interface{})
 	vm := &models.VMConfig{
-		Name:         str(o, "name"),
+		Name:         rc.nameOut(str(o, "name")),
 		VMID:         cfInt(cf, "vmid"),
 		VMTemplateID: cfInt(cf, "vm_template_id"),
-		Cluster:      refName(o, "cluster"),
-		SiteSlug:     refSlug(o, "site"),
+		Cluster:      rc.nameOut(refName(o, "cluster")),
+		SiteSlug:     rc.siteOut(refSlug(o, "site")),
 		RoleSlug:     refSlug(o, "role"),
 		Platform:     refSlug(o, "platform"),
 		Tenant:       refName(o, "tenant"),
@@ -190,7 +194,7 @@ func (rc *runContext) mapVM(o client.Object, ifByVM, ipsByIface map[int][]client
 		VCPUs:        int(floatOf(o, "vcpus")),
 		Memory:       intOf(o, "memory"),
 		Disk:         intOf(o, "disk"),
-		Tags:         tagSlugs(o, rc.strip),
+		Tags:         rc.tags(o),
 	}
 
 	primary := primaryIPIDs(o)
@@ -206,7 +210,7 @@ func (rc *runContext) mapVM(o client.Object, ifByVM, ipsByIface map[int][]client
 			UntaggedVLAN: vlanKey(nested(iface, "untagged_vlan")),
 			TaggedVLANs:  taggedVLANKeys(iface),
 			Parent:       refName(iface, "parent"),
-			Tags:         tagSlugs(iface, rc.strip),
+			Tags:         rc.tags(iface),
 		}
 		if en, ok := iface["enabled"].(bool); ok && !en {
 			f := false
@@ -244,8 +248,8 @@ func (rc *runContext) pickIPFrom(ips []client.Object, ifaceName string, primary 
 		DNSName:     str(chosen, "dns_name"),
 		Description: str(chosen, "description"),
 		Status:      choiceValue(chosen, "status"),
-		VRF:         refName(chosen, "vrf"),
-		Tags:        tagSlugs(chosen, rc.strip),
+		VRF:         rc.vrfOut(refName(chosen, "vrf")),
+		Tags:        rc.tags(chosen),
 	}, role
 }
 

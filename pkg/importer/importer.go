@@ -32,6 +32,10 @@ type Options struct {
 	// ManagedOnly restricts the import to objects already carrying the managed
 	// gitops tag.
 	ManagedOnly bool
+	// ExcludeSites drops site-scoped objects in these sites, so a later plain
+	// import of an instance that still holds an un-cleaned rehearsal does not
+	// drag the sandbox site's objects back in as if they were real inventory.
+	ExcludeSites []string
 
 	// SplitBy chooses how inventory is partitioned into files: "site" (default),
 	// "rack", "role" or "none".
@@ -39,7 +43,33 @@ type Options struct {
 	// Defaults controls per-file defaults extraction.
 	Defaults defaultsOptions
 
+	// Rewrite configures the sandbox rehearsal: a one-shot rewrite of an
+	// imported estate onto a scratch site (and scratch VRF, and name prefix) so
+	// a full adoption can be applied and inspected without touching a single
+	// production object. Empty means no rewrite — the normal case.
+	Rewrite RewriteOptions
+
 	Logger *utils.Logger
+}
+
+// RewriteOptions configures the sandbox rewrite. These are deliberately
+// flag-only on the CLI (never environment-bound): a stray REWRITE_SITE in CI
+// variables would silently rewrite every future import.
+type RewriteOptions struct {
+	// Sites maps each source site slug to a target; "*" maps every site. Empty
+	// disables the rewrite entirely.
+	Sites map[string]string
+	// VRF is the scratch VRF every imported prefix and address is placed in, so
+	// rewritten IPAM cannot match production IPAM (which the site rewrite cannot
+	// isolate). Created by the run with enforce_unique.
+	VRF string
+	// NamePrefix is prepended to every name-identified object (devices, VMs,
+	// racks, clusters), so a rewritten dataset cannot collide with production
+	// identities.
+	NamePrefix string
+	// Tag is stamped on every rewritten taggable object, so the objects the
+	// rehearsal creates in NetBox are identifiable and excludable afterwards.
+	Tag string
 }
 
 // File is one rendered output file, its path relative to the data directory.

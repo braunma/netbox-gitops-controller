@@ -397,6 +397,10 @@ func (vr *VirtualizationReconciler) reconcileVMIP(vmID, ifaceID int, iface *mode
 
 	lookup := map[string]interface{}{"address": ipConfig.Address}
 	if ipConfig.VRF != "" {
+		// A VRF this run only planned (id 0 under --dry-run) still scopes the
+		// lookup: vrf_id=0 makes Apply plan a create rather than matching a
+		// same-address production object with the filter omitted. Matches the
+		// prefix reconciler; see the note there.
 		if vrfID, ok := vr.client.Cache().GetGlobalID("vrfs", ipConfig.VRF); ok {
 			lookup["vrf_id"] = vrfID
 		}

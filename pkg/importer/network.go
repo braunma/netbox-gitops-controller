@@ -51,6 +51,25 @@ func (rc *runContext) importVRFs() error {
 	if err != nil {
 		return err
 	}
+
+	// Under a rewrite, all IPAM is routed into a single scratch VRF (see
+	// vrfOut), so the only VRF the sandbox declares is that scratch VRF, with
+	// enforce_unique set — uniqueness must be at least as strict as the global
+	// table, or a duplicate that production would reject could pass the
+	// rehearsal. Production VRFs are not carried in; a rehearsal is not the
+	// place to reproduce them.
+	if rc.rewriting() && rc.opts.Rewrite.VRF != "" {
+		rc.report.count("ipam/vrfs", len(objs), 1)
+		return rc.emit("definitions/vrfs/vrfs.yaml",
+			genHeader("The scratch VRF the sandbox routes all IPAM into."), "items",
+			[]interface{}{&models.VRF{
+				Name:          rc.opts.Rewrite.VRF,
+				EnforceUnique: true,
+				Description:   "Scratch VRF for the sandbox rehearsal; isolates imported IPAM from production.",
+				Tags:          []string{rc.sandboxTag()},
+			}})
+	}
+
 	var items []interface{}
 	exported := 0
 	for _, o := range objs {
@@ -62,7 +81,7 @@ func (rc *runContext) importVRFs() error {
 			RD:            str(o, "rd"),
 			Description:   str(o, "description"),
 			EnforceUnique: boolOf(o, "enforce_unique"),
-			Tags:          tagSlugs(o, rc.strip),
+			Tags:          rc.tags(o),
 		})
 		exported++
 	}
@@ -95,11 +114,11 @@ func (rc *runContext) importVLANGroups() error {
 		items = append(items, &models.VLANGroup{
 			Name:        str(o, "name"),
 			Slug:        str(o, "slug"),
-			SiteSlug:    siteSlug,
+			SiteSlug:    rc.siteOut(siteSlug),
 			MinVID:      vidBound(o, "min_vid"),
 			MaxVID:      vidBound(o, "max_vid"),
 			Description: str(o, "description"),
-			Tags:        tagSlugs(o, rc.strip),
+			Tags:        rc.tags(o),
 		})
 		exported++
 	}
@@ -134,12 +153,12 @@ func (rc *runContext) importVLANs() error {
 		items = append(items, &models.VLAN{
 			Name:        str(o, "name"),
 			VID:         intOf(o, "vid"),
-			SiteSlug:    siteSlug,
+			SiteSlug:    rc.siteOut(siteSlug),
 			GroupSlug:   refSlug(o, "group"),
 			Status:      choiceValue(o, "status"),
 			Role:        refSlug(o, "role"),
 			Description: str(o, "description"),
-			Tags:        tagSlugs(o, rc.strip),
+			Tags:        rc.tags(o),
 		})
 		exported++
 	}
@@ -179,14 +198,14 @@ func (rc *runContext) importPrefixes() error {
 		}
 		items = append(items, &models.Prefix{
 			Prefix:      str(o, "prefix"),
-			SiteSlug:    siteSlug,
-			VRFName:     refName(o, "vrf"),
+			SiteSlug:    rc.siteOut(siteSlug),
+			VRFName:     rc.vrfOut(refName(o, "vrf")),
 			VLANName:    refName(o, "vlan"),
 			Status:      choiceValue(o, "status"),
 			Role:        refSlug(o, "role"),
 			IsPool:      boolOf(o, "is_pool"),
 			Description: str(o, "description"),
-			Tags:        tagSlugs(o, rc.strip),
+			Tags:        rc.tags(o),
 		})
 		exported++
 	}

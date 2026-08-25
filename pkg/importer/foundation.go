@@ -20,8 +20,15 @@ func genHeader(what string) string {
 		"re-import overwrites it. Review it before committing."
 }
 
-// siteAllowed reports whether a site slug passes the --site source filter.
+// siteAllowed reports whether a site slug passes the --site source filter and
+// the --exclude-site filter. An excluded site always loses; an empty include
+// list allows everything not excluded.
 func (rc *runContext) siteAllowed(slug string) bool {
+	for _, s := range rc.opts.ExcludeSites {
+		if s == slug {
+			return false
+		}
+	}
 	if len(rc.opts.Sites) == 0 {
 		return true
 	}
@@ -61,6 +68,7 @@ func (rc *runContext) importSites() error {
 	}
 	var items []interface{}
 	exported := 0
+	seenSlug := map[string]bool{}
 	for _, o := range objs {
 		if !rc.keep(o) {
 			continue
@@ -69,15 +77,33 @@ func (rc *runContext) importSites() error {
 		if !rc.siteAllowed(slug) {
 			continue
 		}
+		outSlug := rc.siteOut(slug)
+		// Under a rewrite (especially a "*" wildcard) many source sites collapse
+		// onto one target, so a site definition is emitted once per distinct
+		// output slug.
+		if seenSlug[outSlug] {
+			continue
+		}
+		seenSlug[outSlug] = true
+
 		site := &models.Site{
 			Name:        str(o, "name"),
-			Slug:        slug,
+			Slug:        outSlug,
 			Status:      choiceValue(o, "status"),
 			Region:      refSlug(o, "region"),
 			TimeZone:    str(o, "time_zone"),
 			Description: str(o, "description"),
 			Comments:    str(o, "comments"),
-			Tags:        tagSlugs(o, rc.strip),
+			Tags:        rc.tags(o),
+		}
+		if rc.rewriting() {
+			// The scratch site stands for the whole rehearsal; name it for the
+			// target slug rather than an arbitrary source site's name, and drop
+			// source-specific detail that no longer applies.
+			site.Name = outSlug
+			site.Region = ""
+			site.Comments = ""
+			site.Description = "Sandbox site created by `netbox-gitops import --rewrite-site`."
 		}
 		if site.Region != "" {
 			rc.report.note("site.region: regions are referenced but not imported as their own definitions")
@@ -109,17 +135,17 @@ func (rc *runContext) importRacks() error {
 			continue
 		}
 		rack := &models.Rack{
-			Name: str(o, "name"),
+			Name: rc.nameOut(str(o, "name")),
 			// NetBox racks have no slug of their own; the YAML slug is this
 			// project's concept, derived from the name and reused verbatim by
 			// every device's rack_slug.
-			Slug:        utils.Slugify(str(o, "name")),
-			SiteSlug:    siteSlug,
+			Slug:        rc.rackSlugOut(str(o, "name")),
+			SiteSlug:    rc.siteOut(siteSlug),
 			Status:      choiceValue(o, "status"),
 			Width:       intOf(o, "width"),
 			UHeight:     intOf(o, "u_height"),
 			Description: str(o, "description"),
-			Tags:        tagSlugs(o, rc.strip),
+			Tags:        rc.tags(o),
 		}
 		if w := nested(o, "width"); w != nil {
 			// width serialises as a choice on some releases.
@@ -216,7 +242,7 @@ func (rc *runContext) importPlatforms() error {
 			// The model keys manufacturer by name; the sync ensures it by name.
 			Manufacturer: refName(o, "manufacturer"),
 			Description:  str(o, "description"),
-			Tags:         tagSlugs(o, rc.strip),
+			Tags:         rc.tags(o),
 		})
 		exported++
 	}
@@ -244,7 +270,7 @@ func (rc *runContext) importTenantGroups() error {
 			Slug:        str(o, "slug"),
 			ParentSlug:  refSlug(o, "parent"),
 			Description: str(o, "description"),
-			Tags:        tagSlugs(o, rc.strip),
+			Tags:        rc.tags(o),
 		})
 		exported++
 	}
@@ -272,7 +298,7 @@ func (rc *runContext) importTenants() error {
 			Slug:        str(o, "slug"),
 			GroupSlug:   refSlug(o, "group"),
 			Description: str(o, "description"),
-			Tags:        tagSlugs(o, rc.strip),
+			Tags:        rc.tags(o),
 		})
 		exported++
 	}

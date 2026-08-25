@@ -258,7 +258,14 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 
 		lookup := map[string]interface{}{"prefix": prefix.Prefix}
 		if prefix.VRFName != "" {
-			if vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName); ok && vrfID != 0 {
+			if vrfID, ok := nr.client.Cache().GetGlobalID("vrfs", prefix.VRFName); ok {
+				// A VRF this run declares but has only planned (id 0 under
+				// --dry-run) must still scope the lookup: sending vrf_id=0 makes
+				// Apply treat the prefix as new rather than omitting the filter
+				// and matching a same-CIDR prefix in the global table or another
+				// VRF. Without this, a dry-run of a scratch-VRF dataset would
+				// plan an update to a production prefix that the real apply,
+				// with the VRF created, would correctly create instead.
 				lookup["vrf_id"] = vrfID
 			}
 		}

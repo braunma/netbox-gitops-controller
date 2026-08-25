@@ -19,20 +19,21 @@ import (
 
 // import flag backing vars.
 var (
-	importForce       bool
-	importDryRun      bool
-	importDiff        string
-	importOnly        []string
-	importSites       []string
-	importTags        []string
-	importExcludeTags []string
-	importManagedOnly bool
-	importSplitBy     string
-	importDefaults    bool
-	importDefaultsMin int
-	importReport      string
-	importFailOnGaps  bool
-	importOutput      string
+	importForce        bool
+	importDryRun       bool
+	importDiff         string
+	importOnly         []string
+	importSites        []string
+	importTags         []string
+	importExcludeTags  []string
+	importExcludeSites []string
+	importManagedOnly  bool
+	importSplitBy      string
+	importDefaults     bool
+	importDefaultsMin  int
+	importReport       string
+	importFailOnGaps   bool
+	importOutput       string
 )
 
 // newImportCommand builds the `import` subcommand: the reverse of the sync. It
@@ -71,6 +72,7 @@ Exit codes: 0 success (or --diff found no drift), 1 error, 2 --diff found drift.
 	cmd.Flags().StringSliceVar(&importSites, "site", nil, "Restrict site-scoped source objects to these slugs ($IMPORT_SITES)")
 	cmd.Flags().StringSliceVar(&importTags, "tag", nil, "Only import objects carrying these tag slugs ($IMPORT_TAGS)")
 	cmd.Flags().StringSliceVar(&importExcludeTags, "exclude-tag", nil, "Skip objects carrying these tag slugs ($IMPORT_EXCLUDE_TAGS)")
+	cmd.Flags().StringSliceVar(&importExcludeSites, "exclude-site", nil, "Skip site-scoped objects in these site slugs, e.g. a leftover sandbox ($IMPORT_EXCLUDE_SITES)")
 	cmd.Flags().BoolVar(&importManagedOnly, "managed-only", false, "Only import objects already carrying the gitops tag ($IMPORT_MANAGED_ONLY)")
 	cmd.Flags().StringVar(&importSplitBy, "split-by", "site", "How to partition inventory into files: site, rack, role, none ($IMPORT_SPLIT_BY)")
 	cmd.Flags().BoolVar(&importDefaults, "defaults", true, "Hoist fields shared across a file into a defaults block ($IMPORT_DEFAULTS)")
@@ -79,6 +81,7 @@ Exit codes: 0 success (or --diff found no drift), 1 error, 2 --diff found drift.
 	cmd.Flags().BoolVar(&importFailOnGaps, "fail-on-gaps", false, "Exit non-zero if the report lists any skipped object ($IMPORT_FAIL_ON_GAPS)")
 	cmd.Flags().StringVar(&importOutput, "output", "text", "Output format: text or json ($IMPORT_OUTPUT)")
 
+	addRewriteFlags(cmd)
 	return cmd
 }
 
@@ -90,6 +93,7 @@ var importEnvBindings = map[string]string{
 	"site":               "IMPORT_SITES",
 	"tag":                "IMPORT_TAGS",
 	"exclude-tag":        "IMPORT_EXCLUDE_TAGS",
+	"exclude-site":       "IMPORT_EXCLUDE_SITES",
 	"managed-only":       "IMPORT_MANAGED_ONLY",
 	"split-by":           "IMPORT_SPLIT_BY",
 	"defaults":           "IMPORT_DEFAULTS",
@@ -185,14 +189,15 @@ func importOptions(cmd *cobra.Command, logger *utils.Logger) (importer.Options, 
 	}
 
 	opts := importer.Options{
-		Phases:      phases,
-		Sites:       importSites,
-		Tags:        importTags,
-		ExcludeTags: importExcludeTags,
-		ManagedOnly: importManagedOnly,
-		SplitBy:     importSplitBy,
-		Defaults:    importer.DefaultsOptions(importDefaults, importDefaultsMin),
-		Logger:      logger,
+		Phases:       phases,
+		Sites:        importSites,
+		Tags:         importTags,
+		ExcludeTags:  importExcludeTags,
+		ExcludeSites: importExcludeSites,
+		ManagedOnly:  importManagedOnly,
+		SplitBy:      importSplitBy,
+		Defaults:     importer.DefaultsOptions(importDefaults, importDefaultsMin),
+		Logger:       logger,
 	}
 	if err := applyRewriteOptions(cmd, &opts, logger); err != nil {
 		return importer.Options{}, err

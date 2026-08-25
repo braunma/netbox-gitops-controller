@@ -193,23 +193,23 @@ func (rc *runContext) buildDeviceIndex() (deviceIndex, error) {
 func (rc *runContext) mapDevice(o client.Object, idx deviceIndex) (*models.DeviceConfig, bool) {
 	id := idOf(o)
 	dev := &models.DeviceConfig{
-		Name:           str(o, "name"),
-		SiteSlug:       refSlug(o, "site"),
+		Name:           rc.nameOut(str(o, "name")),
+		SiteSlug:       rc.siteOut(refSlug(o, "site")),
 		DeviceTypeSlug: refSlug(o, "device_type"),
 		RoleSlug:       deviceRoleSlug(o),
 		Status:         choiceValue(o, "status"),
 		Serial:         str(o, "serial"),
 		AssetTag:       str(o, "asset_tag"),
-		Tags:           tagSlugs(o, rc.strip),
+		Tags:           rc.tags(o),
 	}
 
 	// Child device (installed in a parent's device bay) vs racked device.
 	if bay, ok := idx.baysByChild[id]; ok {
-		dev.ParentDevice = refName(bay, "device")
+		dev.ParentDevice = rc.nameOut(refName(bay, "device"))
 		dev.DeviceBay = str(bay, "name")
 	} else {
 		if rackName := refName(o, "rack"); rackName != "" {
-			dev.RackSlug = utils.Slugify(rackName)
+			dev.RackSlug = rc.rackSlugOut(rackName)
 		}
 		dev.Position = int(floatOf(o, "position"))
 		dev.Face = choiceValue(o, "face")
@@ -432,8 +432,8 @@ func (rc *runContext) pickIP(iface client.Object, idx deviceIndex, primary map[i
 		DNSName:     str(chosen, "dns_name"),
 		Description: str(chosen, "description"),
 		Status:      choiceValue(chosen, "status"),
-		VRF:         refName(chosen, "vrf"),
-		Tags:        tagSlugs(chosen, rc.strip),
+		VRF:         rc.vrfOut(refName(chosen, "vrf")),
+		Tags:        rc.tags(chosen),
 	}
 	return cfg, role
 }
@@ -502,7 +502,7 @@ func (rc *runContext) cableFor(term client.Object, idx deviceIndex, thisType str
 			return nil
 		}
 		link := &models.LinkConfig{
-			PeerDevice: farDev,
+			PeerDevice: rc.nameOut(farDev),
 			PeerPort:   farPort,
 			CableType:  choiceValue(cable, "type"),
 			Color:      str(cable, "color"),
