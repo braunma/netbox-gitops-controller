@@ -99,6 +99,7 @@ func Import(c *client.NetBoxClient, opts Options) (*Result, error) {
 		{"foundation", (*runContext).foundation},
 		{"network", (*runContext).network},
 		{"device-types", (*runContext).deviceTypes},
+		{"devices", (*runContext).devices},
 	}
 	for _, p := range phaseFns {
 		if !opts.Phases[p.name] {
