@@ -32,6 +32,7 @@ var (
 	deviceFilter     string
 	vmFilter         string
 	prune            bool
+	adopt            bool
 
 	deviceTypeLibrary   string
 	moduleTypeLibrary   string
@@ -90,6 +91,7 @@ func main() {
 	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
 	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
 	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
+	rootCmd.Flags().BoolVar(&adopt, "adopt", false, "First-contact mode: write only the managed tag to existing objects, no other field (creates are unaffected). Use for the first sync after `import`; composes with --assert-site")
 	rootCmd.PersistentFlags().StringVar(&deviceTypeLibrary, "devicetype-library", "", "Path to a community-format device type library (default: $DEVICETYPE_LIBRARY, else <data-dir>/definitions/device_type_library)")
 	rootCmd.PersistentFlags().StringVar(&moduleTypeLibrary, "moduletype-library", "", "Path to a community-format module type library (default: $MODULETYPE_LIBRARY, else <data-dir>/definitions/module_type_library)")
 	rootCmd.PersistentFlags().StringSliceVar(&ignoredFiles, "ignore-file", nil, fmt.Sprintf("Filename globs to skip while loading (default: %s)", strings.Join(loader.DefaultIgnorePatterns, ", ")))
@@ -166,6 +168,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if err := c.CheckVersion(); err != nil {
 		logger.Error("Unsupported NetBox version", err)
 		return err
+	}
+
+	// Adoption mode: the first sync over a populated NetBox writes only the
+	// managed tag to existing objects, so it cannot reformat a field.
+	if adopt {
+		c.SetAdopt(true)
+		logger.Info("Adoption mode: existing objects will receive only the managed tag")
 	}
 
 	// Initialize data loader

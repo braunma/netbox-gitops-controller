@@ -23,14 +23,19 @@ import (
 
 // NetBoxClient handles all NetBox API operations
 type NetBoxClient struct {
-	baseURL      string
-	token        string
-	httpClient   *http.Client
-	cache        *CacheManager
-	tagManager   *TagManager
-	logger       *utils.Logger
-	recorder     *ChangeRecorder
-	dryRun       bool
+	baseURL    string
+	token      string
+	httpClient *http.Client
+	cache      *CacheManager
+	tagManager *TagManager
+	logger     *utils.Logger
+	recorder   *ChangeRecorder
+	dryRun     bool
+	// adopt, when set, restricts every UPDATE to the managed tag alone: an
+	// existing object is brought under management (tagged) without any other
+	// field being written. Creates are unaffected. This makes a first sync over
+	// a populated NetBox structurally incapable of reformatting a field.
+	adopt        bool
 	managedTagID int
 	// version is the NetBox release reported by /api/status/, learned by
 	// CheckVersion. The zero value means "not determined".
@@ -431,6 +436,12 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 
 	// Calculate diff
 	changes := c.calculateDiff(obj, payload)
+	if c.adopt {
+		// Adoption mode: bring the object under management without touching
+		// anything else. Keep only the managed tag; drop every other change so
+		// a first sync over a populated NetBox cannot reformat a field.
+		changes = adoptChanges(changes)
+	}
 	if len(changes) > 0 {
 		c.logger.Info("  ⟳ Updating %s (ID: %d): %v", endpoint, objID, c.formatLookup(lookup))
 		c.printDiff("UPDATE", obj, changes)
@@ -1095,6 +1106,16 @@ func (c *NetBoxClient) IsDryRun() bool {
 	return c.dryRun
 }
 
+// SetAdopt enables adoption mode: UPDATEs write only the managed tag.
+func (c *NetBoxClient) SetAdopt(enabled bool) {
+	c.adopt = enabled
+}
+
+// IsAdopting reports whether adoption mode is on.
+func (c *NetBoxClient) IsAdopting() bool {
+	return c.adopt
+}
+
 // ManagedTagID returns the managed tag ID
 func (c *NetBoxClient) ManagedTagID() int {
 	return c.managedTagID
@@ -1112,4 +1133,14 @@ func getObjectKeys(obj Object) []string {
 		keys = append(keys, k)
 	}
 	return keys
+}
+
+// adoptChanges reduces a calculated diff to the managed-tag change alone, for
+// adoption mode. Every field other than tags is dropped, so an UPDATE writes
+// only the tag that brings an existing object under management.
+func adoptChanges(changes map[string]interface{}) map[string]interface{} {
+	if tags, ok := changes["tags"]; ok {
+		return map[string]interface{}{"tags": tags}
+	}
+	return nil
 }
