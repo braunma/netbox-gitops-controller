@@ -56,7 +56,7 @@ func TestImportDevicesTemplateDiffAndLayout(t *testing.T) {
 
 	res, err := importer.Import(c, importer.Options{
 		Phases:   map[string]bool{"devices": true},
-		SplitBy:  "site",
+		SplitBy:  "rack",
 		Defaults: importer.DefaultsOptions(true, 3),
 	})
 	if err != nil {
@@ -131,5 +131,48 @@ func TestImportCableDeclaredOnce(t *testing.T) {
 	}
 	if !strings.Contains(body, "peer_device: zzz-01") {
 		t.Errorf("cable emitted on the wrong end:\n%s", body)
+	}
+}
+
+// --split-by site and --split-by rack must partition differently: one file per
+// site versus one file per rack within its site. They were accidentally
+// identical, which made one of the two advertised modes a no-op.
+func TestSplitBySiteAndRackDiffer(t *testing.T) {
+	f, c := nbtest.New(t)
+	f.Seed("dcim", "sites", client.Object{"name": "Berlin", "slug": "berlin"})
+	for _, spec := range []struct{ name, rack string }{
+		{"srv-01", "Rack A01"},
+		{"srv-02", "Rack B02"},
+	} {
+		f.Seed("dcim", "devices", client.Object{
+			"name":        spec.name,
+			"site":        map[string]interface{}{"slug": "berlin", "name": "Berlin"},
+			"rack":        map[string]interface{}{"name": spec.rack},
+			"role":        map[string]interface{}{"slug": "server"},
+			"device_type": map[string]interface{}{"slug": "r640"},
+		})
+	}
+
+	bySite, err := importer.Import(c, importer.Options{
+		Phases: map[string]bool{"devices": true}, SplitBy: "site"})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	if _, ok := fileByPath(bySite, "inventory/hardware/active/berlin.yaml"); !ok {
+		t.Fatalf("--split-by site should write one file per site; files: %v", paths(bySite))
+	}
+
+	byRack, err := importer.Import(c, importer.Options{
+		Phases: map[string]bool{"devices": true}, SplitBy: "rack"})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	for _, want := range []string{
+		"inventory/hardware/active/berlin/rack-a01.yaml",
+		"inventory/hardware/active/berlin/rack-b02.yaml",
+	} {
+		if _, ok := fileByPath(byRack, want); !ok {
+			t.Fatalf("--split-by rack should write %s; files: %v", want, paths(byRack))
+		}
 	}
 }

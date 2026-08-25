@@ -209,7 +209,7 @@ silently rewrite every import).
 | `--exclude-tag <slug>` | `IMPORT_EXCLUDE_TAGS` | — | Skip objects carrying these tags. |
 | `--exclude-site <slug>` | `IMPORT_EXCLUDE_SITES` | — | Skip site-scoped objects in these sites — e.g. a leftover sandbox from a rehearsal. |
 | `--managed-only` | `IMPORT_MANAGED_ONLY` | off | Only import objects already carrying the `gitops` tag. |
-| `--split-by <mode>` | `IMPORT_SPLIT_BY` | `site` | Partition inventory into files: `site`, `rack`, `role`, `none`. |
+| `--split-by <mode>` | `IMPORT_SPLIT_BY` | `site` | Partition inventory into files: `site` (one file per site), `rack` (one file per rack, inside its site — hoists the most into `defaults:`), `role`, or `none` (a single file). |
 | `--defaults` / `--no-defaults` | `IMPORT_DEFAULTS` | on | Hoist fields shared across a file into a `defaults:` block. |
 | `--defaults-min-items <n>` | `IMPORT_DEFAULTS_MIN_ITEMS` | `3` | Fewest items in a file before any key is hoisted. |
 | `--report <file>` | `IMPORT_REPORT` | `IMPORT-REPORT.md` | Coverage report path; `-` writes it to stderr only. |

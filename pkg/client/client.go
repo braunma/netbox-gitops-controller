@@ -342,6 +342,22 @@ func (c *NetBoxClient) create(app, endpoint string, data map[string]interface{})
 
 // Update updates an existing object
 func (c *NetBoxClient) Update(app, endpoint string, id int, data map[string]interface{}) error {
+	// Apply has its own filtered path (it calls c.update directly), so the
+	// safety rules are enforced here for the direct callers: setting a primary
+	// IP, installing a device into a bay, updating a cable. Without this they
+	// would write fields that --adopt promises not to touch, and land writes
+	// that --assert-site never sees.
+	if c.adopt {
+		data = adoptChanges(data)
+		if len(data) == 0 {
+			c.logger.Debug("  = Adoption mode: skipping non-tag update of %s/%s (ID: %d)", app, endpoint, id)
+			return nil
+		}
+	}
+	if err := c.guardDirectUpdate(app, endpoint, id, data); err != nil {
+		return err
+	}
+
 	err := c.update(app, endpoint, id, data)
 	if err == nil {
 		c.Recorder().Record(ChangeRecord{

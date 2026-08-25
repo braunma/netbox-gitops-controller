@@ -72,7 +72,21 @@ func addPresentationFlags(cmd *cobra.Command) {
 // applyPresentation resolves the presentation flags against the environment
 // and configures the logger package. It runs from the root PersistentPreRunE,
 // so it applies to every subcommand.
+//
+// The config file is read first (and only once per process — each command's own
+// RunE calls loadConfigFile again, which is a no-op for variables already set),
+// so that LOG_FORMAT and NO_COLOR obey the same flag > env > .env > default
+// precedence as every other setting rather than silently ignoring the file.
 func applyPresentation(cmd *cobra.Command) error {
+	path := configFile
+	if f := cmd.Flags().Lookup("config"); f != nil && f.Value.String() != "" {
+		path = f.Value.String()
+	}
+	// A missing or malformed file is reported by the command's own
+	// loadConfigFile, which runs later with a configured logger; here it must
+	// not abort presentation setup.
+	_ = loadConfigFile(path, false, utils.NewLogger(false))
+
 	format := resolveStringFlag(cmd, "log-format", logFormatFlag, "LOG_FORMAT")
 	switch format {
 	case "text":

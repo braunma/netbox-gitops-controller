@@ -166,3 +166,52 @@ func objectSiteID(obj Object) int {
 	}
 	return 0
 }
+
+// guardDirectUpdate enforces the site guard for an update that does not go
+// through Apply. Apply knows the object it matched; a direct update knows only
+// an id, so the object is fetched once (only when the guard is armed) to learn
+// which site it currently sits in.
+func (c *NetBoxClient) guardDirectUpdate(app, endpoint string, id int, payload map[string]interface{}) error {
+	if !c.assertArmed() {
+		return nil
+	}
+	if !siteScopedEndpoints[endpoint] {
+		// Not site-scoped itself (a device bay, a cable, an interface). Its
+		// owner was guarded when it was applied; record the shared touch so the
+		// run still reports what it reached outside any site.
+		if c.sharedTouched == nil {
+			c.sharedTouched = map[string]bool{}
+		}
+		c.sharedTouched[endpoint] = true
+		return nil
+	}
+
+	existing, err := c.Get(app, endpoint, id)
+	if err != nil {
+		// Refuse rather than write blind: the guard exists precisely for the
+		// case where we cannot be sure where a write lands.
+		return &SiteGuardError{fmt.Sprintf(
+			"--assert-site: cannot verify which site %s/%s (ID: %d) belongs to: %v", app, endpoint, id, err)}
+	}
+	return c.checkSiteGuard(endpoint, existing, payload)
+}
+
+// CheckObjectSite reports whether an already-fetched object sits in an allowed
+// site. It is for a reconciler that resolves an object by a lookup the guard
+// cannot see — most notably a parent device, which is looked up by name across
+// every site — so the guard can refuse before that object is written to.
+// Returns nil when the guard is not armed.
+func (c *NetBoxClient) CheckObjectSite(endpoint, label string, obj Object) error {
+	if !c.assertArmed() {
+		return nil
+	}
+	if err := c.resolveAssertSiteIDs(); err != nil {
+		return err
+	}
+	if id := objectSiteID(obj); id != 0 && !c.assertSiteIDs[id] {
+		return &SiteGuardError{fmt.Sprintf(
+			"--assert-site: refusing to use %s %q, which lives in site id %d, outside the allowed set %s",
+			endpoint, label, id, c.allowedSitesString())}
+	}
+	return nil
+}

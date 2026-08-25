@@ -125,13 +125,11 @@ func runImport(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("invalid --split-by %q (supported: site, rack, role, none)", importSplitBy)
 	}
 
-	resolvedDir, err := resolveDataDir(dataDir, cmd.Flags().Changed("data-dir"), logger)
-	if err != nil {
-		// A fresh import into a not-yet-existing directory is normal, so a
-		// missing data dir is not fatal here.
-		resolvedDir = dataDir
-	}
-	dataDir = resolvedDir
+	// The import target is an *output* directory, so it is used exactly as
+	// given. resolveDataDir is deliberately not used: it exists to find an
+	// existing data directory and falls back to example/ when the working
+	// directory holds no definitions/ — which for an import would silently
+	// write the whole estate into the example dataset.
 
 	netboxURL := os.Getenv("NETBOX_URL")
 	netboxToken := os.Getenv("NETBOX_TOKEN")
@@ -207,7 +205,11 @@ func importOptions(cmd *cobra.Command, logger *utils.Logger) (importer.Options, 
 
 // finishImport writes, diffs, or previews the result and emits the report.
 func finishImport(cmd *cobra.Command, result *importer.Result, logger *utils.Logger) error {
-	writeReport(result, logger)
+	// --dry-run and --diff write nothing at all, so the report is printed
+	// rather than saved: a mode that promises to touch no files must not leave
+	// an IMPORT-REPORT.md behind.
+	writeNothing := importDryRun || importDiff != ""
+	writeReport(result, logger, writeNothing)
 
 	switch {
 	case importDiff != "":
@@ -250,10 +252,11 @@ func finishImport(cmd *cobra.Command, result *importer.Result, logger *utils.Log
 	return nil
 }
 
-// writeReport writes IMPORT-REPORT.md unless the report path is "-".
-func writeReport(result *importer.Result, logger *utils.Logger) {
+// writeReport writes IMPORT-REPORT.md unless the report path is "-", or the
+// caller asked for a run that writes nothing.
+func writeReport(result *importer.Result, logger *utils.Logger, printOnly bool) {
 	md := result.Report.Markdown()
-	if importReport == "-" {
+	if importReport == "-" || printOnly {
 		fmt.Fprintln(utils.DefaultOutput(), md)
 		return
 	}

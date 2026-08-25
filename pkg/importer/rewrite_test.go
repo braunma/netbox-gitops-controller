@@ -55,12 +55,13 @@ func TestRewriteTransformsSiteNameAndVRF(t *testing.T) {
 	}
 
 	// Device: name prefixed, landed under the sandbox site and prefixed rack.
-	dev, ok := fileByPath(res, "inventory/hardware/active/sandbox/sbx-rack-a01.yaml")
+	dev, ok := fileByPath(res, "inventory/hardware/active/sandbox.yaml")
 	if !ok {
-		t.Fatalf("device not under sandbox site/prefixed rack; files: %v", paths(res))
+		t.Fatalf("device not under the sandbox site file; files: %v", paths(res))
 	}
 	if !strings.Contains(string(dev.Bytes), "name: sbx-srv-01") ||
-		!strings.Contains(string(dev.Bytes), "site_slug: sandbox") {
+		!strings.Contains(string(dev.Bytes), "site_slug: sandbox") ||
+		!strings.Contains(string(dev.Bytes), "rack_slug: sbx-rack-a01") {
 		t.Errorf("device not rewritten:\n%s", dev.Bytes)
 	}
 
@@ -119,12 +120,12 @@ func TestExcludeSiteDropsSandbox(t *testing.T) {
 	})
 
 	with, _ := importer.Import(c, importer.Options{})
-	if _, ok := fileByPath(with, "inventory/hardware/active/sandbox/unracked.yaml"); !ok {
+	if _, ok := fileByPath(with, "inventory/hardware/active/sandbox.yaml"); !ok {
 		t.Fatalf("expected the sandbox device without --exclude-site; files: %v", paths(with))
 	}
 
 	without, _ := importer.Import(c, importer.Options{ExcludeSites: []string{"sandbox"}})
-	if _, ok := fileByPath(without, "inventory/hardware/active/sandbox/unracked.yaml"); ok {
+	if _, ok := fileByPath(without, "inventory/hardware/active/sandbox.yaml"); ok {
 		t.Fatalf("--exclude-site did not drop the sandbox device; files: %v", paths(without))
 	}
 }

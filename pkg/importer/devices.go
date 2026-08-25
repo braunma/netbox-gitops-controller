@@ -61,7 +61,7 @@ func (rc *runContext) devices() error {
 		if dev == nil {
 			continue
 		}
-		p := rc.devicePath(dev, o, isPassive, idx)
+		p := rc.devicePath(dev, isPassive)
 		files[p] = append(files[p], dev)
 		passive[p] = isPassive
 		exported++
@@ -291,7 +291,7 @@ func mapModules(objs []client.Object) []models.ModuleConfig {
 }
 
 // devicePath assigns a device to an output file per --split-by.
-func (rc *runContext) devicePath(dev *models.DeviceConfig, o client.Object, passive bool, idx deviceIndex) string {
+func (rc *runContext) devicePath(dev *models.DeviceConfig, passive bool) string {
 	root := "inventory/hardware/active"
 	if passive {
 		root = "inventory/hardware/passive"
@@ -308,15 +308,18 @@ func (rc *runContext) devicePath(dev *models.DeviceConfig, o client.Object, pass
 		if role == "" {
 			role = "no-role"
 		}
-		return path.Join(root, fmt.Sprintf("%s.yaml", role))
-	case "rack", "site":
-		fallthrough
-	default:
+		return path.Join(root, role+".yaml")
+	case "rack":
+		// One file per rack, inside its site. Maximises what defaults
+		// extraction can hoist: every device in the file shares both
+		// site_slug and rack_slug.
 		rack := dev.RackSlug
 		if rack == "" {
 			rack = "unracked"
 		}
 		return path.Join(root, site, rack+".yaml")
+	default: // "site"
+		return path.Join(root, site+".yaml")
 	}
 }
 

@@ -214,6 +214,15 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		parentDevice := parentDevices[0]
 		parentDeviceID := utils.GetIDFromObject(parentDevice)
 
+		// The parent is looked up by name across every site, so under
+		// --assert-site a name collision could otherwise install this child into
+		// a parent that lives outside the allowed sites — a write into the very
+		// objects the guard exists to protect. Check it here, where the parent
+		// object is already in hand.
+		if err := dr.client.CheckObjectSite("device", device.ParentDevice, parentDevice); err != nil {
+			return err
+		}
+
 		// Get parent's rack if it has one
 		if rack, ok := parentDevice["rack"].(map[string]interface{}); ok {
 			if rackID, ok := rack["id"].(float64); ok {

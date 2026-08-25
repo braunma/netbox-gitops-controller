@@ -55,3 +55,97 @@ func TestImportCommandWritesAndDiffs(t *testing.T) {
 		t.Fatalf("diff of an unchanged import reported drift (exit %d)", exitCode)
 	}
 }
+
+// The import target is an output directory. It must be used exactly as given:
+// the sync's data-directory discovery falls back to example/ when the working
+// directory holds no definitions/, which for an import would silently write the
+// whole estate into the example dataset instead of the target.
+func TestImportNeverFallsBackToExampleDir(t *testing.T) {
+	f, _ := nbtest.New(t)
+	f.Seed("dcim", "sites", client.Object{"name": "Berlin", "slug": "berlin"})
+	t.Setenv("NETBOX_URL", f.URL())
+	t.Setenv("NETBOX_TOKEN", "x")
+
+	// A working directory that has no definitions/ but does have example/definitions —
+	// exactly this repository's own layout, and the shape that triggered the fallback.
+	work := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(work, "example", "definitions"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	cwd, err := os.Getwd()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Chdir(work); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chdir(cwd) })
+
+	target := filepath.Join(work, "out")
+	dataDir = target
+	configFile = ".env"
+
+	cmd := newImportCommand()
+	cmd.SetArgs([]string{"--report", "-"})
+	if err := cmd.Execute(); err != nil {
+		t.Fatalf("import: %v", err)
+	}
+
+	if _, err := os.Stat(filepath.Join(target, "definitions/sites/sites.yaml")); err != nil {
+		t.Fatalf("import did not write to the target directory: %v", err)
+	}
+	// example/ must be untouched beyond the empty definitions/ dir we created.
+	entries, err := os.ReadDir(filepath.Join(work, "example", "definitions"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 0 {
+		t.Fatalf("import wrote into example/definitions: %v", entries)
+	}
+}
+
+// --dry-run and --diff promise to write nothing. That has to include the
+// coverage report, which was being saved to disk before the mode was checked.
+func TestImportDryRunAndDiffWriteNothing(t *testing.T) {
+	f, _ := nbtest.New(t)
+	f.Seed("dcim", "sites", client.Object{"name": "Berlin", "slug": "berlin"})
+	t.Setenv("NETBOX_URL", f.URL())
+	t.Setenv("NETBOX_TOKEN", "x")
+
+	for _, tc := range []struct {
+		name string
+		args []string
+	}{
+		{"dry-run", []string{"--dry-run"}},
+		{"diff", nil}, // filled in below, needs the dir
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			dataDir = dir
+			configFile = ".env"
+			args := tc.args
+			if args == nil {
+				args = []string{"--diff", dir}
+			}
+
+			exitCode = 0
+			cmd := newImportCommand()
+			cmd.SetArgs(args)
+			if err := cmd.Execute(); err != nil {
+				t.Fatalf("import %v: %v", args, err)
+			}
+
+			entries, err := os.ReadDir(dir)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(entries) != 0 {
+				var names []string
+				for _, e := range entries {
+					names = append(names, e.Name())
+				}
+				t.Fatalf("%s wrote %v into the target directory", tc.name, names)
+			}
+		})
+	}
+}

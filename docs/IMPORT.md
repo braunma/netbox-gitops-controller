@@ -70,10 +70,11 @@ diff and can never cause churn — which is what makes a *partial* adoption safe
 ## `defaults:` extraction, and its two hazards
 
 To keep the output readable rather than a wall of repetition, `import` hoists a
-field shared across every item in a file into a `defaults:` block (splitting
-inventory by site maximises what can be hoisted — every device in a file shares
-its `site_slug` and `rack_slug`). Turn it off with `--no-defaults`; raise the
-floor with `--defaults-min-items`.
+field shared across every item in a file into a `defaults:` block. How much can
+be hoisted depends on how the inventory is partitioned: `--split-by site` (the
+default) writes one file per site, so `site_slug` hoists; `--split-by rack`
+writes one file per rack, so `rack_slug` hoists too. Turn extraction off with
+`--no-defaults`; raise the floor with `--defaults-min-items`.
 
 The rule is deliberately conservative, because two ways of getting it wrong are
 silent:
