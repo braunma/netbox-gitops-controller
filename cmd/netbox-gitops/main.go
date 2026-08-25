@@ -98,6 +98,7 @@ func main() {
 	rootCmd.AddCommand(newValidateCommand())
 	rootCmd.AddCommand(newCollectCommand())
 	rootCmd.AddCommand(newIngestCommand())
+	rootCmd.AddCommand(newImportCommand())
 
 	err := rootCmd.Execute()
 	os.Exit(exitCodeFor(err))

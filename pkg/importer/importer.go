@@ -112,6 +112,8 @@ func Import(c *client.NetBoxClient, opts Options) (*Result, error) {
 		}
 	}
 
+	rc.report.noteStandingGaps()
+
 	// Stable file order regardless of the order phases produced them in.
 	sort.Slice(rc.files, func(i, j int) bool { return rc.files[i].Path < rc.files[j].Path })
 

@@ -105,3 +105,31 @@ func (r *Report) Markdown() string {
 	}
 	return b.String()
 }
+
+// standingGaps are the NetBox concepts this schema does not model at all. They
+// are noted on every report so a reader adopting a rich instance is told, in
+// one place, what an import categorically does not carry — the difference
+// between adoption and a plausible-looking half of an estate. Objects of these
+// kinds are never in the output and, being unfetched, never counted; the note
+// is the record.
+var standingGaps = []string{
+	"regions, site groups, locations (site hierarchy above/below the site)",
+	"manufacturers as first-class objects (only referenced by name/slug)",
+	"inventory items, virtual chassis, device positions within one",
+	"console and power ports on concrete devices (only their templates exist)",
+	"power panels and feeds",
+	"circuits, providers, provider networks",
+	"wireless LANs and links, tunnels, L2VPN, FHRP groups",
+	"IP ranges, aggregates, RIRs, ASNs, services",
+	"contacts, config contexts, journal entries",
+	"webhooks, export templates, custom links, permissions",
+	"cables with more than one termination per end",
+	"IP addresses assigned to nothing, or a second address on one interface",
+}
+
+// noteStandingGaps records the standing model gaps. Called once per run.
+func (r *Report) noteStandingGaps() {
+	for _, g := range standingGaps {
+		r.note("not imported: " + g)
+	}
+}
