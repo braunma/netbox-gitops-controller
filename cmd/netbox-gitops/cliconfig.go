@@ -10,6 +10,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
@@ -44,6 +45,10 @@ func exitCodeFor(err error) int {
 	}
 	var g *guardError
 	if errors.As(err, &g) {
+		return exitGuardViolation
+	}
+	var sg *client.SiteGuardError
+	if errors.As(err, &sg) {
 		return exitGuardViolation
 	}
 	return exitError

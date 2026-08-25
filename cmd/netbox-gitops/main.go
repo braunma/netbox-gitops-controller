@@ -33,6 +33,7 @@ var (
 	vmFilter         string
 	prune            bool
 	adopt            bool
+	assertSites      []string
 
 	deviceTypeLibrary   string
 	moduleTypeLibrary   string
@@ -92,6 +93,7 @@ func main() {
 	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
 	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
 	rootCmd.Flags().BoolVar(&adopt, "adopt", false, "First-contact mode: write only the managed tag to existing objects, no other field (creates are unaffected). Use for the first sync after `import`; composes with --assert-site")
+	rootCmd.Flags().StringSliceVar(&assertSites, "assert-site", nil, "Destination guard: abort (exit 3) before any write that would land, or already sits, outside these site slugs. Site-less shared objects (tags, roles, device types) are allowed. Cannot combine with --prune")
 	rootCmd.PersistentFlags().StringVar(&deviceTypeLibrary, "devicetype-library", "", "Path to a community-format device type library (default: $DEVICETYPE_LIBRARY, else <data-dir>/definitions/device_type_library)")
 	rootCmd.PersistentFlags().StringVar(&moduleTypeLibrary, "moduletype-library", "", "Path to a community-format module type library (default: $MODULETYPE_LIBRARY, else <data-dir>/definitions/module_type_library)")
 	rootCmd.PersistentFlags().StringSliceVar(&ignoredFiles, "ignore-file", nil, fmt.Sprintf("Filename globs to skip while loading (default: %s)", strings.Join(loader.DefaultIgnorePatterns, ", ")))
@@ -114,6 +116,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 		// Pruning scoped to a single site/device/VM would delete the
 		// out-of-scope objects the filter excluded, so refuse the combination.
 		return fmt.Errorf("--prune cannot be combined with --site, --device or --vm")
+	}
+	if prune && len(assertSites) > 0 {
+		// The site guard only covers writes through Apply; Prune deletes
+		// directly, so the two together would leave deletions unguarded.
+		return fmt.Errorf("--assert-site cannot be combined with --prune")
 	}
 	if outputFormat == "json" {
 		// Reserve stdout for the JSON plan; every logger created from here
@@ -175,6 +182,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 	if adopt {
 		c.SetAdopt(true)
 		logger.Info("Adoption mode: existing objects will receive only the managed tag")
+	}
+	if len(assertSites) > 0 {
+		c.SetAssertSites(assertSites)
+		logger.Info("Site guard armed: writes are confined to site(s) %v", assertSites)
+		defer func() {
+			if shared := c.SharedTouched(); len(shared) > 0 {
+				logger.Info("Site guard: shared, site-less endpoints this run may touch: %v", shared)
+			}
+		}()
 	}
 
 	// Initialize data loader

@@ -57,6 +57,10 @@ type NetBoxClient struct {
 	// schemas memoises the OPTIONS response of each endpoint, so live
 	// validation asks the server what it accepts once rather than per object.
 	schemas schemaCache
+	// assertSites arms the --assert-site destination guard (see guard.go).
+	assertSites   map[string]bool
+	assertSiteIDs map[int]bool
+	sharedTouched map[string]bool
 }
 
 // envIsTrue reports whether an environment variable is set to something that
@@ -398,6 +402,18 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 		if err != nil {
 			return nil, fmt.Errorf("failed to filter objects: %w", err)
 		}
+	}
+
+	// Destination guard (--assert-site): resolve this write to a site and
+	// refuse it before anything is written if it lands, or already sits,
+	// outside the allowed set. Runs in --dry-run too, so a pipeline checks it
+	// before an apply job exists.
+	var existingForGuard Object
+	if len(existing) > 0 {
+		existingForGuard = existing[0]
+	}
+	if err := c.checkSiteGuard(endpoint, existingForGuard, payload); err != nil {
+		return nil, err
 	}
 
 	if len(existing) == 0 {
