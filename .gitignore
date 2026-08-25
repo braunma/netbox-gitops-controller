@@ -57,3 +57,7 @@ bin/
 # Test coverage output (make test / CI)
 coverage.out
 __pycache__/
+
+# Redis snapshot, if a local NetBox stack drops one here
+dump.rdb
+*.rdb
