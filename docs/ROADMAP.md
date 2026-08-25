@@ -58,9 +58,10 @@ Effort: S.
 
 ## Observability
 
-Console logging aimed at a human reading a pipeline. **Wanted:**
-`--log-format json`, `--quiet`/`--verbose` levels, and end-of-run metrics
-(objects changed, API calls, duration). Effort: M.
+`--log-format json` (one `{"level","msg"}` object per line) and `--no-color`
+have landed, with documented, uniform exit codes across every command.
+**Still wanted:** `--quiet`/`--verbose` levels, and end-of-run metrics (objects
+changed, API calls, duration). Effort: M.
 
 ## Daemon / watch mode and webhooks
 

@@ -54,6 +54,7 @@ make check
 | remove something | [Pruning Orphans](#6-pruning-orphans) — deletion is opt-in |
 | see every flag, variable or CI setting | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — one verified table per command |
 | document machines that already exist, without typing them in | [`docs/INGEST.md`](docs/INGEST.md) — sources → YAML → MR → NetBox |
+| adopt a NetBox that is **already populated** | [Starting from an existing NetBox](#-starting-from-an-existing-netbox) — or [`docs/IMPORT.md`](docs/IMPORT.md) |
 | know what is planned but not built | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 
 -----
@@ -65,11 +66,13 @@ make check
   * **Safety (Shared Management):**
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
       * **Opt-in Pruning (`--prune`):** Objects removed from YAML are deleted only when you pass `--prune`, and only if they carry the `gitops` tag — manually created objects are never touched. Combine with `--dry-run` to preview. See the Pruning section below.
+      * **Safe first contact (`--adopt`):** The first sync over a populated NetBox writes only the managed tag to existing objects — no other field — so adoption cannot reformat anything. Composes with `--assert-site`, a destination guard that aborts (exit 3) before any write that would land outside named sites.
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
   * **Renames, not duplicates (`rename_from`):** Correcting a typo in a name, slug or other identifying field renames the existing object instead of creating a second one and orphaning the first. Supported on every managed object type. See the Renaming section below.
   * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
   * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
   * **Fact ingestion (`collect` / `ingest`):** Facts discovered *about* running infrastructure — a Proxmox cluster's guests, an iDRAC scan's hardware inventory — are written **into this repository's YAML**, reviewed as a merge request, and become NetBox truth through the same reconcile every hand-written line takes. Nothing on that path writes to NetBox. See [Documenting what is actually out there](#-documenting-what-is-actually-out-there) and [`docs/INGEST.md`](docs/INGEST.md).
+  * **Reverse sync (`import`):** Generate this repository's native YAML from a live, already-populated NetBox, so a brownfield instance can adopt the controller without retyping it. Read-only (GETs and OPTIONS only), deterministic, with shared fields hoisted into `defaults:` and everything it cannot represent recorded in a report. Includes a sandbox rehearsal that adopts onto a scratch site without touching production. See [Starting from an existing NetBox](#-starting-from-an-existing-netbox) and [`docs/IMPORT.md`](docs/IMPORT.md).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -494,6 +497,40 @@ running all three through:
 | `yamlcheck` | no | Is this repository coherent with itself? |
 | `validate` | yes | Will this instance accept these values? |
 | `--dry-run` | yes | What would change? |
+
+-----
+
+## 📥 Starting from an existing NetBox
+
+If your NetBox is already populated, you do not have to retype it. `import` reads
+the live instance and writes this repository's native YAML — the reverse of a
+sync — so the estate becomes a GitOps repository in one command:
+
+```bash
+netbox-gitops import --data-dir .          # read $NETBOX_URL, write YAML here
+go run ./cmd/yamlcheck definitions inventory --strict
+netbox-gitops --adopt                      # first sync: tag only, no field rewritten
+```
+
+`import` **never writes to NetBox** (GETs and OPTIONS only) and is deterministic,
+so a re-import is a reviewable diff — `--diff DIR` prints exactly that and exits
+`2` when the live instance has drifted from the repository. Shared fields are
+hoisted into a `defaults:` block; everything the schema cannot represent (whole
+kinds like circuits, a site-less VLAN, a second IP on an interface) is written
+to `IMPORT-REPORT.md` rather than dropped.
+
+The first sync tags every adopted object and nothing else — that is adoption,
+not drift — which is why the walkthrough uses `--adopt`. You can also **rehearse**
+a full adoption against the real NetBox without touching production, by importing
+onto a scratch site and VRF (`--rewrite-site`, `--name-prefix`, `--rewrite-vrf`)
+and applying with the `--assert-site` destination guard.
+
+> **⚠️ `--prune` against a partial import is data loss.** An import leaves
+> behind whatever the schema cannot represent; pruning would delete those
+> managed objects as orphans. Read `IMPORT-REPORT.md` first.
+
+Full walkthrough, the defaults hazards, the `--site` IPAM caveat, and the
+sandbox rehearsal: [`docs/IMPORT.md`](docs/IMPORT.md).
 
 -----
 

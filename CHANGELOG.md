@@ -12,6 +12,54 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Added
+
+- **Reverse sync (`netbox-gitops import`) — adopt an already-populated NetBox.**
+  The controller was greenfield-only: a populated instance could not adopt it
+  without retyping the estate. `import` reads a live NetBox and writes this
+  repository's native YAML — definitions and inventory that, applied back,
+  converge with no changes. It is **read-only** (GETs and OPTIONS only, the
+  mirror of the rule `pkg/ingest` holds) and **deterministic** (no timestamps,
+  ids or URLs in the output), so a re-import is a reviewable diff. Shared fields
+  are hoisted into a per-file `defaults:` block automatically; everything the
+  schema cannot represent (a site-less VLAN, a second IP on an interface, whole
+  kinds like circuits) is written to `IMPORT-REPORT.md` rather than dropped.
+  `--diff DIR` reports drift against an existing repo (exit 2); `--dry-run`,
+  `--split-by`, `--site`/`--tag`/`--exclude-*`, `--only` and `--fail-on-gaps`
+  round out the surface. See [`docs/IMPORT.md`](docs/IMPORT.md).
+
+  > **Upgrade note:** `--prune` against a *partial* import is data loss — it
+  > deletes the managed objects the import could not represent. Read
+  > `IMPORT-REPORT.md` before enabling pruning on an imported repository.
+
+- **`--adopt`: a safe first sync over a populated NetBox.** The first sync adds
+  the managed `gitops` tag to every adopted object; `--adopt` restricts that
+  first contact to the tag alone — no other field is written to any existing
+  object — so adoption cannot reformat anything. Creates are unaffected.
+
+- **`--assert-site`: a destination write guard.** Aborts (exit `3`) before any
+  create or update that would land — or whose existing object already sits —
+  outside the named sites; site-less shared objects (tags, roles, device types)
+  are allowed and logged. Runs under `--dry-run`, refuses to combine with
+  `--prune`, and composes with `--adopt`.
+
+- **A sandbox rehearsal for `import`.** `--rewrite-site`, `--name-prefix` and
+  `--rewrite-vrf` import an estate rewritten onto a scratch site and VRF, so a
+  full adoption can be applied and inspected without touching a production
+  object. Guards make it safe: `--rewrite-site` requires a name prefix, and with
+  the network phase requires a scratch VRF (a prefix is keyed by CIDR, so
+  nothing but a separate VRF can isolate it). The rewrite flags are flag-only,
+  never read from the environment.
+
+- **`--log-format json` and `--no-color`, and uniform exit codes.** Every
+  command can emit `{"level","msg"}` log lines and has documented exit codes
+  (`0`/`1`/`2`/`3`); every flag resolves flag > env > `.env` > default. See
+  [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) and [`CI_CD.md`](CI_CD.md).
+
+- **The grouped file form accepts `items:` as a synonym for `devices:`,** so
+  definition kinds (sites, roles, …) read naturally in the same
+  defaults-plus-list shape. Fully backward compatible.
+
 ### Changed
 
 - **Every YAML kind is decoded through one path.** The loader had two

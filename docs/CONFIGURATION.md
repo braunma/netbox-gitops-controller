@@ -40,6 +40,20 @@ cp .env.example .env      # then fill in NETBOX_URL and NETBOX_TOKEN
 credentials they need are the read-only ones for the systems being scanned, and
 those are named in [`collectors.yaml`](#collectorsyaml).
 
+## Presentation (all commands)
+
+These are persistent flags, resolved once before any subcommand runs, so they
+apply everywhere.
+
+| Flag | Environment | Default | What it does |
+|---|---|---|---|
+| `--log-format <format>` | `LOG_FORMAT` | `text` | `text` or `json`. `json` renders every log line as a `{"level","msg"}` object. |
+| `--no-color` | `NO_COLOR` (any non-empty value) | colour on a TTY | Disables ANSI colour. Colour is auto-disabled when stdout is not a TTY regardless. |
+
+Exit codes are uniform across every command: `0` success (or nothing pending),
+`1` error, `2` changes pending (`--detailed-exitcode`, `import --diff`), `3` a
+safety guard refused the run (`--assert-site`, a rewrite guard).
+
 ## `netbox-gitops`
 
 ### Choosing what runs
@@ -52,6 +66,8 @@ those are named in [`collectors.yaml`](#collectorsyaml).
 | `--device <name>` | — | Restricts device reconciliation to a single device. |
 | `--vm <name>` | — | Restricts VM reconciliation to a single VM. |
 | `--prune` | off | Deletes objects that carry the `gitops` tag but are no longer declared. Untagged objects are never touched. Refused in combination with `--site`/`--device`/`--vm`, because a filtered run cannot tell an out-of-scope object from an orphan. |
+| `--adopt` | off | First-contact mode: an existing object receives only the managed tag, no other field is written. Creates are unaffected. Use for the first sync after `import` over a populated NetBox. Composes with `--assert-site`. |
+| `--assert-site <slug>` | — | Destination guard. Comma-separated or repeated. Aborts with exit `3` before any write that would land — or the existing object already sits — outside these sites. Site-less shared objects (tags, roles, device types) are allowed and logged. Refused with `--prune`. Works under `--dry-run`. |
 
 > Skipped phases are not validated. `--only devices` assumes the sites, roles
 > and device types it references already exist in NetBox; it does not create
@@ -173,6 +189,44 @@ sources:
 | `verify_tls` | no | `true` | `false` skips TLS certificate verification for this source only, and logs a warning naming the source on every run — the same bargain `IGNORE_SSL_ERRORS` strikes for the NetBox client. |
 | `timeout_seconds` | no | `30` | Bounds a single API request. A whole scan may take longer: one request per guest is made to read its NICs. |
 | `cluster` | no | — | The NetBox cluster the source's guests belong to. Proxmox reports no name a NetBox cluster can be matched on, so it is declared rather than guessed. Guests from a source without one are written to a *parked* file, since a VM needs a cluster or a site. |
+
+## `netbox-gitops import`
+
+The reverse sync: reads a live NetBox and writes native YAML. Read-only (GETs
+and OPTIONS only). Every flag has an environment variable **except** the rewrite
+flags, which are flag-only on purpose (a stray `REWRITE_*` in CI variables would
+silently rewrite every import).
+
+| Flag | Environment | Default | What it does |
+|---|---|---|---|
+| `--data-dir <dir>` | — | `.` | Where to write. Refuses a non-empty directory unless `--force`. |
+| `--force` | `IMPORT_FORCE` | off | Write into a non-empty directory. |
+| `--dry-run` | — | off | List the files that would be written and print the report; write nothing. |
+| `--diff <dir>` | — | — | Diff the import against an existing repo, write nothing, exit `2` on drift. |
+| `--only <phases>` | `IMPORT_ONLY` | all | Comma-separated or repeated: `foundation`, `network`, `device-types`, `devices`, `virtualization`. |
+| `--site <slug>` | `IMPORT_SITES` | — | Restrict site-scoped source objects. Does **not** filter site-less IPAM (VRFs, unassigned addresses, non-site-scoped prefixes) — those are counted in the report. |
+| `--tag <slug>` | `IMPORT_TAGS` | — | Only import objects carrying these tags. |
+| `--exclude-tag <slug>` | `IMPORT_EXCLUDE_TAGS` | — | Skip objects carrying these tags. |
+| `--exclude-site <slug>` | `IMPORT_EXCLUDE_SITES` | — | Skip site-scoped objects in these sites — e.g. a leftover sandbox from a rehearsal. |
+| `--managed-only` | `IMPORT_MANAGED_ONLY` | off | Only import objects already carrying the `gitops` tag. |
+| `--split-by <mode>` | `IMPORT_SPLIT_BY` | `site` | Partition inventory into files: `site`, `rack`, `role`, `none`. |
+| `--defaults` / `--no-defaults` | `IMPORT_DEFAULTS` | on | Hoist fields shared across a file into a `defaults:` block. |
+| `--defaults-min-items <n>` | `IMPORT_DEFAULTS_MIN_ITEMS` | `3` | Fewest items in a file before any key is hoisted. |
+| `--report <file>` | `IMPORT_REPORT` | `IMPORT-REPORT.md` | Coverage report path; `-` writes it to stderr only. |
+| `--fail-on-gaps` | `IMPORT_FAIL_ON_GAPS` | off | Exit non-zero if the report lists any skipped object. |
+| `--output <format>` | `IMPORT_OUTPUT` | `text` | `text` or `json` (file list + report summary on stdout, logs on stderr). |
+
+### Sandbox rewrite (flag-only — never read from the environment)
+
+Rehearse an adoption onto a scratch site without touching production. See
+[IMPORT.md](IMPORT.md).
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--rewrite-site <OLD=NEW>` | — | Rewrite site slugs; repeatable; `*=NEW` maps every site. Requires `--name-prefix` (or `--no-name-prefix`), and `--rewrite-vrf` when the network phase runs. |
+| `--rewrite-vrf <name>` | — | Put all imported IPAM into this scratch VRF (created with `enforce_unique`), so rewritten prefixes/addresses cannot match production. |
+| `--name-prefix <str>` | — | Prefix every name-identified object (devices, VMs, racks, clusters). |
+| `--no-name-prefix` | off | Allow `--rewrite-site` without a name prefix (you accept the collision risk). |
 
 ## `yamlcheck`
 

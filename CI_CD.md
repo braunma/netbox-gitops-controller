@@ -48,6 +48,65 @@ should be switched on deliberately.
 NetBox. The facts reach it by being merged and applied by `go_apply` like every
 hand-written line. See [`docs/INGEST.md`](docs/INGEST.md).
 
+## Exit codes
+
+Every command uses the same exit codes, so a pipeline can branch on them
+without parsing output:
+
+| Code | Meaning |
+|---|---|
+| `0` | Success, or `--dry-run`/`--diff` found nothing pending. |
+| `1` | An error. |
+| `2` | Changes are pending (`--detailed-exitcode` on a sync, or `import --diff` found drift). |
+| `3` | A safety guard refused the run (`--assert-site`, or a rewrite guard). |
+
+Machine-readable output is available on `import`, sync (`--output json`),
+`validate` and `yamlcheck`: logs go to stderr, the payload (plan, file list,
+report summary) to stdout, so a job can post it as a merge request comment
+without parsing prose. `--log-format json` renders every log line as
+`{"level","msg"}`; `--no-color` (and `$NO_COLOR`, and a non-TTY stdout) strips
+ANSI colour.
+
+## Reverse sync and adoption (opt-in)
+
+Adopting an already-populated NetBox, and watching it for out-of-band drift, are
+`import` jobs. They are not in the default pipeline — a first adoption is a
+one-off, and a rehearsal must never run unattended.
+
+```yaml
+# Drift monitor: is the repository still what NetBox holds? Exits 2 on drift.
+import_diff:
+  stage: validate
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "schedule"'
+  script:
+    - ./netbox-gitops import --diff . --report import-report.md --output json > drift.json
+  allow_failure:
+    exit_codes: [2]        # 2 is "drifted", not "broken"
+  artifacts:
+    paths: [import-report.md, drift.json]
+
+# Sandbox rehearsal: adopt onto a scratch site without touching production.
+# Manual only, flags inline — never in CI/CD variables, so a leftover cannot
+# rewrite a real import.
+import_rehearse:
+  stage: validate
+  when: manual
+  rules:
+    - if: '$CI_PIPELINE_SOURCE != "merge_request_event" && $CI_PIPELINE_SOURCE != "schedule"'
+  script:
+    - ./netbox-gitops import --data-dir sandbox/
+        --rewrite-site '*=sandbox' --name-prefix 'sbx-' --rewrite-vrf 'sbx'
+        --report sandbox/IMPORT-REPORT.md
+    - go run ./cmd/yamlcheck sandbox/definitions sandbox/inventory --strict
+    - ./netbox-gitops --data-dir sandbox/ --dry-run --assert-site sandbox --output json > plan.json
+  artifacts:
+    paths: [sandbox/IMPORT-REPORT.md, plan.json]
+```
+
+The first real adoption sync is a normal `apply`-stage run with `--adopt` (tags
+only) — see [`docs/IMPORT.md`](docs/IMPORT.md).
+
 ## Variables
 
 Everything the pipeline reads, and what setting it does. Set them in
