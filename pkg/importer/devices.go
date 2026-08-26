@@ -363,6 +363,23 @@ func (rc *runContext) mapInterfaces(o client.Object, idx deviceIndex, primary ma
 	var out []models.InterfaceConfig
 	for _, iface := range ifaces {
 		name := str(iface, "name")
+
+		// An interface contributed by an installed module (NetBox sets its
+		// `module` field) must not be emitted as a device interface: it is not
+		// in the device type template, so it would otherwise be treated as an
+		// extra port and declared explicitly — which both re-states what the
+		// module already provides and, on a fresh apply, collides with the
+		// module installation ("interface already exists"). The module itself
+		// is emitted separately and re-creates these ports. Config the schema
+		// cannot move onto the module (an IP on a module interface) is reported.
+		if nested(iface, "module") != nil {
+			if len(idx.ipsByIface[idOf(iface)]) > 0 {
+				rc.report.skip("dcim/interfaces", str(iface, "name"),
+					"an IP on a module-contributed interface; the schema has no place for it on a module")
+			}
+			continue
+		}
+
 		ifType := choiceValue(iface, "type")
 		t := tmpl[name]
 		inTemplate := t != nil

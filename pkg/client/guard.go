@@ -69,20 +69,42 @@ func (c *NetBoxClient) resolveAssertSiteIDs() error {
 	if c.assertSiteIDs != nil {
 		return nil
 	}
-	c.assertSiteIDs = map[int]bool{}
+	return c.refreshAssertSiteIDs()
+}
+
+// refreshAssertSiteIDs (re)resolves the allowed slugs to ids against the
+// instance's current state. A slug that names no site yet is simply absent from
+// the id set — not an error: the sandbox rehearsal creates its scratch site
+// during the very run the guard protects, so hard-failing here would make the
+// documented rehearsal impossible. A typo is still caught, later and just as
+// firmly, when a site-scoped write cannot resolve into any allowed site.
+func (c *NetBoxClient) refreshAssertSiteIDs() error {
+	ids := map[int]bool{}
 	for slug := range c.assertSites {
 		sites, err := c.Filter("dcim", "sites", map[string]interface{}{"slug": slug})
 		if err != nil {
 			return fmt.Errorf("resolving --assert-site %q: %w", slug, err)
 		}
-		if len(sites) == 0 {
-			// A slug that names no site cannot be satisfied by any write, so a
-			// run confined to it would be a silent no-op. Fail loudly instead.
-			return &SiteGuardError{fmt.Sprintf("--assert-site %q names no site on this instance", slug)}
+		if len(sites) > 0 {
+			ids[utils.GetIDFromObject(sites[0])] = true
 		}
-		c.assertSiteIDs[utils.GetIDFromObject(sites[0])] = true
 	}
+	c.assertSiteIDs = ids
 	return nil
+}
+
+// siteIDAllowed reports whether a site id is one of the allowed sites. On a
+// miss it re-resolves once — the allowed site may have been created earlier in
+// this same run (the sandbox scratch site is), which the cached id set from
+// before its creation would not yet know.
+func (c *NetBoxClient) siteIDAllowed(id int) bool {
+	if c.assertSiteIDs[id] {
+		return true
+	}
+	if err := c.refreshAssertSiteIDs(); err != nil {
+		return false
+	}
+	return c.assertSiteIDs[id]
 }
 
 // checkSiteGuard enforces the destination guard for one write. existing is the
@@ -108,7 +130,7 @@ func (c *NetBoxClient) checkSiteGuard(endpoint string, existing Object, payload 
 	}
 
 	// The desired site (from the payload) must be allowed.
-	if id, ok := c.writeSiteID(endpoint, payload); ok && !c.assertSiteIDs[id] {
+	if id, ok := c.writeSiteID(endpoint, payload); ok && !c.siteIDAllowed(id) {
 		return &SiteGuardError{fmt.Sprintf(
 			"--assert-site: refusing to write %s into site id %d, which is not in the allowed set %s",
 			endpoint, id, c.allowedSitesString())}
@@ -116,7 +138,7 @@ func (c *NetBoxClient) checkSiteGuard(endpoint string, existing Object, payload 
 	// An existing object's current site must be allowed too, or this update
 	// would move a production object.
 	if existing != nil {
-		if id := c.currentSiteID(endpoint, existing); id != 0 && !c.assertSiteIDs[id] {
+		if id := c.currentSiteID(endpoint, existing); id != 0 && !c.siteIDAllowed(id) {
 			return &SiteGuardError{fmt.Sprintf(
 				"--assert-site: refusing to update %s %q, which currently lives in site id %d, outside the allowed set %s",
 				endpoint, objectLabel(existing), id, c.allowedSitesString())}
@@ -208,7 +230,7 @@ func (c *NetBoxClient) CheckObjectSite(endpoint, label string, obj Object) error
 	if err := c.resolveAssertSiteIDs(); err != nil {
 		return err
 	}
-	if id := objectSiteID(obj); id != 0 && !c.assertSiteIDs[id] {
+	if id := objectSiteID(obj); id != 0 && !c.siteIDAllowed(id) {
 		return &SiteGuardError{fmt.Sprintf(
 			"--assert-site: refusing to use %s %q, which lives in site id %d, outside the allowed set %s",
 			endpoint, label, id, c.allowedSitesString())}

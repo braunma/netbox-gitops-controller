@@ -103,3 +103,48 @@ func TestImportFrontPortResolvesRearPortName(t *testing.T) {
 		t.Errorf("front port did not resolve its rear port name:\n%s", body)
 	}
 }
+
+// An interface contributed by an installed module (NetBox sets its `module`
+// field) must not be emitted as a device interface: the module re-creates it,
+// so declaring it both restates the module and, on a fresh apply, collides with
+// the module installation ("interface already exists"). This was found only by
+// applying imported data to a fresh instance (the sandbox rehearsal).
+func TestImportSkipsModuleContributedInterfaces(t *testing.T) {
+	f, c := nbtest.New(t)
+	f.Seed("dcim", "sites", client.Object{"name": "S", "slug": "s"})
+	dev := f.Seed("dcim", "devices", client.Object{
+		"name": "srv-1", "site": map[string]interface{}{"slug": "s", "name": "S"},
+		"role": map[string]interface{}{"slug": "server"}, "device_type": map[string]interface{}{"slug": "r640"},
+	})
+	// A normal device interface (kept) and a module-contributed one (skipped).
+	f.Seed("dcim", "interfaces", client.Object{"name": "NIC1",
+		"type":   map[string]interface{}{"value": "25gbase-x-sfp28"},
+		"device": map[string]interface{}{"id": dev["id"]}})
+	f.Seed("dcim", "interfaces", client.Object{"name": "1-25GbE-0",
+		"type":   map[string]interface{}{"value": "25gbase-x-sfp28"},
+		"module": map[string]interface{}{"id": 42},
+		"device": map[string]interface{}{"id": dev["id"]}})
+
+	res, err := importer.Import(c, importer.Options{
+		Phases: map[string]bool{"devices": true}, SplitBy: "none",
+	})
+	if err != nil {
+		t.Fatalf("Import: %v", err)
+	}
+	body := string(mustFile(t, res, "inventory/hardware/active/devices.yaml"))
+	if !strings.Contains(body, "name: NIC1") {
+		t.Errorf("a normal interface should be kept:\n%s", body)
+	}
+	if strings.Contains(body, "1-25GbE-0") {
+		t.Errorf("a module-contributed interface must NOT be emitted (collides with module install):\n%s", body)
+	}
+}
+
+func mustFile(t *testing.T, res *importer.Result, path string) []byte {
+	t.Helper()
+	f, ok := fileByPath(res, path)
+	if !ok {
+		t.Fatalf("expected file %s; files: %v", path, paths(res))
+	}
+	return f.Bytes
+}
