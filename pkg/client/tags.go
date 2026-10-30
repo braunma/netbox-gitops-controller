@@ -112,10 +112,15 @@ func (tm *TagManager) InjectTag(payload map[string]interface{}, tagID int) map[s
 		result[k] = v
 	}
 
-	// Get existing tags
-	existingTags, ok := result["tags"].([]interface{})
-	if !ok {
-		existingTags = []interface{}{}
+	// Get existing tags. The reconcilers send declared tags as []int.
+	var existingTags []interface{}
+	switch v := result["tags"].(type) {
+	case []interface{}:
+		existingTags = v
+	case []int:
+		for _, id := range v {
+			existingTags = append(existingTags, id)
+		}
 	}
 
 	// Convert to IDs and check if managed tag is present

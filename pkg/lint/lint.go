@@ -15,6 +15,7 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/loader"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -84,6 +85,9 @@ type checker struct {
 	platforms   map[string]bool
 	tenants     map[string]bool
 	clusters    map[string]bool
+	// tags holds every declared tag by slug and by name, plus the managed tag,
+	// which the controller creates itself.
+	tags map[string]bool
 	// customFields maps a declared custom field name to the object types it
 	// applies to, so a device setting one can be checked for both.
 	customFields map[string][]string
@@ -113,6 +117,7 @@ func Check(ds Dataset, opts Options) []Finding {
 	c.checkIPAddresses()
 	c.checkCables()
 	c.checkVMs()
+	c.checkTags()
 
 	sort.SliceStable(c.findings, func(i, j int) bool {
 		a, b := c.findings[i], c.findings[j]
@@ -161,6 +166,11 @@ func (c *checker) index() {
 	c.clusters = make(map[string]bool, len(c.ds.Clusters))
 	for _, cl := range c.ds.Clusters {
 		c.clusters[cl.Name] = true
+	}
+	c.tags = map[string]bool{constants.ManagedTagSlug: true}
+	for _, t := range c.ds.Tags {
+		c.tags[t.Slug] = true
+		c.tags[t.Name] = true
 	}
 	c.customFields = make(map[string][]string, len(c.ds.CustomFields))
 	for _, cf := range c.ds.CustomFields {
@@ -831,6 +841,76 @@ func (c *checker) checkVMs() {
 			ifaces[iface.Name] = true
 			if iface.IP != nil && iface.IP.VRF != "" && !c.vrfs[iface.IP.VRF] {
 				c.reference(iref, "unknown-vrf", "VRF", iface.IP.VRF, len(c.ds.VRFs))
+			}
+		}
+	}
+}
+
+// checkTags reports a `tags:` entry that names no declared tag. The sync
+// leaves such a tag off with a warning, so the object silently lacks it.
+// Only the kinds the dataset carries are checked.
+func (c *checker) checkTags() {
+	check := func(ref string, tags []string) {
+		for _, tag := range tags {
+			if !c.tags[tag] {
+				c.reference(ref, "unknown-tag", "tag", tag, len(c.ds.Tags))
+			}
+		}
+	}
+	for _, s := range c.ds.Sites {
+		check("site "+s.Slug, s.Tags)
+	}
+	for _, r := range c.ds.Racks {
+		check("rack "+r.Name, r.Tags)
+	}
+	for _, v := range c.ds.VRFs {
+		check("VRF "+v.Name, v.Tags)
+	}
+	for _, v := range c.ds.VLANs {
+		check(fmt.Sprintf("VLAN %s (%d)", v.Name, v.VID), v.Tags)
+	}
+	for _, p := range c.ds.Prefixes {
+		check("prefix "+p.Prefix, p.Tags)
+	}
+	for _, dt := range c.ds.DeviceTypes {
+		check("device type "+dt.Slug, dt.Tags)
+	}
+	for _, mt := range c.ds.ModuleTypes {
+		check("module type "+mt.Model, mt.Tags)
+	}
+	for _, p := range c.ds.Platforms {
+		check("platform "+p.Slug, p.Tags)
+	}
+	for _, t := range c.ds.Tenants {
+		check("tenant "+t.Slug, t.Tags)
+	}
+	for _, cl := range c.ds.Clusters {
+		check("cluster "+cl.Name, cl.Tags)
+	}
+	for _, d := range c.ds.Devices {
+		check(deviceRef(d.Name), d.Tags)
+		for _, iface := range d.Interfaces {
+			check(ifaceRef(d.Name, iface.Name), iface.Tags)
+			if iface.IP != nil {
+				check("IP address "+iface.IP.Address, iface.IP.Tags)
+			}
+		}
+		for _, mod := range d.Modules {
+			check(fmt.Sprintf("device %s module %s", d.Name, mod.Name), mod.Tags)
+		}
+		for _, port := range d.FrontPorts {
+			check(fmt.Sprintf("device %s front port %s", d.Name, port.Name), port.Tags)
+		}
+		for _, port := range d.RearPorts {
+			check(fmt.Sprintf("device %s rear port %s", d.Name, port.Name), port.Tags)
+		}
+	}
+	for _, vm := range c.ds.VMs {
+		check("virtual machine "+vm.Name, vm.Tags)
+		for _, iface := range vm.Interfaces {
+			check(fmt.Sprintf("virtual machine %s interface %s", vm.Name, iface.Name), iface.Tags)
+			if iface.IP != nil {
+				check("IP address "+iface.IP.Address, iface.IP.Tags)
 			}
 		}
 	}

@@ -437,6 +437,7 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `unknown-lag-member` | a LAG whose `members` name an interface the device does not have |
 | `unknown-module-bay`, `unknown-device-bay`, `missing-device-bay` | a module or child device installed into a bay the parent's device type does not have |
 | `unknown-site`, `unknown-role`, `unknown-rack`, `unknown-device-type`, `unknown-vlan`, `unknown-vrf`, `unknown-module-type`, `unknown-cluster`, `unknown-platform`, `unknown-tenant`, `unknown-parent-device` | a reference that resolves to nothing declared here (VLANs are matched within the device's site, as NetBox resolves them) |
+| `unknown-tag` | a `tags:` entry that names no tag in `definitions/extras` (the managed `gitops` tag is always accepted; silent when the repository defines no tags at all) |
 | `unknown-custom-field`, `custom-field-wrong-type` | a device setting a custom field this repository does not declare, or declares for another content type — the mistake a repository makes when it ingests `hw_*` facts without copying the definitions in |
 | `invalid-ip`, `network-address`, `broadcast-address` | an address that is not a host address (a /31 point-to-point link is not flagged) |
 
@@ -743,6 +744,41 @@ image — the reverse order used for `--prune` — by
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`). You never write `gitops` into a `tags:` list yourself.
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
   * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
+
+### Your Own Tags
+
+Any object can carry tags of its own — sites, racks, VRFs, VLANs, VLAN groups,
+prefixes, platforms, tenants and tenant groups, device and module types,
+devices, their interfaces, modules, front/rear ports and IP addresses, cluster
+types/groups, clusters, VMs and VM interfaces:
+
+```yaml
+# definitions/extras/tags.yaml — define the tag once
+- name: "Production"
+  slug: "production"
+  color: "f44336"
+
+# anywhere else — reference it by slug (the name works too)
+- name: "berlin-srv-web-01"
+  tags: ["production"]
+  interfaces:
+    - name: "eth0"
+      tags: ["uplink"]
+      ip:
+        address: "10.10.20.101/24"
+        tags: ["dmz"]
+```
+
+  * **The YAML is the full set.** An object ends up with exactly the tags it
+    declares plus `gitops`. Removing a tag from the YAML removes it in NetBox,
+    and a tag added by hand in the UI is replaced on the next sync — as it
+    always was, since the managed tag alone was sent before.
+  * **`defaults` combine.** A `tags:` list under `defaults` is merged with each
+    object's own list rather than replaced by it.
+  * **Undefined tags are left off, not fatal.** A tag that exists neither in
+    `definitions/extras` nor in NetBox is skipped with a warning, and the
+    object is synced without it. `yamlcheck` reports it beforehand as
+    `unknown-tag`.
 
 ### Common Errors
 

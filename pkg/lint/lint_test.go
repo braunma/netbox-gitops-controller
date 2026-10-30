@@ -856,3 +856,36 @@ func TestCheckDeviceCustomFields(t *testing.T) {
 		}
 	})
 }
+
+// TestUnknownTag verifies that a tag no definition declares is reported, by
+// slug or name, on objects and on their interfaces and IPs, while the managed
+// tag is always accepted.
+func TestUnknownTag(t *testing.T) {
+	ds := baseDataset()
+	ds.Tags = []*models.Tag{{Name: "Production", Slug: "production", Color: "f44336"}}
+	ds.Sites[0].Tags = []string{"production", "gitops"}
+	srv := server("web-01", 10)
+	srv.Tags = []string{"Production"}
+	srv.Interfaces = []models.InterfaceConfig{{
+		Name: "eth0",
+		Tags: []string{"prod"},
+		IP:   &models.IPConfig{Address: "10.0.0.5/24", Tags: []string{"dmz"}},
+	}}
+	ds.Devices = []*models.DeviceConfig{srv}
+
+	findings := Check(ds, Options{})
+	got := assertCheck(t, findings, "unknown-tag", 2)
+	for _, want := range []string{`"prod"`, `"dmz"`} {
+		if !strings.Contains(render(got), want) {
+			t.Errorf("expected a finding naming %s, got:\n%s", want, render(got))
+		}
+	}
+}
+
+// TestUnknownTagSilentWithoutTagDefinitions verifies that a repository that
+// defines no tags, and so manages them elsewhere, is not flagged.
+func TestUnknownTagSilentWithoutTagDefinitions(t *testing.T) {
+	ds := baseDataset()
+	ds.Sites[0].Tags = []string{"defined-elsewhere"}
+	assertCheck(t, Check(ds, Options{}), "unknown-tag", 0)
+}

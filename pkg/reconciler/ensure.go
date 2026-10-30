@@ -24,6 +24,9 @@ type ensureSpec struct {
 	renameField string
 	renameFrom  interface{}
 	payload     map[string]interface{}
+	// tags are the object's declared tag slugs. ensure resolves them into the
+	// payload; the managed tag is added by the client either way.
+	tags []string
 	// register, when set, is called with the applied object's ID (0 for an
 	// object only planned in --dry-run) so the caller can seed the reference
 	// cache for later phases. Registration differs per kind — global,
@@ -36,6 +39,7 @@ type ensureSpec struct {
 // returns the applied object's ID, which is 0 for an object only planned in
 // --dry-run.
 func ensure(c *client.NetBoxClient, app, endpoint string, spec ensureSpec) (int, error) {
+	setTags(c, spec.payload, spec.tags, spec.kind, spec.name)
 	lookup, err := c.RenamedLookup(app, endpoint, spec.name, spec.lookup, spec.renameField, spec.renameFrom)
 	if err != nil {
 		return 0, err
@@ -114,4 +118,56 @@ func ensureManufacturer(c *client.NetBoxClient, name string) (int, error) {
 	id := utils.GetIDFromObject(obj)
 	c.Cache().Register("manufacturers", id, slug, name)
 	return id, nil
+}
+
+// setTags resolves an object's declared tags into its payload as tag IDs. A tag
+// is referenced by slug, with its name accepted as fallback, like every other
+// reference. The client adds the managed tag on top, so the object ends up
+// with exactly the declared tags plus `gitops`, and a tag removed from the
+// YAML is removed from NetBox.
+//
+// An object that declares no tags gets no `tags` field here; the client still
+// sends the managed tag alone.
+//
+// A tag that cannot be resolved is left off with a warning instead of failing
+// the object: define it in definitions/extras and the next run adds it. A tag
+// only planned in this --dry-run (ID 0) is left off too, since there is no ID
+// to send yet.
+func setTags(c *client.NetBoxClient, payload map[string]interface{}, slugs []string, forKind, forName string) {
+	if len(slugs) == 0 {
+		return
+	}
+	ids := make([]int, 0, len(slugs))
+	seen := make(map[int]bool, len(slugs))
+	for _, slug := range slugs {
+		id, ok := resolveTag(c, slug)
+		if !ok {
+			c.Logger().Warning("Tag %s not found for %s %s, leaving it off (define it in definitions/extras)", slug, forKind, forName)
+			continue
+		}
+		if id == 0 || seen[id] {
+			continue
+		}
+		seen[id] = true
+		ids = append(ids, id)
+	}
+	payload["tags"] = ids
+}
+
+// resolveTag looks a tag up in the run's reference cache, then live by slug and
+// by name. ok is true for a tag only planned in this --dry-run, with ID 0.
+func resolveTag(c *client.NetBoxClient, slug string) (int, bool) {
+	if id, ok := c.Cache().GetGlobalID("tags", slug); ok {
+		return id, true
+	}
+	for _, field := range []string{"slug", "name"} {
+		objs, err := c.Filter("extras", "tags", map[string]interface{}{field: slug})
+		if err == nil && len(objs) > 0 {
+			if id := utils.GetIDFromObject(objs[0]); id != 0 {
+				c.Cache().Register("tags", id, slug)
+				return id, true
+			}
+		}
+	}
+	return 0, false
 }

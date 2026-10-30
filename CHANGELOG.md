@@ -12,7 +12,24 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Declared `tags:` now reach NetBox.** Every model accepted a `tags:` list,
+  but the reconcilers never sent it: each object got the managed `gitops` tag
+  and nothing else, so `tags: ["production"]` was silently ignored. Declared
+  tags are now resolved by slug (or name) and sent with the managed tag, on
+  every kind that has a `tags:` field — including interfaces, IP addresses,
+  modules and ports. The YAML is the full set: a tag removed from the YAML is
+  removed from NetBox. **Upgrade note:** objects whose YAML already lists tags
+  will be updated on the first sync to carry them; read the `--dry-run` plan.
+  A tag that is defined nowhere is skipped with a warning.
+- Binding an interface into its LAG no longer strips the member's own tags.
+
 ### Added
+
+- **`unknown-tag` lint check.** `yamlcheck` reports a `tags:` entry that no
+  tag definition declares. It caught two in the bundled examples (`gpu`,
+  `lab`), which are now defined.
 
 - **The grouped `defaults:` form works for every kind under `items:`.**
   Racks, VLANs, prefixes and the other definition kinds could already be

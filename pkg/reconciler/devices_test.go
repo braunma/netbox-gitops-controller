@@ -213,42 +213,6 @@ func TestDeviceTypeSubdeviceRole(t *testing.T) {
 	}
 }
 
-// TestModuleManagedTag tests that modules should be tagged
-func TestModuleManagedTag(t *testing.T) {
-	tests := []struct {
-		name         string
-		managedTagID int
-		expectTagged bool
-	}{
-		{
-			name:         "with managed tag ID",
-			managedTagID: 123,
-			expectTagged: true,
-		},
-		{
-			name:         "without managed tag ID",
-			managedTagID: 0,
-			expectTagged: false,
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			// Build payload like the actual code does
-			payload := map[string]interface{}{}
-
-			if tt.managedTagID > 0 {
-				payload["tags"] = []int{tt.managedTagID}
-			}
-
-			_, hasTag := payload["tags"]
-			if hasTag != tt.expectTagged {
-				t.Errorf("Expected tagged=%v, got %v", tt.expectTagged, hasTag)
-			}
-		})
-	}
-}
-
 // TestDeviceBayTemplateCreation tests device bay auto-creation logic
 func TestDeviceBayTemplateCreation(t *testing.T) {
 	tests := []struct {

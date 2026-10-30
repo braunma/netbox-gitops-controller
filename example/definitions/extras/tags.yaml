@@ -15,3 +15,13 @@
   slug: "development"
   color: "4caf50"
   description: "Development environment"
+
+- name: "GPU"
+  slug: "gpu"
+  color: "9c27b0"
+  description: "Carries GPU accelerators"
+
+- name: "Lab"
+  slug: "lab"
+  color: "ff9800"
+  description: "Lab and test equipment"

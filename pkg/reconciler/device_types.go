@@ -221,6 +221,7 @@ func (dtr *DeviceTypeReconciler) ReconcileModuleTypes(moduleTypes []*models.Modu
 			renameField: "model",
 			renameFrom:  nonEmpty(mt.RenameFrom),
 			payload:     payload,
+			tags:        mt.Tags,
 			register: func(id int) {
 				dtr.client.Cache().Register("module_types", id, identifiers...)
 			},
@@ -307,6 +308,7 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(dt.RenameFrom),
 			payload:     payload,
+			tags:        dt.Tags,
 			// Register before the dry-run short-circuit below so the device
 			// phase can resolve a device type added in this same run (id is 0
 			// in --dry-run; the key's presence is what lets a dependent device
