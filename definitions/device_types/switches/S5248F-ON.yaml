@@ -3,7 +3,6 @@
   manufacturer: "Dell"
   u_height: 1
   is_full_depth: true
-  tags: ["gitops"]
 
   interfaces:
     # Management Port

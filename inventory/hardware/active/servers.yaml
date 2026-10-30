@@ -16,8 +16,6 @@ defaults:
   site_slug: "berlin-dc"
   role_slug: "server"
   face: "front"
-  status: "active"
-  tags: ["gitops"]
 
 devices:
   # ========================================

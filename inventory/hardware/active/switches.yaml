@@ -15,8 +15,7 @@ defaults:
   # NetBox rejects a rack position without a face
   # ("Must specify rack face when defining rack position").
   face: "front"
-  status: "active"
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 devices:
   # ========================================

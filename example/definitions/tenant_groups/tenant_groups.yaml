@@ -4,4 +4,3 @@
 - name: "Internal"
   slug: "internal"
   description: "Internal business units"
-  tags: ["gitops"]

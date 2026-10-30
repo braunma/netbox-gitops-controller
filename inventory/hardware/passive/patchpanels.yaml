@@ -12,8 +12,6 @@
   rack_slug: "berlin-rack-a01"
   position: 42
   face: "front"
-  status: "active"
-  tags: ["gitops"]
 
   # Front Ports (facing the room)
   front_ports:
@@ -58,8 +56,6 @@
   rack_slug: "berlin-rack-a02"
   position: 42
   face: "front"
-  status: "active"
-  tags: ["gitops"]
 
   front_ports:
     - name: "1"
@@ -84,8 +80,6 @@
   rack_slug: "berlin-rack-b01"
   position: 42
   face: "front"
-  status: "active"
-  tags: ["gitops"]
 
   front_ports:
     - name: "1"
@@ -110,8 +104,6 @@
   rack_slug: "frankfurt-rack-c01"
   position: 42
   face: "front"
-  status: "active"
-  tags: ["gitops"]
 
   front_ports:
     - name: "1"

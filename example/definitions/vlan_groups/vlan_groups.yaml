@@ -5,11 +5,10 @@
   description: "VLAN group for Berlin data center"
   min_vid: 100
   max_vid: 999
-  tags: ["gitops"]
 
 - name: "Test Lab VLANs"
   slug: "test-lab-vlans"
   description: "VLAN group for test lab"
   min_vid: 1000
   max_vid: 1099
-  tags: ["gitops", "development"]
+  tags: ["development"]

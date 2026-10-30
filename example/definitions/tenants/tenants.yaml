@@ -5,4 +5,3 @@
   slug: "platform-engineering"
   group_slug: "internal"
   description: "Owns the shared virtualization platform"
-  tags: ["gitops"]

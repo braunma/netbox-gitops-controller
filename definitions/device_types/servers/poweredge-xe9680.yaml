@@ -3,7 +3,6 @@
   manufacturer: "Dell"   
   u_height: 6
   is_full_depth: true
-  tags: ["gitops"]
   interfaces:
     - name: "idrac"
       type: "1000base-t"

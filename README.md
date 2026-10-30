@@ -273,7 +273,10 @@ installing another vendor's hardware.
 File: `inventory/hardware/active/servers.yaml`
 
 Inventory files support a grouped form: fields under `defaults` are merged
-into every device in the file (device values win, `tags` are combined).
+into every device in the file (device values win, `tags` are combined). The
+same form works for every definition kind too — racks, VLANs, prefixes and so
+on — with the list under `items:` instead of `devices:` (either key is
+accepted in any file, but not both at once).
 Since the ports already come from the device type template, an interface is
 only listed here when it carries device-specific data — IPs, VLANs, cabling —
 without repeating `type` or `enabled`.
@@ -284,8 +287,7 @@ defaults:
   role_slug: "server"
   device_type_slug: "dell-r640"
   rack_slug: "rack-a01"
-  status: "active"
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 devices:
   - name: "srv-web-01"
@@ -354,7 +356,14 @@ File: `inventory/hardware/active/switches.yaml`
     but means every re-patch is a two-file edit.
   * **Group shared fields in `defaults`.** One file per rack, role or
     hardware batch with a `defaults` block keeps each device down to its name,
-    position and IPs.
+    position and IPs. Definitions take the same block with an `items:` list,
+    e.g. `defaults: { site_slug: "berlin-dc", u_height: 42 }` for a site's
+    racks.
+  * **Leave out what is already the default.** `tags: ["gitops"]` is never
+    needed — the managed tag is stamped on every object automatically — and
+    `status: "active"` is what sites, racks, VLANs, prefixes, devices and
+    modules get when `status` is omitted. Write `status` only when it is
+    something else.
   * **Start from the parked template.** `inventory/hardware/active/_new-server.yaml`
     holds a filled-in skeleton. The leading underscore parks it, so it is never
     applied (see *Parking a File* below) — copy a block out of it rather than
@@ -367,7 +376,7 @@ identity and its addresses, and nothing else:
 
 ```yaml
 # inventory/hardware/active/servers.yaml  (defaults supply site, role,
-# device type, rack, face, status and tags)
+# device type, rack and face)
   - name: "berlin-srv-web-03"
     device_type_slug: "poweredge-r740"
     rack_slug: "berlin-rack-a01"
@@ -731,7 +740,7 @@ image — the reverse order used for `--prune` — by
 
 ### The `gitops` Tag
 
-  * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`).
+  * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`). You never write `gitops` into a `tags:` list yourself.
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
   * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
 

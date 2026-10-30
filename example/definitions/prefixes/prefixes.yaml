@@ -1,22 +1,17 @@
 # Example IP Prefixes for Testing
 
 - prefix: "10.0.0.0/8"
-  status: "active"
   description: "Private network space"
-  tags: ["gitops"]
 
 - prefix: "10.0.100.0/24"
   site_slug: "berlin-dc"
   vrf_name: "Management"
   vlan_name: "Management"
-  status: "active"
   description: "Management subnet Berlin DC"
-  tags: ["gitops"]
 
 - prefix: "10.0.200.0/24"
   site_slug: "berlin-dc"
   vrf_name: "Production"
   vlan_name: "Production Network"
-  status: "active"
   description: "Production subnet Berlin DC"
-  tags: ["gitops", "production"]
+  tags: ["production"]

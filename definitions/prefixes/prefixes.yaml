@@ -11,9 +11,7 @@
   site_slug: "berlin-dc"
   vlan_name: "Management"
   vrf_name: "Management"
-  status: "active"
   is_pool: true
-  tags: ["gitops"]
 
 # Production Server Network
 - prefix: "10.10.20.0/24"
@@ -21,9 +19,8 @@
   site_slug: "berlin-dc"
   vlan_name: "Server-Production"
   vrf_name: "Production"
-  status: "active"
   is_pool: true
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 # Storage Network
 - prefix: "10.10.30.0/24"
@@ -31,9 +28,7 @@
   site_slug: "berlin-dc"
   vlan_name: "Storage"
   vrf_name: "Storage"
-  status: "active"
   is_pool: true
-  tags: ["gitops"]
 
 # AI/ML Compute Network
 - prefix: "10.10.40.0/24"
@@ -41,9 +36,8 @@
   site_slug: "berlin-dc"
   vlan_name: "AI-Compute"
   vrf_name: "Production"
-  status: "active"
   is_pool: true
-  tags: ["gitops", "ai-ml"]
+  tags: ["ai-ml"]
 
 # ========================================
 # Frankfurt DC Prefixes
@@ -54,18 +48,15 @@
   site_slug: "frankfurt-dc"
   vlan_name: "Management"
   vrf_name: "Management"
-  status: "active"
   is_pool: true
-  tags: ["gitops"]
 
 - prefix: "10.20.20.0/24"
   description: "Frankfurt DC - Production server network"
   site_slug: "frankfurt-dc"
   vlan_name: "Server-Production"
   vrf_name: "Production"
-  status: "active"
   is_pool: true
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 # ========================================
 # Munich Lab Prefixes
@@ -76,18 +67,16 @@
   site_slug: "munich-lab"
   vlan_name: "Lab-Management"
   vrf_name: "Lab"
-  status: "active"
   is_pool: true
-  tags: ["gitops", "lab"]
+  tags: ["lab"]
 
 - prefix: "192.168.200.0/24"
   description: "Munich Lab - Testing network"
   site_slug: "munich-lab"
   vlan_name: "Lab-Testing"
   vrf_name: "Lab"
-  status: "active"
   is_pool: true
-  tags: ["gitops", "lab", "development"]
+  tags: ["lab", "development"]
 
 # ========================================
 # Container Prefixes (for organization)
@@ -97,16 +86,14 @@
   description: "Berlin DC - Overall supernet"
   site_slug: "berlin-dc"
   status: "container"
-  tags: ["gitops"]
 
 - prefix: "10.20.0.0/16"
   description: "Frankfurt DC - Overall supernet"
   site_slug: "frankfurt-dc"
   status: "container"
-  tags: ["gitops"]
 
 - prefix: "192.168.0.0/16"
   description: "Lab networks - Overall supernet"
   site_slug: "munich-lab"
   status: "container"
-  tags: ["gitops", "lab"]
+  tags: ["lab"]

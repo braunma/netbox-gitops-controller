@@ -12,7 +12,23 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Added
+
+- **The grouped `defaults:` form works for every kind under `items:`.**
+  Racks, VLANs, prefixes and the other definition kinds could already be
+  grouped, but only under a key named `devices:`. The list may now be called
+  `items:`; `devices:` keeps working, and a file with both is rejected rather
+  than loading one list and dropping the other. `definitions/racks/racks.yaml`
+  and the example racks show the form.
+
 ### Changed
+
+- **The bundled YAML no longer spells out defaults.** `tags: ["gitops"]` and
+  `status: "active"` were removed from the example, definitions and inventory
+  files. The managed tag is stamped automatically, and sites, racks, VLANs,
+  prefixes, devices and modules already default an omitted status to
+  `active`, so nothing synced differs. IP addresses, VMs and clusters keep
+  their explicit `status`: their reconcilers send status only when declared.
 
 - **Every YAML kind is decoded through one path.** The loader had two
   decoders for the same file format: a plain one for most kinds and a

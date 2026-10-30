@@ -100,7 +100,8 @@ devices:
 
 // TestLoadSitesGroupedDefaults verifies that the grouped form is not a
 // device-only feature: every kind decodes through the same path, so defaults
-// merging and tag union behave identically for, e.g., sites.
+// merging and tag union behave identically for, e.g., sites listed under the
+// general `items` key.
 func TestLoadSitesGroupedDefaults(t *testing.T) {
 	dir := t.TempDir()
 	siteDir := filepath.Join(dir, "sites")
@@ -114,7 +115,7 @@ defaults:
   region: "europe"
   tags: ["gitops"]
 
-devices:
+items:
   - name: "Berlin DC"
     slug: "berlin-dc"
 
@@ -208,6 +209,79 @@ devices:
 	loader := NewDataLoader(dir, utils.NewLogger(false))
 	if _, err := loader.LoadDevices("devices"); err == nil {
 		t.Error("LoadDevices() should reject stray top-level keys in grouped form")
+	}
+}
+
+// TestLoadRacksGroupedDevicesAlias verifies that `devices` still works as the
+// list key outside inventory, so files written before `items` existed load
+// unchanged.
+func TestLoadRacksGroupedDevicesAlias(t *testing.T) {
+	dir := t.TempDir()
+	rackDir := filepath.Join(dir, "racks")
+	if err := os.MkdirAll(rackDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `
+defaults:
+  site_slug: "berlin-dc"
+  u_height: 42
+
+devices:
+  - name: "Rack A01"
+    slug: "berlin-rack-a01"
+  - name: "Rack B01"
+    slug: "berlin-rack-b01"
+    u_height: 48
+`
+	if err := os.WriteFile(filepath.Join(rackDir, "racks.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewDataLoader(dir, utils.NewLogger(false))
+	racks, err := loader.LoadRacks("racks")
+	if err != nil {
+		t.Fatalf("LoadRacks() error = %v", err)
+	}
+	if len(racks) != 2 {
+		t.Fatalf("LoadRacks() returned %d racks, expected 2", len(racks))
+	}
+	if racks[0].SiteSlug != "berlin-dc" || racks[0].UHeight != 42 {
+		t.Errorf("rack A01 defaults not applied: %+v", racks[0])
+	}
+	if racks[1].UHeight != 48 {
+		t.Errorf("rack B01 u_height = %d, rack value should win over default", racks[1].UHeight)
+	}
+}
+
+// TestGroupedFormRejectsBothListKeys verifies that a file with both `items`
+// and `devices` fails instead of loading one list and dropping the other.
+func TestGroupedFormRejectsBothListKeys(t *testing.T) {
+	dir := t.TempDir()
+	siteDir := filepath.Join(dir, "sites")
+	if err := os.MkdirAll(siteDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	content := `
+items:
+  - name: "Berlin DC"
+    slug: "berlin-dc"
+devices:
+  - name: "Munich DC"
+    slug: "munich-dc"
+`
+	if err := os.WriteFile(filepath.Join(siteDir, "sites.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	loader := NewDataLoader(dir, utils.NewLogger(false))
+	_, err := loader.LoadSites("sites")
+	if err == nil {
+		t.Fatal("LoadSites() = nil, want a file with both 'items' and 'devices' rejected")
+	}
+	if !strings.Contains(err.Error(), "items") || !strings.Contains(err.Error(), "devices") {
+		t.Errorf("error %q should name both list keys", err)
 	}
 }
 
@@ -374,9 +448,6 @@ func TestLoadDefinitionFiles(t *testing.T) {
 		for _, site := range sites {
 			if site.Slug == "berlin-dc" {
 				foundBerlin = true
-				if site.Status != "active" {
-					t.Errorf("Berlin DC status = %q, expected %q", site.Status, "active")
-				}
 				if site.TimeZone != "Europe/Berlin" {
 					t.Errorf("Berlin DC timezone = %q, expected %q", site.TimeZone, "Europe/Berlin")
 				}
@@ -477,9 +548,6 @@ func TestLoadDefinitionFiles(t *testing.T) {
 			if vlan.SiteSlug == "" {
 				t.Errorf("VLAN %s has no site_slug", vlan.Name)
 			}
-			if vlan.Status == "" {
-				t.Errorf("VLAN %s has no status", vlan.Name)
-			}
 		}
 	})
 
@@ -496,9 +564,6 @@ func TestLoadDefinitionFiles(t *testing.T) {
 		for _, prefix := range prefixes {
 			if prefix.Prefix == "" {
 				t.Error("Prefix has empty prefix field")
-			}
-			if prefix.Status == "" {
-				t.Error("Prefix has no status")
 			}
 		}
 	})

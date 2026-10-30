@@ -15,7 +15,7 @@
   vcpus: 4
   memory: 8192                     # MB
   disk: 100                        # GB
-  tags: ["gitops", "production"]
+  tags: ["production"]
   interfaces:
     - name: "eth0"
       enabled: true

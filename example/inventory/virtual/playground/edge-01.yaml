@@ -11,7 +11,7 @@
   status: "active"
   vcpus: 2
   memory: 4096
-  tags: ["gitops", "development"]
+  tags: ["development"]
   interfaces:
     - name: "eth0"
       enabled: true

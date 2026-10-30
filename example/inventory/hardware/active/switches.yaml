@@ -12,8 +12,7 @@
   rack_slug: "rack-a01"
   position: 1
   face: "front"
-  status: "active"
-  tags: ["gitops", "production"]
+  tags: ["production"]
   interfaces:
     - name: "GigabitEthernet1/0/1"
       description: "Downlink to example-server-01"

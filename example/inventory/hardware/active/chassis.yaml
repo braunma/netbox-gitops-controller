@@ -9,9 +9,8 @@
   rack_slug: "rack-a01"
   position: 20
   face: "front"
-  status: "active"
   serial: "CHASSIS-001"
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 # Blade servers installed in chassis bays
 # These demonstrate the parent_device and device_bay features.
@@ -22,9 +21,8 @@
   site_slug: "berlin-dc"
   parent_device: "example-chassis-01"  # Parent device
   device_bay: "Blade-1"                # Bay on parent to install into
-  status: "active"
   serial: "BLADE-001"
-  tags: ["gitops", "production"]
+  tags: ["production"]
   interfaces:
     - name: "eth0"
       description: "Management interface"
@@ -35,9 +33,8 @@
   site_slug: "berlin-dc"
   parent_device: "example-chassis-01"
   device_bay: "Blade-2"
-  status: "active"
   serial: "BLADE-002"
-  tags: ["gitops", "production"]
+  tags: ["production"]
   interfaces:
     - name: "eth0"
       description: "Management interface"

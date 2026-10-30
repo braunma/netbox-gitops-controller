@@ -9,8 +9,7 @@ defaults:
   device_type_slug: "poweredge-r740"
   rack_slug: "munich-lab-rack-01"
   face: "front"
-  status: "active"
-  tags: ["gitops", "lab", "development"]
+  tags: ["lab", "development"]
 
 devices:
   - name: "munich-lab-srv-01"

@@ -3,7 +3,6 @@
   manufacturer: "Generic" 
   u_height: 1
   is_full_depth: false
-  tags: ["gitops"]
 
   front_ports:
     - name: "1"

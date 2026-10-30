@@ -56,8 +56,7 @@ Modules are installed into module bays and automatically tagged with the GitOps 
 modules:
   - name: "GPU-1"
     module_type_slug: "ex-gpu-a100"
-    status: "active"
-    serial: "GPU-CARD-001"
+    serial: "GPU-CARD-001"         # status defaults to "active"
     description: "Primary GPU"
 ```
 

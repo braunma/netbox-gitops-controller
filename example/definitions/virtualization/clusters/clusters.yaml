@@ -8,4 +8,4 @@
   tenant: "platform-engineering"
   status: "active"
   description: "Primary Proxmox cluster in Berlin"
-  tags: ["gitops", "production"]
+  tags: ["production"]

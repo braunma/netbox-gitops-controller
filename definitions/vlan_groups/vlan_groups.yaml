@@ -7,7 +7,6 @@
   description: "VLAN group for Berlin data center"
   min_vid: 1
   max_vid: 4094
-  tags: ["gitops"]
 
 - name: "Frankfurt DC VLANs"
   slug: "frankfurt-dc-vlans"
@@ -15,7 +14,6 @@
   description: "VLAN group for Frankfurt data center"
   min_vid: 1
   max_vid: 4094
-  tags: ["gitops"]
 
 - name: "Munich Lab VLANs"
   slug: "munich-lab-vlans"
@@ -23,4 +21,4 @@
   description: "VLAN group for Munich lab"
   min_vid: 1
   max_vid: 4094
-  tags: ["gitops", "lab"]
+  tags: ["lab"]

@@ -59,7 +59,7 @@ This repository is designed to work with your private definitions and inventory:
 
 ## Format
 
-All files use YAML format. Each file contains a list of objects with the appropriate fields for that object type. Device inventory files may alternatively use the grouped form — a `defaults:` block whose fields are merged into every entry of a `devices:` list (see `inventory/hardware/active/servers.yaml`). See the example files in this directory for reference.
+All files use YAML format. Each file contains a list of objects with the appropriate fields for that object type. Any file may alternatively use the grouped form — a `defaults:` block whose fields are merged into every entry of an `items:` list (`devices:` in inventory files; both keys are accepted). See `definitions/racks/racks.yaml` and `inventory/hardware/active/servers.yaml`. `status: "active"` and `tags: ["gitops"]` are omitted throughout because they are the defaults. See the example files in this directory for reference.
 
 ## Testing
 

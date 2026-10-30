@@ -90,8 +90,7 @@ defaults:
   role_slug: "server"
   site_slug: "berlin-dc"
   rack_slug: "rack-a01"
-  status: "active"
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 devices:
   - name: "example-server-01"

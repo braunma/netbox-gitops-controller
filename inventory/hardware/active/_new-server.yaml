@@ -20,8 +20,6 @@ defaults:
   device_type_slug: "CHANGEME-device-type"
   rack_slug: "CHANGEME-rack"
   face: "front"
-  status: "active"
-  tags: ["gitops"]
 
 devices:
   - name: "CHANGEME-hostname"
