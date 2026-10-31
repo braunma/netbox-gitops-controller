@@ -25,4 +25,5 @@
       ip:
         address: "10.0.100.21/24"
         dns_name: "web-01.berlin.example.com"
+        vrf: "Management"            # the VRF of its prefix 10.0.100.0/24
       address_role: "primary"      # promotes this IP to the VM's primary_ip4

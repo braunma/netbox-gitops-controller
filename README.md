@@ -322,9 +322,12 @@ The classic form — a plain YAML list of devices — is still fully supported;
 Under `defaults`, `interfaces` is a mapping from an interface **name** to the
 fields every interface of that name gets. It works in device and VM files.
 
-  * It applies only to interfaces a device **lists**; it never adds one. A
-    device that should get the defaults lists the interface, if only by name
-    (`- name: "eth1"`).
+  * It applies to interfaces a device **lists**. A device that should get the
+    defaults lists the interface, if only by name (`- name: "eth1"`). The one
+    exception is explicit: an entry with `always: true` is added to every
+    device in the file that does not list it, for a port whose whole
+    configuration is shared (a PXE port and its VLAN). Use it only in a file
+    whose devices all have that port.
   * The device's own values win. Nested mappings — `ip`, `link` — are merged
     key by key, so a default `ip: { vrf: ... }` combines with the device's
     `ip: "10.0.0.5/24"` shorthand. `tags` are combined.
@@ -334,6 +337,22 @@ fields every interface of that name gets. It works in device and VM files.
   * A name under `defaults.interfaces` that no device in the file lists is an
     error (it is a typo or a leftover), and so is a field the interface does
     not have.
+
+#### Interfaces as a mapping
+
+`interfaces:` may also be written as a mapping keyed by interface name, the
+way `defaults.interfaces` is: an address alone, a mapping of fields, or
+nothing to list the interface for its defaults. A server that is its name,
+its position and two addresses then fits in three lines:
+
+```yaml
+  - name: "srv-web-03"
+    position: 14
+    interfaces: { idrac: "10.10.10.103/24", eth0: "10.10.20.103/24" }
+```
+
+The interfaces are sorted by name, since a YAML mapping keeps no order. The
+list form is unchanged; one object uses one or the other.
 
 #### Field names
 
@@ -566,6 +585,7 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `unknown-tag` | a `tags:` entry that names no tag in `definitions/extras` (the managed `gitops` tag is always accepted; silent when the repository defines no tags at all) |
 | `unknown-custom-field`, `custom-field-wrong-type` | a device setting a custom field this repository does not declare, or declares for another content type — the mistake a repository makes when it ingests `hw_*` facts without copying the definitions in |
 | `invalid-ip`, `network-address`, `broadcast-address` | an address that is not a host address (a /31 point-to-point link is not flagged) |
+| `ip-vrf-mismatch` | an address whose VRF differs from the VRF of the most specific declared prefix it falls into (an address with no VRF inside a prefix that has one is the warning form) |
 
 **Warnings** — legitimate in some repositories, so they only fail under
 `--strict`: `redundant-interface-type`, `redundant-port-type`, `redundant-port`

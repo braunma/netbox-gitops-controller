@@ -954,3 +954,30 @@ func TestCableDefaultsOffPanel(t *testing.T) {
 		CableDefaults: &models.CableDefaults{Front: models.CableAttrs{CableType: "lc"}}})
 	assertCheck(t, Check(ds, Options{}), "cable-defaults-off-panel", 0)
 }
+
+// The prefix an address falls into says which VRF it belongs to; a different
+// VRF on the address is an error, none at all a warning.
+func TestIPVRFMismatch(t *testing.T) {
+	mk := func(vrf string) Dataset {
+		ds := baseDataset()
+		ds.Prefixes = []*models.Prefix{{Prefix: "10.0.0.0/16", VRFName: "Production"}, {Prefix: "10.0.5.0/24", VRFName: "Lab"}}
+		ds.VRFs = append(ds.VRFs, &models.VRF{Name: "Lab"})
+		srv := server("srv-01", 10)
+		srv.Interfaces = []models.InterfaceConfig{{Name: "eth0", IP: &models.IPConfig{Address: "10.0.1.5/24", VRF: vrf}}}
+		ds.Devices = []*models.DeviceConfig{srv}
+		return ds
+	}
+	assertCheck(t, Check(mk("Production"), Options{}), "ip-vrf-mismatch", 0)
+	got := assertCheck(t, Check(mk("Lab"), Options{}), "ip-vrf-mismatch", 1)
+	if len(got) == 1 && got[0].Severity != Error {
+		t.Errorf("a wrong VRF should be an error, got %s", got[0].Severity)
+	}
+	got = assertCheck(t, Check(mk(""), Options{}), "ip-vrf-mismatch", 1)
+	if len(got) == 1 && got[0].Severity != Warning {
+		t.Errorf("a missing VRF should be a warning, got %s", got[0].Severity)
+	}
+	// The most specific prefix decides: 10.0.5.x is Lab even though /16 is Production.
+	ds := mk("Lab")
+	ds.Devices[0].Interfaces[0].IP.Address = "10.0.5.9/24"
+	assertCheck(t, Check(ds, Options{}), "ip-vrf-mismatch", 0)
+}

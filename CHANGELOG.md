@@ -42,6 +42,20 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`always: true` on a per-interface default.** Under `defaults.interfaces`,
+  an entry so marked is added to every device of the file that does not list
+  the interface, so a port whose whole configuration is shared (PXE and its
+  VLAN) is no longer repeated by name on each device. Everything else about
+  interface defaults is unchanged: without the flag, a default still applies
+  only to listed interfaces.
+- **`interfaces:` as a mapping keyed by name.** An address alone
+  (`idrac: "10.10.10.103/24"`), a mapping of fields, or nothing to list the
+  interface for its defaults; the loader turns it into the list the model
+  decodes, sorted by name. The list form is unchanged.
+- **`ip-vrf-mismatch` lint check.** An address whose VRF differs from that of
+  the most specific declared prefix it falls into is an error; an address
+  with no VRF inside a prefix that has one is a warning (NetBox would file it
+  in the global table, apart from its network).
 - **Cable paths through patch panels (`link.via`).** A strand from an
   endpoint through the panel in its rack, the backbone, and the panel in the
   far rack to its peer used to be three `link:`s in three files. It is now

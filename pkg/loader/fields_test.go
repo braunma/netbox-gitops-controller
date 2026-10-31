@@ -526,3 +526,130 @@ devices:
 		t.Errorf("device = %+v, want the item's values to win in either spelling", devices[0])
 	}
 }
+
+// A default marked `always: true` is added to every device of the file that
+// does not list the interface, so a port whose whole configuration is shared
+// need not be named on each device. A device that lists it merges as usual.
+func TestInterfaceDefaultsAlways(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "devices", "x.yaml", `
+defaults:
+  site: "s"
+  role: "r"
+  device_type: "dt"
+  interfaces:
+    pxe:
+      always: true
+      mode: "access"
+      untagged_vlan: "pxe"
+      ip: { vrf: "Prod" }
+    idrac:
+      description: "BMC"
+
+devices:
+  - name: "srv-01"
+    interfaces:
+      - { name: "idrac", ip: "10.0.10.1/24" }
+  - name: "srv-02"
+    interfaces:
+      - { name: "idrac", ip: "10.0.10.2/24" }
+      - { name: "pxe", description: "own pxe" }
+  - name: "srv-03"
+`)
+	devices, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDevices("devices")
+	if err != nil {
+		t.Fatalf("LoadDevices() error = %v", err)
+	}
+	find := func(d *models.DeviceConfig, name string) *models.InterfaceConfig {
+		for i := range d.Interfaces {
+			if d.Interfaces[i].Name == name {
+				return &d.Interfaces[i]
+			}
+		}
+		return nil
+	}
+	// Not listed: added from the default, without the ip block (no address).
+	pxe := find(devices[0], "pxe")
+	if pxe == nil || pxe.Mode != "access" || pxe.UntaggedVLAN != "pxe" || pxe.IP != nil {
+		t.Errorf("srv-01 pxe = %+v, want it added from the default with no ip block", pxe)
+	}
+	if len(devices[0].Interfaces) != 2 {
+		t.Errorf("srv-01 has %d interfaces, want idrac and pxe", len(devices[0].Interfaces))
+	}
+	// Listed: merged once, own values win, not duplicated.
+	if pxe := find(devices[1], "pxe"); pxe == nil || pxe.Description != "own pxe" || pxe.Mode != "access" {
+		t.Errorf("srv-02 pxe = %+v, want own description over the default", pxe)
+	}
+	if len(devices[1].Interfaces) != 2 {
+		t.Errorf("srv-02 has %d interfaces, want 2 (pxe not duplicated)", len(devices[1].Interfaces))
+	}
+	// No interfaces at all: the always one is still there, idrac is not.
+	if len(devices[2].Interfaces) != 1 || devices[2].Interfaces[0].Name != "pxe" {
+		t.Errorf("srv-03 interfaces = %+v, want only pxe", devices[2].Interfaces)
+	}
+
+	writeFile(t, dir, "bad", "x.yaml", `
+defaults:
+  interfaces:
+    pxe: { always: "yes" }
+devices:
+  - { name: "srv", site: "s", role: "r", device_type: "dt" }
+`)
+	if _, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDevices("bad"); err == nil || !strings.Contains(err.Error(), "`always` must be true or false") {
+		t.Errorf("non-boolean always: error = %v", err)
+	}
+}
+
+// `interfaces:` may be a mapping keyed by name: an address alone, a mapping
+// of fields, or nothing (listed for its defaults). It becomes the list the
+// model decodes, sorted by name.
+func TestInterfacesMappingShorthand(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "devices", "x.yaml", `
+defaults:
+  site: "s"
+  role: "r"
+  device_type: "dt"
+  interfaces:
+    eth1: { description: "from defaults" }
+devices:
+  - name: "srv-01"
+    interfaces:
+      idrac: "10.10.10.91/24"
+      eth0: { description: "mgmt", ip: { address: "10.0.0.1/24", vrf: "Prod" } }
+      eth1:
+`)
+	devices, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDevices("devices")
+	if err != nil {
+		t.Fatalf("LoadDevices() error = %v", err)
+	}
+	ifaces := devices[0].Interfaces
+	if len(ifaces) != 3 || ifaces[0].Name != "eth0" || ifaces[1].Name != "eth1" || ifaces[2].Name != "idrac" {
+		t.Fatalf("interfaces = %+v, want eth0, eth1, idrac (sorted)", ifaces)
+	}
+	if ifaces[2].IP == nil || ifaces[2].IP.Address != "10.10.10.91/24" {
+		t.Errorf("idrac = %+v, want the string to be its address", ifaces[2])
+	}
+	if ifaces[0].Description != "mgmt" || ifaces[0].IP == nil || ifaces[0].IP.VRF != "Prod" {
+		t.Errorf("eth0 = %+v ip %+v, want the mapping's fields", ifaces[0], ifaces[0].IP)
+	}
+	if ifaces[1].Description != "from defaults" {
+		t.Errorf("eth1 = %+v, want the default applied to the name-only entry", ifaces[1])
+	}
+
+	writeFile(t, dir, "bad", "x.yaml", `
+- name: "srv"
+  site: "s"
+  role: "r"
+  device_type: "dt"
+  interfaces:
+    eth0: { name: "other" }
+    eth1: 42
+`)
+	_, err = NewDataLoader(dir, utils.NewLogger(false)).LoadDevices("bad")
+	for _, want := range []string{"interfaces.eth0: `name` comes from the key", "interfaces.eth1 must be an address"} {
+		if err == nil || !strings.Contains(err.Error(), want) {
+			t.Errorf("error = %v, want it to contain %q", err, want)
+		}
+	}
+}

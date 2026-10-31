@@ -223,23 +223,26 @@ func sortedKeys[V any](m map[string]V) []string {
 //	  interfaces:
 //	    idrac: { description: "Dell iDRAC", ip: { vrf: "Management" } }
 //
-// They apply only to the interfaces an object lists; they never add one. The
-// entries are normalized against the interface type of the model, so a typo
-// inside them is reported like one on the object itself.
-func interfaceDefaults(defaults map[string]interface{}, t reflect.Type) (map[string]map[string]interface{}, error) {
+// They apply to the interfaces an object lists. An entry with `always: true`
+// is also added to every object of the file that does not list it, so an
+// interface whose whole configuration is shared (a PXE port with its VLAN)
+// need not be repeated by name on each object; the returned always set names
+// those entries. The entries are normalized against the interface type of
+// the model, so a typo inside them is reported like one on the object itself.
+func interfaceDefaults(defaults map[string]interface{}, t reflect.Type) (map[string]map[string]interface{}, map[string]bool, error) {
 	value, ok := defaults["interfaces"]
 	if !ok {
-		return nil, nil
+		return nil, nil, nil
 	}
 	delete(defaults, "interfaces")
 
 	field, known := yamlFields(structType(t))["interfaces"]
 	if !known {
-		return nil, fmt.Errorf("defaults: unknown field \"interfaces\" (not a field of %s)", modelLabel(structType(t)))
+		return nil, nil, fmt.Errorf("defaults: unknown field \"interfaces\" (not a field of %s)", modelLabel(structType(t)))
 	}
 	byName, ok := value.(map[string]interface{})
 	if !ok {
-		return nil, fmt.Errorf("defaults.interfaces must map an interface name to its defaults, e.g. `idrac: { description: ... }`")
+		return nil, nil, fmt.Errorf("defaults.interfaces must map an interface name to its defaults, e.g. `idrac: { description: ... }`")
 	}
 	elem := structType(field)
 	if elem == nil && field.Kind() == reflect.Slice {
@@ -247,6 +250,7 @@ func interfaceDefaults(defaults map[string]interface{}, t reflect.Type) (map[str
 	}
 
 	out := make(map[string]map[string]interface{}, len(byName))
+	always := make(map[string]bool)
 	var errs []error
 	for _, name := range sortedKeys(byName) {
 		entry, ok := byName[name].(map[string]interface{})
@@ -258,58 +262,131 @@ func interfaceDefaults(defaults map[string]interface{}, t reflect.Type) (map[str
 			errs = append(errs, fmt.Errorf("defaults.interfaces.%s: `name` comes from the key and cannot be set here", name))
 			delete(entry, "name")
 		}
+		if v, set := entry["always"]; set {
+			// Not an interface field: it says the entry applies to every
+			// object, listed or not. Taken out before the fields are checked.
+			b, ok := v.(bool)
+			if !ok {
+				errs = append(errs, fmt.Errorf("defaults.interfaces.%s: `always` must be true or false", name))
+			} else if b {
+				always[name] = true
+			}
+			delete(entry, "always")
+		}
 		if err := normalizeFields(entry, elem, "defaults.interfaces."+name); err != nil {
 			errs = append(errs, err)
 		}
 		out[name] = entry
 	}
-	return out, errors.Join(errs...)
+	return out, always, errors.Join(errs...)
 }
 
 // applyInterfaceDefaults merges the per-interface defaults into every listed
-// interface of that name. The interface's own values win, nested mappings
-// (`ip`, `link`) are merged key by key, and tags are combined. An `ip` default
-// only applies to an interface that declares an address, a `link` default to
-// one that declares a peer (see nestedDefaultRequires). It records the
-// default names it used in used, so the caller can flag one that matched
-// nothing.
-func applyInterfaceDefaults(item map[string]interface{}, defaults map[string]map[string]interface{}, used map[string]bool) {
+// interface of that name, and adds the `always` ones the object does not
+// list. The interface's own values win, nested mappings (`ip`, `link`) are
+// merged key by key, and tags are combined. An `ip` default only applies to
+// an interface that declares an address, a `link` default to one that
+// declares a peer (see nestedDefaultRequires). It records the default names
+// it used in used, so the caller can flag one that matched nothing.
+func applyInterfaceDefaults(item map[string]interface{}, defaults map[string]map[string]interface{}, always map[string]bool, used map[string]bool) {
 	if len(defaults) == 0 {
 		return
 	}
-	list, ok := item["interfaces"].([]interface{})
-	if !ok {
+	list, _ := item["interfaces"].([]interface{})
+	if list == nil && len(always) == 0 {
 		return
 	}
-	merged := make([]interface{}, len(list))
-	for i, entry := range list {
-		merged[i] = entry
+	merged := make([]interface{}, 0, len(list)+len(always))
+	listed := make(map[string]bool, len(list))
+	for _, entry := range list {
 		iface, ok := entry.(map[string]interface{})
 		if !ok {
+			merged = append(merged, entry)
 			continue
 		}
 		name, _ := iface["name"].(string)
+		listed[name] = true
 		def, ok := defaults[name]
 		if !ok {
+			merged = append(merged, entry)
 			continue
 		}
 		used[name] = true
-		out := deepMerge(def, iface)
-		// A default may carry `ip` fields (a VRF, a status) for the
-		// interfaces that have an address, or `link` fields (a cable type)
-		// for those that are cabled. An interface that declares no address
-		// or no peer gets no such block at all, rather than one validation
-		// would reject for the field only the interface itself can supply.
-		for block, required := range nestedDefaultRequires {
-			if m, ok := out[block].(map[string]interface{}); ok {
-				if value, _ := m[required].(string); value == "" {
-					delete(out, block)
-				}
-			}
+		merged = append(merged, withoutIncompleteBlocks(deepMerge(def, iface)))
+	}
+	// An `always` interface the object did not list is added from the
+	// default alone: its name and whatever the default says.
+	for _, name := range sortedKeys(always) {
+		if listed[name] {
+			continue
 		}
-		merged[i] = out
+		used[name] = true
+		merged = append(merged, withoutIncompleteBlocks(deepMerge(defaults[name], map[string]interface{}{"name": name})))
 	}
 	item["interfaces"] = merged
+}
+
+// withoutIncompleteBlocks drops a nested block a default supplied when the
+// interface itself gives it no identity. A default may carry `ip` fields (a
+// VRF, a status) for the interfaces that have an address, or `link` fields
+// (a cable type) for those that are cabled. An interface that declares no
+// address or no peer gets no such block at all, rather than one validation
+// would reject for the field only the interface itself can supply.
+func withoutIncompleteBlocks(out map[string]interface{}) map[string]interface{} {
+	for block, required := range nestedDefaultRequires {
+		if m, ok := out[block].(map[string]interface{}); ok {
+			if value, _ := m[required].(string); value == "" {
+				delete(out, block)
+			}
+		}
+	}
+	return out
+}
+
+// widenInterfaceMap accepts `interfaces:` written as a mapping keyed by
+// interface name, the way `defaults.interfaces` is written, and turns it into
+// the list the model decodes:
+//
+//	interfaces:
+//	  idrac: "10.10.10.91/24"      # an address alone
+//	  eth0: { description: "x" }    # fields
+//	  eth1:                         # listed by name only, for its defaults
+//
+// A YAML mapping has no order the decoder keeps, so the interfaces are sorted
+// by name. The list form stays as it is; the two may not be mixed in one
+// object because a key is one or the other.
+func widenInterfaceMap(raw map[string]interface{}) error {
+	byName, ok := raw["interfaces"].(map[string]interface{})
+	if !ok {
+		return nil
+	}
+	list := make([]interface{}, 0, len(byName))
+	var errs []error
+	for _, name := range sortedKeys(byName) {
+		var entry map[string]interface{}
+		switch v := byName[name].(type) {
+		case nil:
+			entry = map[string]interface{}{}
+		case string:
+			entry = map[string]interface{}{"ip": v}
+		case map[string]interface{}:
+			if _, set := v["name"]; set {
+				errs = append(errs, fmt.Errorf("interfaces.%s: `name` comes from the key and cannot be set here", name))
+				delete(v, "name")
+			}
+			entry = v
+		default:
+			errs = append(errs, fmt.Errorf("interfaces.%s must be an address (\"10.0.0.1/24\"), a mapping of fields, or empty", name))
+			continue
+		}
+		entry["name"] = name
+		list = append(list, entry)
+	}
+	if err := errors.Join(errs...); err != nil {
+		return err
+	}
+	raw["interfaces"] = list
+	return nil
 }
 
 // nestedDefaultRequires names, for each nested block a per-interface default
