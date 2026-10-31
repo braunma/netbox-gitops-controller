@@ -279,10 +279,15 @@ func (d *DeviceType) Validate() error {
 func (d *DeviceConfig) Validate() error {
 	errs := requireFields(map[string]string{
 		"name":        d.Name,
-		"site":        d.SiteSlug,
 		"device_type": d.DeviceTypeSlug,
 		"role":        d.RoleSlug,
 	})
+	// The site may be left to the rack or the parent device, which the
+	// loader fills in once everything is loaded (see loader.DeriveDefaults);
+	// a device with neither has nothing to take it from.
+	if d.SiteSlug == "" && d.RackSlug == "" && d.ParentDevice == "" {
+		errs = append(errs, errors.New("site is required (or a rack or parent_device the site can be taken from)"))
+	}
 
 	if d.ParentDevice != "" && d.DeviceBay == "" {
 		errs = append(errs, errors.New("device_bay is required when parent_device is set"))

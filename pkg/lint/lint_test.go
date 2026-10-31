@@ -1007,3 +1007,35 @@ func TestFindingsCarryOrigins(t *testing.T) {
 		t.Errorf("finding on srv-10 located in %s, want d.yaml", got[0].File)
 	}
 }
+
+// Every "not declared" names what is declared, a collision names the free
+// units, a duplicate address names a free one.
+func TestMessagesNameTheWayOut(t *testing.T) {
+	ds := baseDataset()
+	srv := server("srv-01", 10)
+	srv.RackSlug = "rack-a09"
+	srv.Interfaces = []models.InterfaceConfig{{Name: "eth0", UntaggedVLAN: "Server", Mode: "access", IP: &models.IPConfig{Address: "10.0.1.5/24", VRF: "Prod"}}}
+	other := server("srv-02", 20)
+	other.Interfaces = []models.InterfaceConfig{{Name: "eth0", IP: &models.IPConfig{Address: "10.0.1.5/24", VRF: "Prod"}}}
+	third := server("srv-03", 21) // collides with srv-02 (2U at U20)
+	ds.Devices = []*models.DeviceConfig{srv, other, third}
+	findings := Check(ds, Options{})
+
+	expect := map[string]string{
+		"unknown-rack":   "declared: rack-a01, rack-a02",
+		"unknown-vlan":   "declared: Servers",
+		"unknown-vrf":    "declared: Production",
+		"rack-collision": "free in rack-a01: U1–U19, U23–U42",
+		"duplicate-ip":   "free in 10.0.0.0/16: 10.0.1.6",
+	}
+	for check, want := range expect {
+		got := findingsFor(findings, check)
+		if len(got) == 0 {
+			t.Errorf("%s: no finding\n%s", check, render(findings))
+			continue
+		}
+		if !strings.Contains(got[0].Message, want) {
+			t.Errorf("%s: %q does not contain %q", check, got[0].Message, want)
+		}
+	}
+}

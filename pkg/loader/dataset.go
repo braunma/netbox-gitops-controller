@@ -47,6 +47,9 @@ type Dataset struct {
 	// Origins says, for every loaded object (by its pointer), which file and
 	// line declared it, so a check can point at the place to fix.
 	Origins map[any]Origin
+	// Derivations lists what DeriveDefaults filled in, one line each, so a
+	// run can say what the YAML left to the rules.
+	Derivations []string
 }
 
 // Origin is where an object was declared: the file (as the loader saw it)
@@ -176,6 +179,17 @@ func (dl *DataLoader) LoadDataset(opts DatasetOptions) (Dataset, error) {
 	ds.CablePaths = paths
 	for _, p := range paths {
 		dl.logger.Info("Cable path: %s", p)
+	}
+
+	// What the YAML leaves out and another object determines is filled in
+	// here, and said out loud, so the plan and the log show it.
+	derived, err := DeriveDefaults(&ds)
+	if err != nil {
+		return Dataset{}, err
+	}
+	ds.Derivations = derived
+	for _, line := range derived {
+		dl.logger.Info("%s", line)
 	}
 	return ds, nil
 }

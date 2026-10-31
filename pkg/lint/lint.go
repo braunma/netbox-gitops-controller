@@ -330,7 +330,7 @@ func (c *checker) add(sev Severity, check, object, format string, args ...interf
 // silent when the repository declares no objects of that kind at all: such a
 // repository manages only part of NetBox, and every reference of that kind
 // points at an object created elsewhere.
-func (c *checker) reference(object, check, kind, value string, declared int) {
+func (c *checker) reference(object, check, kind, value string, declared int, candidates ...string) {
 	if declared == 0 {
 		return
 	}
@@ -338,7 +338,48 @@ func (c *checker) reference(object, check, kind, value string, declared int) {
 	if c.opts.AllowUndeclaredRefs {
 		sev = Warning
 	}
-	c.add(sev, check, object, "%s %q is not declared in this repository", kind, value)
+	c.add(sev, check, object, "%s %q is not declared in this repository%s", kind, value, choices("declared", candidates))
+}
+
+// choices renders the values a reference could have named, so the message
+// is the lookup the author would otherwise have to do by hand. Sorted,
+// capped, and empty when there is nothing to offer.
+func choices(label string, values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	sorted := append([]string(nil), values...)
+	sort.Strings(sorted)
+	const max = 12
+	more := ""
+	if len(sorted) > max {
+		more = fmt.Sprintf(", … %d more", len(sorted)-max)
+		sorted = sorted[:max]
+	}
+	return fmt.Sprintf("; %s: %s%s", label, strings.Join(sorted, ", "), more)
+}
+
+func keys[V any](m map[string]V) []string {
+	out := make([]string, 0, len(m))
+	for k := range m {
+		out = append(out, k)
+	}
+	return out
+}
+
+// racksAtSite lists the rack slugs declared at a site (all racks when the
+// site is unknown or empty).
+func (c *checker) racksAtSite(site string) []string {
+	var out []string
+	for _, r := range c.ds.Racks {
+		if site == "" || r.SiteSlug == site {
+			out = append(out, r.Slug)
+		}
+	}
+	if len(out) == 0 {
+		return keys(c.racks)
+	}
+	return out
 }
 
 func deviceRef(name string) string { return "device " + name }
@@ -376,16 +417,16 @@ func (c *checker) checkDeviceReferences() {
 	for _, d := range c.ds.Devices {
 		ref := deviceRef(d.Name)
 		if d.SiteSlug != "" && !c.sites[d.SiteSlug] {
-			c.reference(ref, "unknown-site", "site", d.SiteSlug, len(c.ds.Sites))
+			c.reference(ref, "unknown-site", "site", d.SiteSlug, len(c.ds.Sites), keys(c.sites)...)
 		}
 		if d.RoleSlug != "" && !c.roles[d.RoleSlug] {
-			c.reference(ref, "unknown-role", "device role", d.RoleSlug, len(c.ds.Roles))
+			c.reference(ref, "unknown-role", "device role", d.RoleSlug, len(c.ds.Roles), keys(c.roles)...)
 		}
 		if d.RackSlug != "" && !c.racks[d.RackSlug] {
-			c.reference(ref, "unknown-rack", "rack", d.RackSlug, len(c.ds.Racks))
+			c.reference(ref, "unknown-rack", "rack", d.RackSlug, len(c.ds.Racks), c.racksAtSite(d.SiteSlug)...)
 		}
 		if d.DeviceTypeSlug != "" && c.deviceTypes[d.DeviceTypeSlug] == nil {
-			c.reference(ref, "unknown-device-type", "device type", d.DeviceTypeSlug, len(c.ds.DeviceTypes))
+			c.reference(ref, "unknown-device-type", "device type", d.DeviceTypeSlug, len(c.ds.DeviceTypes), keys(c.deviceTypes)...)
 		}
 		if d.CableDefaults != nil && d.RoleSlug != patchPanelRole {
 			c.add(Warning, "cable-defaults-off-panel", ref,
@@ -451,7 +492,7 @@ func (c *checker) checkDeviceBay(d *models.DeviceConfig) {
 	ref := deviceRef(d.Name)
 	parent, ok := c.devices[d.ParentDevice]
 	if !ok {
-		c.reference(ref, "unknown-parent-device", "parent device", d.ParentDevice, len(c.ds.Devices))
+		c.reference(ref, "unknown-parent-device", "parent device", d.ParentDevice, len(c.ds.Devices), keys(c.devices)...)
 		return
 	}
 	if d.DeviceBay == "" {
@@ -491,8 +532,8 @@ func (c *checker) checkInterfaces() {
 			switch {
 			case !inTemplate && iface.Type == "" && dt != nil:
 				c.add(Error, "untyped-interface", ref,
-					"is not an interface template on device type %s and declares no type, so NetBox has nothing to create it from",
-					d.DeviceTypeSlug)
+					"is not an interface template on device type %s and declares no type, so NetBox has nothing to create it from%s",
+					d.DeviceTypeSlug, choices("the template's interfaces", keys(templates)))
 			case !inTemplate && dt != nil && isPhysicalType(iface.Type) && len(d.Modules) == 0:
 				// A physical port that the hardware model does not have is
 				// usually a name that drifted from the template. Interfaces a
@@ -644,15 +685,15 @@ func (c *checker) checkInterfaceVLANs(d *models.DeviceConfig, iface models.Inter
 	siteVLANs := c.vlansBySite[d.SiteSlug]
 	declared := len(siteVLANs)
 	if iface.UntaggedVLAN != "" && !siteVLANs[iface.UntaggedVLAN] {
-		c.reference(ref, "unknown-vlan", "VLAN", iface.UntaggedVLAN+" (at site "+d.SiteSlug+")", declared)
+		c.reference(ref, "unknown-vlan", "VLAN", iface.UntaggedVLAN+" (at site "+d.SiteSlug+")", declared, keys(siteVLANs)...)
 	}
 	for _, vlan := range iface.TaggedVLANs {
 		if !siteVLANs[vlan] {
-			c.reference(ref, "unknown-vlan", "VLAN", vlan+" (at site "+d.SiteSlug+")", declared)
+			c.reference(ref, "unknown-vlan", "VLAN", vlan+" (at site "+d.SiteSlug+")", declared, keys(siteVLANs)...)
 		}
 	}
 	if iface.IP != nil && iface.IP.VRF != "" && !c.vrfs[iface.IP.VRF] {
-		c.reference(ref, "unknown-vrf", "VRF", iface.IP.VRF, len(c.ds.VRFs))
+		c.reference(ref, "unknown-vrf", "VRF", iface.IP.VRF, len(c.ds.VRFs), keys(c.vrfs)...)
 	}
 }
 
@@ -672,7 +713,7 @@ func (c *checker) checkModules() {
 					"is not a module bay on device type %s", d.DeviceTypeSlug)
 			}
 			if mod.ModuleTypeSlug != "" && !c.moduleTypes[mod.ModuleTypeSlug] {
-				c.reference(ref, "unknown-module-type", "module type", mod.ModuleTypeSlug, len(c.ds.ModuleTypes))
+				c.reference(ref, "unknown-module-type", "module type", mod.ModuleTypeSlug, len(c.ds.ModuleTypes), keys(c.moduleTypes)...)
 			}
 		}
 	}
@@ -734,11 +775,50 @@ func (c *checker) checkRackPositions() {
 			prev, cur := slots[i-1], slots[i]
 			if cur.from < prev.to {
 				c.add(Error, "rack-collision", deviceRef(cur.device),
-					"occupies U%g in rack %s, which %s already fills (U%g–U%g)",
-					cur.from, rack, prev.device, prev.from, prev.to-1)
+					"occupies U%g in rack %s, which %s already fills (U%g–U%g)%s",
+					cur.from, rack, prev.device, prev.from, prev.to-1, c.freeUnits(rack, slots))
 			}
 		}
 	}
+}
+
+// freeUnits renders the rack units no listed device occupies, so a collision
+// message also says where the device could go. The rack's height comes from
+// its declaration; 42 when it says none.
+func (c *checker) freeUnits(rack string, slots []rackSlot) string {
+	height := 42
+	for _, r := range c.ds.Racks {
+		if r.Slug == rack && r.UHeight > 0 {
+			height = r.UHeight
+		}
+	}
+	used := make([]bool, height+2)
+	for _, s := range slots {
+		for u := int(s.from); u < int(s.to) && u <= height; u++ {
+			if u >= 1 {
+				used[u] = true
+			}
+		}
+	}
+	var ranges []string
+	for u := 1; u <= height; u++ {
+		if used[u] {
+			continue
+		}
+		start := u
+		for u+1 <= height && !used[u+1] {
+			u++
+		}
+		if start == u {
+			ranges = append(ranges, fmt.Sprintf("U%d", start))
+		} else {
+			ranges = append(ranges, fmt.Sprintf("U%d–U%d", start, u))
+		}
+	}
+	if len(ranges) == 0 {
+		return "; the rack is full"
+	}
+	return "; free in " + rack + ": " + strings.Join(ranges, ", ")
 }
 
 // ipOwner records where an address was declared, so a duplicate can name both
@@ -778,7 +858,7 @@ func (c *checker) checkIPAddresses() {
 				where = "VRF " + ip.VRF
 			}
 			c.add(Error, "duplicate-ip", object,
-				"IP %s is already declared on %s in %s", addr.Addr(), prev.object, where)
+				"IP %s is already declared on %s in %s%s", addr.Addr(), prev.object, where, c.freeAddress(addr, ip.VRF, owners))
 			return
 		}
 		owners[key] = ipOwner{object: object}
@@ -831,6 +911,27 @@ func (c *checker) checkIPAddresses() {
 			record(fmt.Sprintf("virtual machine %s interface %s", vm.Name, iface.Name), iface.IP)
 		}
 	}
+}
+
+// freeAddress names the next host address after a taken one that no listed
+// interface uses, within the declared prefix the address falls into, so a
+// duplicate-ip message also offers a way out. Empty when no prefix encloses
+// the address.
+func (c *checker) freeAddress(taken netip.Prefix, vrf string, owners map[string]ipOwner) string {
+	prefix, ok := c.enclosingPrefix(taken.Addr())
+	if !ok {
+		return ""
+	}
+	for a := taken.Addr().Next(); prefix.Contains(a); a = a.Next() {
+		if _, used := owners[vrf+"\x00"+a.String()]; used {
+			continue
+		}
+		if a.Is4() && isBroadcastAddress(netip.PrefixFrom(a, prefix.Bits())) {
+			break
+		}
+		return fmt.Sprintf("; free in %s: %s", prefix, a)
+	}
+	return fmt.Sprintf("; no free address left in %s after it", prefix)
 }
 
 // enclosingPrefix returns the most specific declared prefix containing addr.
@@ -1037,9 +1138,21 @@ func (c *checker) checkCablePeer(peer, local cableEnd) {
 		// the port may well be one of its components.
 		return
 	}
+	var ports []string
+	if dt := c.deviceTypes[device.DeviceTypeSlug]; dt != nil {
+		for _, t := range dt.Interfaces {
+			ports = append(ports, t.Name)
+		}
+		for _, p := range dt.FrontPorts {
+			ports = append(ports, "front "+p.Name)
+		}
+		for _, p := range dt.RearPorts {
+			ports = append(ports, "rear "+p.Name)
+		}
+	}
 	c.add(Error, "unknown-peer-port", "port "+local.String(),
-		"is cabled to %s, but %s has no such port on device type %s",
-		peer, peer.device, device.DeviceTypeSlug)
+		"is cabled to %s, but %s has no such port on device type %s%s",
+		peer, peer.device, device.DeviceTypeSlug, choices("its ports", ports))
 }
 
 func (c *checker) checkVMs() {
@@ -1058,13 +1171,13 @@ func (c *checker) checkVMs() {
 			c.reference(ref, "unknown-role", "device role", vm.RoleSlug, len(c.ds.Roles))
 		}
 		if vm.Cluster != "" && !c.clusters[vm.Cluster] {
-			c.reference(ref, "unknown-cluster", "cluster", vm.Cluster, len(c.ds.Clusters))
+			c.reference(ref, "unknown-cluster", "cluster", vm.Cluster, len(c.ds.Clusters), keys(c.clusters)...)
 		}
 		if vm.Platform != "" && !c.platforms[vm.Platform] {
-			c.reference(ref, "unknown-platform", "platform", vm.Platform, len(c.ds.Platforms))
+			c.reference(ref, "unknown-platform", "platform", vm.Platform, len(c.ds.Platforms), keys(c.platforms)...)
 		}
 		if vm.Tenant != "" && !c.tenants[vm.Tenant] {
-			c.reference(ref, "unknown-tenant", "tenant", vm.Tenant, len(c.ds.Tenants))
+			c.reference(ref, "unknown-tenant", "tenant", vm.Tenant, len(c.ds.Tenants), keys(c.tenants)...)
 		}
 
 		ifaces := make(map[string]bool, len(vm.Interfaces))
@@ -1075,7 +1188,7 @@ func (c *checker) checkVMs() {
 			}
 			ifaces[iface.Name] = true
 			if iface.IP != nil && iface.IP.VRF != "" && !c.vrfs[iface.IP.VRF] {
-				c.reference(iref, "unknown-vrf", "VRF", iface.IP.VRF, len(c.ds.VRFs))
+				c.reference(iref, "unknown-vrf", "VRF", iface.IP.VRF, len(c.ds.VRFs), keys(c.vrfs)...)
 			}
 		}
 	}
@@ -1088,7 +1201,7 @@ func (c *checker) checkTags() {
 	check := func(ref string, tags []string) {
 		for _, tag := range tags {
 			if !c.tags[tag] {
-				c.reference(ref, "unknown-tag", "tag", tag, len(c.ds.Tags))
+				c.reference(ref, "unknown-tag", "tag", tag, len(c.ds.Tags), keys(c.tags)...)
 			}
 		}
 	}
