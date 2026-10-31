@@ -271,7 +271,7 @@ func decodeMerged[T models.Validator](raw map[string]interface{}) (T, error) {
 //     existed only for inventory). The defaults are merged into every entry:
 //     entry values win over defaults, and `tags` are combined (union) instead
 //     of replaced. This form exists so files don't have to repeat shared
-//     fields (site_slug, role_slug, rack_slug, group_slug, ...) on every
+//     fields (site, role, rack, group, ...) on every
 //     object, whatever its kind.
 //
 // It is exported because anything that rewrites an inventory file has to split

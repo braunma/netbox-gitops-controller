@@ -281,7 +281,7 @@ func TestUnknownFieldsAreRejected(t *testing.T) {
   interfaces:
     - name: "eth0"
       ip: { address: "10.0.0.1/24", vfr: "Production" }
-`, []string{"interfaces[1].ip", `unknown field "vfr"`}},
+`, []string{"interfaces[1].ip", `unknown field "vfr"`, `did you mean "vrf"`}},
 		{"inside a module", `
 - name: "srv-01"
   site: "s"

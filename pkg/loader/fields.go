@@ -139,7 +139,8 @@ func modelAliases(t reflect.Type) map[string]string {
 
 // suggestField names the key an unknown one was probably meant to be: a
 // field or short name it is a `_slug`/`_name` variant of (`rack_name` →
-// `rack`, `vrf_name` → `vrf` on an IP).
+// `rack`, `vrf_name` → `vrf` on an IP), or else a near-miss spelling
+// (`vfr` → `vrf`).
 func suggestField(key string, t reflect.Type, fields map[string]reflect.Type, aliases map[string]string) string {
 	for _, candidate := range []string{strings.TrimSuffix(key, "_slug"), strings.TrimSuffix(key, "_name"), key + "_slug", key + "_name"} {
 		if candidate == key {
@@ -152,7 +153,43 @@ func suggestField(key string, t reflect.Type, fields map[string]reflect.Type, al
 			return fmt.Sprintf(" (did you mean %q?)", candidate)
 		}
 	}
+	// Otherwise the one key a slip of the finger away: at most two edits, and
+	// only when no other key is as close, so the hint is never a coin toss.
+	best, bestDist, tie := "", 3, false
+	for _, candidate := range append(sortedKeys(fields), sortedKeys(aliases)...) {
+		d := editDistance(key, candidate)
+		switch {
+		case d < bestDist:
+			best, bestDist, tie = candidate, d, false
+		case d == bestDist && candidate != best:
+			tie = true
+		}
+	}
+	if best != "" && !tie {
+		return fmt.Sprintf(" (did you mean %q?)", best)
+	}
 	return fmt.Sprintf(" (not a field of %s)", modelLabel(t))
+}
+
+// editDistance is the Levenshtein distance between two keys.
+func editDistance(a, b string) int {
+	prev := make([]int, len(b)+1)
+	for j := range prev {
+		prev[j] = j
+	}
+	for i := 1; i <= len(a); i++ {
+		cur := make([]int, len(b)+1)
+		cur[0] = i
+		for j := 1; j <= len(b); j++ {
+			cost := 1
+			if a[i-1] == b[j-1] {
+				cost = 0
+			}
+			cur[j] = min(prev[j]+1, cur[j-1]+1, prev[j-1]+cost)
+		}
+		prev = cur
+	}
+	return prev[len(b)]
 }
 
 // modelLabel names a model the way the YAML talks about it: DeviceConfig is a

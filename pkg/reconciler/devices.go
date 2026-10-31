@@ -246,7 +246,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	// A bay-mounted device is the exception: NetBox derives its location from
 	// the parent and installDeviceIntoBay has to clear rack/position/face to
 	// install it, so sending a rack here would be undone on install and
-	// re-sent on the next run forever. Inventory files commonly set rack_slug
+	// re-sent on the next run forever. Inventory files commonly set `rack`
 	// in a shared `defaults` block, so a blade inherits one it must not use.
 	switch {
 	case deviceBayID > 0:

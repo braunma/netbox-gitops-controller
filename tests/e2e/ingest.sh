@@ -143,10 +143,10 @@ contains "the run named it in the summary"        "${WORK}/apply.log" "_unknown-
 contains "it says it is not applied"              "${SKELETON}" "NOT APPLIED"
 contains "it carries what the scan knew"          "${SKELETON}" 'serial: "UNKNOWN-42"'
 contains "and the hardware facts"                 "${SKELETON}" "hw_cpu_cores: 64"
-contains "it marks the site as unknown"           "${SKELETON}" 'site_slug: "TODO"'
-contains "and the rack"                           "${SKELETON}" 'rack_slug: "TODO"'
-contains "and the role"                           "${SKELETON}" 'role_slug: "TODO"'
-contains "and the device type"                    "${SKELETON}" 'device_type_slug: "TODO"'
+contains "it marks the site as unknown"           "${SKELETON}" 'site: "TODO"'
+contains "and the rack"                           "${SKELETON}" 'rack: "TODO"'
+contains "and the role"                           "${SKELETON}" 'role: "TODO"'
+contains "and the device type"                    "${SKELETON}" 'device_type: "TODO"'
 contains "it records the address it answered on"  "${SKELETON}" "management address: 10.0.9.9"
 
 # Parked, so the reconciler's loader never sees it.

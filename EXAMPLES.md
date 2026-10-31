@@ -79,10 +79,14 @@ per-site VLAN groups and are referenced from prefixes and interfaces by name,
 resolved against the object's site.
 
 ### Devices and interfaces
-A device references its site, role, device type and rack by slug. Inventory
-files support a grouped form where a `defaults` block is merged into every
-device (device values win, tags are combined), so shared fields are written
-once (see `inventory/hardware/active/servers.yaml`):
+A device references its site, role, device type and rack by slug, written
+with the short keys `site`, `role`, `device_type` and `rack` (the older
+`site_slug`, `role_slug`, ... spellings are still accepted; the README's
+"Field names" table lists every short key). Inventory files support a grouped
+form where a `defaults` block is merged into every device (device values win,
+tags are combined), so shared fields are written once. `defaults.interfaces`
+does the same per interface name, for the interfaces a device lists (see
+`inventory/hardware/active/servers.yaml`):
 
 ```yaml
 defaults:
@@ -91,13 +95,17 @@ defaults:
   site: "berlin-dc"
   rack: "rack-a01"
   tags: ["production"]
+  interfaces:
+    eth1:
+      description: "Data interface"
+      link: { cable_type: "cat6" }   # merged into each device's own link
 
 devices:
   - name: "example-server-01"
     position: 10
     interfaces:
       - name: "eth1"
-        description: "Data interface"
+        link: { peer_device: "example-switch-01", peer_port: "GigabitEthernet1/0/1" }
 ```
 
 Interface `type` and `enabled` are not repeated in the inventory: the ports
@@ -113,7 +121,9 @@ or the full mapping form with `dns_name`, `vrf`, `status` etc.
 ### Checking a data directory without NetBox
 
 `yamlcheck` validates any directory holding `definitions/` and `inventory/` —
-syntax, the typed models, and then the cross-object checks that no single
+syntax, the typed models (including any key the model does not have, so a
+misspelled field is reported instead of silently ignored), and then the
+cross-object checks that no single
 object can see on its own: a name or IP used twice, two devices in one rack
 unit, a port claimed by two cables, a slug that matches nothing declared, an
 interface the device type does not have.
@@ -167,7 +177,7 @@ VMs are organised one file per VM under a per-environment folder
   vm_template_id: 800              # template VMID this VM was cloned from
   node: "pve-01"                   # hypervisor node it runs on
   cluster: "berlin-prod-cluster"   # clustered VM; site inherited from cluster
-  role: "vm"                  # role must have vm_role: true in NetBox
+  role: "vm"                       # role must have vm_role: true in NetBox
   platform: "ubuntu-22-04"
   vcpus: 4
   memory: 8192                     # MB
@@ -202,9 +212,11 @@ interfaces:
 ```
 
 ### GitOps tag
-Every object the controller creates is tagged `gitops`. Only tagged objects are
-eligible for deletion by `--prune`; manually created objects are protected. See
-the README for the full pruning semantics.
+Every object the controller creates is tagged `gitops`; it is never written
+into the YAML. Tags an object declares itself (`tags: ["production"]`) are set
+in addition, and must be defined in `definitions/extras/tags.yaml`. Only
+`gitops`-tagged objects are eligible for deletion by `--prune`; manually
+created objects are protected. See the README for the full pruning semantics.
 
 ### Hardware facts (`hw_*`)
 

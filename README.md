@@ -400,6 +400,14 @@ File: `inventory/hardware/active/switches.yaml`
     position and IPs. Definitions take the same block with an `items:` list,
     e.g. `defaults: { site: "berlin-dc", u_height: 42 }` for a site's
     racks.
+  * **Put what every BMC or uplink shares in `defaults.interfaces`.** The
+    description, VRF, status and `address_role` of `idrac` or `eth0` are the
+    same on every server of a batch; written once under the interface's name,
+    each device keeps only its addresses and its cable. See
+    [Interface defaults](#interface-defaults).
+  * **Use the short field names.** `site`, `role`, `device_type`, `rack` and
+    the others in [Field names](#field-names) are what the bundled files use;
+    the `*_slug` spellings still load but read worse.
   * **Leave out what is already the default.** `tags: ["gitops"]` is never
     needed — the managed tag is stamped on every object automatically — and
     `status: "active"` is what sites, racks, VLANs, prefixes, devices and
@@ -416,8 +424,9 @@ With those conventions in place, a new machine in an existing rack is its
 identity and its addresses, and nothing else:
 
 ```yaml
-# inventory/hardware/active/servers.yaml  (defaults supply site, role,
-# device type, rack and face)
+# inventory/hardware/active/servers.yaml — `defaults` supplies site, role and
+# face, and `defaults.interfaces` the description, VRF and status of idrac and
+# eth0 and eth0's primary-IP role
   - name: "berlin-srv-web-03"
     device_type: "poweredge-r740"
     rack: "berlin-rack-a01"
@@ -427,17 +436,10 @@ identity and its addresses, and nothing else:
 
     interfaces:
       - name: "idrac"
-        ip: "10.10.10.103/24"
-
+        ip: { address: "10.10.10.103/24", dns_name: "berlin-srv-web-03-idrac.example.com" }
       - name: "eth0"
-        ip:
-          address: "10.10.20.103/24"
-          vrf: "Production"
-        address_role: "primary"
-        link:
-          peer_device: "berlin-leaf-01"
-          peer_port: "Eth1/4"
-          cable_type: "dac-active"
+        ip: { address: "10.10.20.103/24", dns_name: "berlin-srv-web-03.example.com" }
+        link: { peer_device: "berlin-leaf-01", peer_port: "Eth1/4", cable_type: "dac-active" }
 ```
 
 Then check it before it reaches NetBox:
@@ -824,8 +826,32 @@ types/groups, clusters, VMs and VM interfaces:
 
 ### Common Errors
 
-Run `go run ./cmd/yamlcheck` first — the first three below are reported by name
+Run `go run ./cmd/yamlcheck` first — the first six below are reported by name
 before a single request is made.
+
+**`entry 1: interfaces[1].ip: unknown field "vfr" (did you mean "vrf"?)`**
+
+  * **Cause:** a key the object does not have — usually a typo, sometimes a
+    field from another object type. The path after the entry number says
+    where; the hint appears when one spelling is clearly meant. Such a key
+    used to be dropped without a word, so the object synced without it; it
+    now stops the load.
+  * **Fix:** correct the key. [Field names](#field-names) lists the reference
+    keys per object type.
+
+**`entry 1: both "site" and "site_slug" are set; they are the same field, keep one`**
+
+  * **Cause:** the short and the long spelling of one field in the same
+    mapping. Across `defaults` and an entry they do not collide — the entry's
+    value wins in either spelling.
+  * **Fix:** delete one of the two lines.
+
+**`defaults.interfaces.idrca matches no interface listed in this file`**
+
+  * **Cause:** per-interface defaults apply only to interfaces a device lists,
+    by exact name. A name nobody lists is a typo or a leftover.
+  * **Fix:** correct the name, list the interface on the devices that should
+    get it (`- name: "idrac"` is enough), or delete the block.
 
 **`400 Bad Request: {"face": ["Must specify rack face when defining rack position."]}`**
 

@@ -6,6 +6,10 @@
 # does the same per interface name, for the interfaces a device lists; nested
 # mappings such as `link` are merged key by key.
 #
+# References use the short field names (`site`, `role`, `device_type`,
+# `rack`); the older `*_slug` spellings are still accepted. See the README
+# section "Field names".
+#
 # Conventions demonstrated here:
 #   - Interface `type` and `enabled` are NOT repeated: the ports come from
 #     the device type template and interfaces are enabled by default.
@@ -37,7 +41,7 @@ devices:
 
   - name: "example-server-02"
     position: 12
-    tags: ["lab"] # merged with the default tags -> gitops, production, lab
+    tags: ["lab"] # combined with the default tags -> production, lab (plus gitops, always)
     interfaces:
       - name: "eth1"
         link: { peer_device: "example-switch-01", peer_port: "GigabitEthernet1/0/2" }

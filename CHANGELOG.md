@@ -49,6 +49,15 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **Short field names everywhere the tool speaks.** Validation errors name
+  the key as it is written now (`site is required`, not `site_slug is
+  required`), and the skeletons `ingest`/`collect` generate use `site:`,
+  `role:`, `device_type:` and `rack:`. **Upgrade note:** a parked VM file
+  that a previous run generated with `site_slug: "TODO"` is rewritten with
+  `site: "TODO"` the next time its source is collected — a one-line diff
+  per VM, nothing else.
+- **An unknown key gets a spelling hint.** `vfr` suggests `vrf`, `rack_name`
+  suggests `rack`; no hint is given when two keys are equally close.
 - **Unknown YAML keys are now an error.** A key the model does not have used
   to be dropped silently, so a typo (`vfr:`, `site:` before short names
   existed) synced the object without that field. Every key is now checked,

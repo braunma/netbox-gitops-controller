@@ -1,4 +1,4 @@
-# A site-only VM: it belongs to no cluster, so it carries site_slug instead.
+# A site-only VM: it belongs to no cluster, so it carries `site` instead.
 # Lives in the playground environment folder; it is documented in NetBox like
 # every other VM, because the controller scans inventory/virtual/ recursively
 # across all environments.
@@ -6,7 +6,7 @@
 - name: "edge-01"
   vmid: 201
   site: "test-lab"
-  role: "vm"                  # role must have vm_role: true
+  role: "vm" # role must have vm_role: true
   platform: "debian-12"
   status: "active"
   vcpus: 2

@@ -258,7 +258,7 @@ func (c *checker) checkDefinitions() {
 		}
 		c.add(Warning, "module-type-without-slug",
 			fmt.Sprintf("module type %s %s", mt.Manufacturer, mt.Model),
-			"declares no slug, so module_type_slug can only reference it by its model (%q); give it a slug to reference it by a short key",
+			"declares no slug, so a module's module_type can only reference it by its model (%q); give it a slug to reference it by a short key",
 			mt.Model)
 	}
 }

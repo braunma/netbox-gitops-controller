@@ -102,7 +102,7 @@ type componentTemplates struct {
 // claims. NetBox identifies a module type by manufacturer and model together
 // and gives it no slug of its own, so two vendors may legitimately ship the
 // same model name — but the reference cache is a flat map, and registering
-// both under the bare slug would let `module_type_slug` silently resolve to
+// both under the bare slug would let a module's `module_type` silently resolve to
 // whichever happened to be reconciled last. Those slugs are registered only in
 // their manufacturer-qualified form instead, so an ambiguous reference fails
 // loudly rather than installing the wrong module.
@@ -131,7 +131,7 @@ func ambiguousModuleTypeSlugs(moduleTypes []*models.ModuleType) map[string][]str
 }
 
 // qualifiedModuleTypeSlug is the manufacturer-scoped cache key for a module
-// type, and the form `module_type_slug` accepts to disambiguate.
+// type, and the form a module's `module_type` accepts to disambiguate.
 func qualifiedModuleTypeSlug(manufacturer, slug string) string {
 	return utils.Slugify(manufacturer) + "/" + slug
 }

@@ -61,7 +61,8 @@ modules:
 ```
 
 **Features:**
-- Modules are automatically tagged with the managed `gitops` tag
+- Modules are automatically tagged with the managed `gitops` tag, plus any
+  `tags:` the module declares
 - Module bays are auto-created from device type templates
 - A serial is sent only when the YAML declares one. Omitting it leaves whatever
   NetBox holds — including a serial somebody read off the chassis and typed

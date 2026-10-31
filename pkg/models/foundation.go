@@ -19,6 +19,9 @@ type Site struct {
 }
 
 // Rack represents a NetBox rack
+//
+// In YAML the references are usually written by their short names (site for
+// site_slug); see YAMLAliases.
 type Rack struct {
 	Name     string `yaml:"name" json:"name" validate:"required"`
 	Slug     string `yaml:"slug" json:"slug"`
@@ -74,6 +77,9 @@ type Platform struct {
 }
 
 // TenantGroup represents a NetBox tenant group (tenancy app).
+//
+// In YAML the references are usually written by their short names (parent for
+// parent_slug); see YAMLAliases.
 type TenantGroup struct {
 	Name       string `yaml:"name" json:"name" validate:"required"`
 	Slug       string `yaml:"slug" json:"slug" validate:"required"`
@@ -108,6 +114,9 @@ type CustomField struct {
 
 // Tenant represents a NetBox tenant (tenancy app). Referenced by slug from
 // clusters, VMs and devices.
+//
+// In YAML the references are usually written by their short names (group for
+// group_slug); see YAMLAliases.
 type Tenant struct {
 	Name      string `yaml:"name" json:"name" validate:"required"`
 	Slug      string `yaml:"slug" json:"slug" validate:"required"`

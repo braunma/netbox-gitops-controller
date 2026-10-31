@@ -2,7 +2,8 @@
 #
 # Grouped form: everything under `defaults` is merged into every device below,
 # so a device carries only what is specific to it. Device values win over
-# defaults; `tags` are combined rather than replaced.
+# defaults; `tags` are combined rather than replaced. `defaults.interfaces`
+# does the same per interface name.
 #
 # Conventions (see the README section "Conventions that keep the YAML small"):
 #   - Ports come from the device type template, so an interface is listed here
@@ -11,6 +12,8 @@
 #   - Interfaces are enabled by default; only `enabled: false` is worth writing.
 #   - A cable is declared on ONE end only — the server side. The reconciler
 #     wires both ends from that single declaration.
+#   - References use the short field names (`site`, `role`, `device_type`,
+#     `rack`); see the README section "Field names".
 
 defaults:
   site: "berlin-dc"

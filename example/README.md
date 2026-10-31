@@ -59,13 +59,15 @@ This repository is designed to work with your private definitions and inventory:
 
 ## Format
 
-All files use YAML format. Each file contains a list of objects with the appropriate fields for that object type. Any file may alternatively use the grouped form — a `defaults:` block whose fields are merged into every entry of an `items:` list (`devices:` in inventory files; both keys are accepted). See `definitions/racks/racks.yaml` and `inventory/hardware/active/servers.yaml`. `status: "active"` and `tags: ["gitops"]` are omitted throughout because they are the defaults. See the example files in this directory for reference.
+All files use YAML format. Each file contains a list of objects with the appropriate fields for that object type. Any file may alternatively use the grouped form — a `defaults:` block whose fields are merged into every entry of an `items:` list (`devices:` in inventory files; both keys are accepted). See `definitions/racks/racks.yaml` and `inventory/hardware/active/servers.yaml`. `status: "active"` and `tags: ["gitops"]` are omitted throughout because they are the defaults. Inventory files also use `defaults.interfaces`, per-interface defaults keyed by interface name.
+
+References are written with the short field names — `site`, `role`, `device_type`, `rack`, `module_type`, `group`, `parent`, `type`, and on prefixes `vrf` and `vlan`. The older spellings (`site_slug`, `vrf_name`, ...) are still accepted; the README's "Field names" table maps each one. Every key is checked against its model, so a misspelled field fails the load instead of being dropped. See the example files in this directory for reference.
 
 ## Testing
 
 The test suite validates:
 - YAML syntax correctness
-- Required field presence
+- Required field presence, and no key the model does not have
 - Data type consistency
 - Referential integrity (e.g., devices reference valid sites, racks, etc.)
 

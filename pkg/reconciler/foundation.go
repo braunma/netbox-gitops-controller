@@ -112,7 +112,7 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 			tags:        rack.Tags,
 			// NetBox racks have no slug of their own — they are identified by
 			// name within a site — so the YAML slug exists only here. Register
-			// it (and the name) site-scoped, or a device's rack_slug resolves
+			// it (and the name) site-scoped, or a device's `rack` resolves
 			// nothing and the device is silently created with no rack,
 			// position or face.
 			register: func(id int) {

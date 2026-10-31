@@ -5,6 +5,9 @@ package models
 import "strings"
 
 // VLAN represents a NetBox VLAN
+//
+// In YAML the references are usually written by their short names (site and
+// group for site_slug and group_slug); see YAMLAliases.
 type VLAN struct {
 	Name      string `yaml:"name" json:"name" validate:"required"`
 	VID       int    `yaml:"vid" json:"vid" validate:"required,min=1,max=4094"`
@@ -21,6 +24,9 @@ type VLAN struct {
 }
 
 // VLANGroup represents a VLAN group
+//
+// In YAML the references are usually written by their short names (site for
+// site_slug); see YAMLAliases.
 type VLANGroup struct {
 	Name     string `yaml:"name" json:"name" validate:"required"`
 	Slug     string `yaml:"slug" json:"slug" validate:"required"`
@@ -54,6 +60,9 @@ func (v *VRF) Slug() string {
 }
 
 // Prefix represents an IP prefix
+//
+// In YAML the references are usually written by their short names (site, vrf
+// and vlan for site_slug, vrf_name and vlan_name); see YAMLAliases.
 type Prefix struct {
 	Prefix   string `yaml:"prefix" json:"prefix" validate:"required"`
 	SiteSlug string `yaml:"site_slug,omitempty" json:"site_slug,omitempty"`
