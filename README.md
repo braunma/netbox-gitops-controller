@@ -328,6 +328,9 @@ fields every interface of that name gets. It works in device and VM files.
   * The device's own values win. Nested mappings — `ip`, `link` — are merged
     key by key, so a default `ip: { vrf: ... }` combines with the device's
     `ip: "10.0.0.5/24"` shorthand. `tags` are combined.
+  * An `ip` default is for the interfaces that have an address and a `link`
+    default for those that are cabled: an interface listed by name alone gets
+    neither block, only the other fields.
   * A name under `defaults.interfaces` that no device in the file lists is an
     error (it is a typo or a leftover), and so is a field the interface does
     not have.

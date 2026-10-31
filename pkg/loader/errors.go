@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"gopkg.in/yaml.v3"
 )
 
 // The loader reports problems as a list, one self-contained line each:
@@ -20,18 +22,24 @@ import (
 // Problems flattens an error the loader returned into the individual problems
 // it holds, one line each, in the order they were found.
 func Problems(err error) []error {
-	return problems(err)
-}
-
-// problems flattens an error into the individual problems it joins.
-func problems(err error) []error {
 	if err == nil {
 		return nil
 	}
 	if joined, ok := err.(interface{ Unwrap() []error }); ok {
 		var out []error
 		for _, inner := range joined.Unwrap() {
-			out = append(out, problems(inner)...)
+			out = append(out, Problems(inner)...)
+		}
+		return out
+	}
+	// The decoder reports every field of a mapping it could not convert in
+	// one error whose text spans several lines; each of those is a problem of
+	// its own.
+	var typeErr *yaml.TypeError
+	if errors.As(err, &typeErr) {
+		out := make([]error, 0, len(typeErr.Errors))
+		for _, msg := range typeErr.Errors {
+			out = append(out, errors.New(msg))
 		}
 		return out
 	}
@@ -40,7 +48,7 @@ func problems(err error) []error {
 
 // prefixed puts prefix in front of every problem err holds.
 func prefixed(prefix string, err error) error {
-	list := problems(err)
+	list := Problems(err)
 	for i, p := range list {
 		list[i] = fmt.Errorf("%s: %w", prefix, p)
 	}

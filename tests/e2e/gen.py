@@ -53,16 +53,23 @@ SHORT_NAMES = {
 }
 MODULE_SHORT_NAMES = {"module_type_slug":"module_type"}
 
+# The data directory being generated, so spell() can hang its choice off a
+# file's path inside it rather than the absolute path, which includes the
+# run's temporary directory and would make a seed irreproducible.
+ROOT = ""
+
 def spell(path, data):
     """Rewrite each object's reference keys to the short form for about half of
-    the objects. The choice hangs off the path and the object's position, not
-    the seed's generator, so the rest of a seed's dataset stays unchanged."""
+    the objects. The choice hangs off the file's path within the data directory
+    and the object's position, not the seed's generator, so the rest of a
+    seed's dataset stays unchanged and the same seed gives the same files."""
     table = next((t for d, t in SHORT_NAMES.items() if d in path), None)
     if table is None or not isinstance(data, list):
         return data
+    rel = os.path.relpath(path, ROOT) if ROOT else path
     out = []
     for i, obj in enumerate(data):
-        if not isinstance(obj, dict) or random.Random(f"{path}:{i}").random() < 0.5:
+        if not isinstance(obj, dict) or random.Random(f"{rel}:{i}").random() < 0.5:
             out.append(obj); continue
         obj = {table.get(k, k): v for k, v in obj.items()}
         if isinstance(obj.get("modules"), list):
@@ -100,6 +107,8 @@ def to_library(dt, kind="device"):
     return out
 
 def gen(root, seed):
+    global ROOT
+    ROOT = root
     rnd = random.Random(seed)
     shutil.rmtree(root, ignore_errors=True)
     D, I = f"{root}/definitions", f"{root}/inventory"

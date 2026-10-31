@@ -40,7 +40,7 @@ var (
 )
 
 // validPhases are the values accepted by --only, in execution order.
-var validPhases = []string{"foundation", "network", "device-types", "devices", "virtualization"}
+var validPhases = loader.Phases
 
 // Build metadata, injected at link time:
 //
@@ -136,12 +136,13 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	dataDir = resolvedDir
 
-	// Read and check the whole data directory before anything talks to
-	// NetBox. The phases below load their files one kind at a time, between
-	// writes, so without this a typo in racks.yaml surfaced only after the
-	// sites, roles and tags had already been applied, and only that one file's
-	// problems were shown.
-	if err := preflight(logger); err != nil {
+	// Read and check everything the selected phases will apply before
+	// anything talks to NetBox. The phases used to load their files one kind
+	// at a time, between writes, so a typo in racks.yaml surfaced only after
+	// the sites, roles and tags had already been applied, and only that one
+	// file's problems were shown. The phases work from this one load.
+	ds, dataLoader, err := preflight(logger, phases)
+	if err != nil {
 		return err
 	}
 
@@ -170,15 +171,6 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
-	// Initialize data loader
-	dataLoader := loader.NewDataLoader(dataDir, logger)
-	patterns, err := resolveIgnorePatterns()
-	if err != nil {
-		logger.Error("Invalid ignore pattern", err)
-		return err
-	}
-	dataLoader.SetIgnorePatterns(patterns)
-
 	// =========================================================================
 	// LOAD GLOBAL CACHES (MUST BE BEFORE PHASE 1)
 	// =========================================================================
@@ -198,7 +190,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		logger.Info("Phase 1: Foundation")
 		logger.Info("═══════════════════════════════════════════════════════")
 
-		if err := runFoundation(c, dataLoader, logger); err != nil {
+		if err := runFoundation(c, ds, logger); err != nil {
 			return err
 		}
 	} else {
@@ -214,12 +206,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		logger.Info("═══════════════════════════════════════════════════════")
 
 		if phases["network"] {
-			if err := runNetwork(c, dataLoader, logger); err != nil {
+			if err := runNetwork(c, ds, logger); err != nil {
 				return err
 			}
 		}
 		if phases["device-types"] {
-			if err := runDeviceTypes(c, dataLoader, logger); err != nil {
+			if err := runDeviceTypes(c, ds, logger); err != nil {
 				return err
 			}
 		}
@@ -235,7 +227,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		logger.Info("Phase 3: Devices")
 		logger.Info("═══════════════════════════════════════════════════════")
 
-		if err := runDevices(c, dataLoader, logger); err != nil {
+		if err := runDevices(c, ds, logger); err != nil {
 			return err
 		}
 	} else {
@@ -250,7 +242,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		logger.Info("Phase 4: Virtualization")
 		logger.Info("═══════════════════════════════════════════════════════")
 
-		if err := runVirtualization(c, dataLoader, logger); err != nil {
+		if err := runVirtualization(c, ds, logger); err != nil {
 			return err
 		}
 	} else {
@@ -316,88 +308,48 @@ func runSync(cmd *cobra.Command, args []string) error {
 }
 
 // runFoundation reconciles tags, roles, sites and racks.
-func runFoundation(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
+func runFoundation(c *client.NetBoxClient, ds loader.Dataset, logger *utils.Logger) error {
 	foundationReconciler := reconciler.NewFoundationReconciler(c)
 
-	tags, err := dataLoader.LoadTags("definitions/extras")
-	if err != nil {
-		logger.Error("Failed to load tags", err)
-		return err
-	}
-	if err := foundationReconciler.ReconcileTags(tags); err != nil {
+	if err := foundationReconciler.ReconcileTags(ds.Tags); err != nil {
 		logger.Error("Failed to reconcile tags", err)
 		return err
 	}
 
-	roles, err := dataLoader.LoadRoles("definitions/roles")
-	if err != nil {
-		logger.Error("Failed to load roles", err)
-		return err
-	}
-	if err := foundationReconciler.ReconcileRoles(roles); err != nil {
+	if err := foundationReconciler.ReconcileRoles(ds.Roles); err != nil {
 		logger.Error("Failed to reconcile roles", err)
 		return err
 	}
 
 	// Custom fields must exist before any object sets a value into one (e.g. the
 	// `vmid` field consumed by virtual machines in the virtualization phase).
-	customFields, err := dataLoader.LoadCustomFields("definitions/custom_fields")
-	if err != nil {
-		logger.Error("Failed to load custom fields", err)
-		return err
-	}
-	if err := foundationReconciler.ReconcileCustomFields(customFields); err != nil {
+	if err := foundationReconciler.ReconcileCustomFields(ds.CustomFields); err != nil {
 		logger.Error("Failed to reconcile custom fields", err)
 		return err
 	}
 
-	platforms, err := dataLoader.LoadPlatforms("definitions/platforms")
-	if err != nil {
-		logger.Error("Failed to load platforms", err)
-		return err
-	}
-	if err := foundationReconciler.ReconcilePlatforms(platforms); err != nil {
+	if err := foundationReconciler.ReconcilePlatforms(ds.Platforms); err != nil {
 		logger.Error("Failed to reconcile platforms", err)
 		return err
 	}
 
 	// Tenant groups before tenants: a tenant may reference a group created here.
-	tenantGroups, err := dataLoader.LoadTenantGroups("definitions/tenant_groups")
-	if err != nil {
-		logger.Error("Failed to load tenant groups", err)
-		return err
-	}
-	if err := foundationReconciler.ReconcileTenantGroups(tenantGroups); err != nil {
+	if err := foundationReconciler.ReconcileTenantGroups(ds.TenantGroups); err != nil {
 		logger.Error("Failed to reconcile tenant groups", err)
 		return err
 	}
 
-	tenants, err := dataLoader.LoadTenants("definitions/tenants")
-	if err != nil {
-		logger.Error("Failed to load tenants", err)
-		return err
-	}
-	if err := foundationReconciler.ReconcileTenants(tenants); err != nil {
+	if err := foundationReconciler.ReconcileTenants(ds.Tenants); err != nil {
 		logger.Error("Failed to reconcile tenants", err)
 		return err
 	}
 
-	sites, err := dataLoader.LoadSites("definitions/sites")
-	if err != nil {
-		logger.Error("Failed to load sites", err)
-		return err
-	}
-	if err := foundationReconciler.ReconcileSites(sites); err != nil {
+	if err := foundationReconciler.ReconcileSites(ds.Sites); err != nil {
 		logger.Error("Failed to reconcile sites", err)
 		return err
 	}
 
-	racks, err := dataLoader.LoadRacks("definitions/racks")
-	if err != nil {
-		logger.Error("Failed to load racks", err)
-		return err
-	}
-	if err := foundationReconciler.ReconcileRacks(racks); err != nil {
+	if err := foundationReconciler.ReconcileRacks(ds.Racks); err != nil {
 		logger.Error("Failed to reconcile racks", err)
 		return err
 	}
@@ -406,45 +358,25 @@ func runFoundation(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger
 }
 
 // runNetwork reconciles VRFs, VLAN groups, VLANs and prefixes.
-func runNetwork(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
+func runNetwork(c *client.NetBoxClient, ds loader.Dataset, logger *utils.Logger) error {
 	networkReconciler := reconciler.NewNetworkReconciler(c)
 
-	vrfs, err := dataLoader.LoadVRFs("definitions/vrfs")
-	if err != nil {
-		logger.Error("Failed to load VRFs", err)
-		return err
-	}
-	if err := networkReconciler.ReconcileVRFs(vrfs); err != nil {
+	if err := networkReconciler.ReconcileVRFs(ds.VRFs); err != nil {
 		logger.Error("Failed to reconcile VRFs", err)
 		return err
 	}
 
-	vlanGroups, err := dataLoader.LoadVLANGroups("definitions/vlan_groups")
-	if err != nil {
-		logger.Error("Failed to load VLAN groups", err)
-		return err
-	}
-	if err := networkReconciler.ReconcileVLANGroups(vlanGroups); err != nil {
+	if err := networkReconciler.ReconcileVLANGroups(ds.VLANGroups); err != nil {
 		logger.Error("Failed to reconcile VLAN groups", err)
 		return err
 	}
 
-	vlans, err := dataLoader.LoadVLANs("definitions/vlans")
-	if err != nil {
-		logger.Error("Failed to load VLANs", err)
-		return err
-	}
-	if err := networkReconciler.ReconcileVLANs(vlans); err != nil {
+	if err := networkReconciler.ReconcileVLANs(ds.VLANs); err != nil {
 		logger.Error("Failed to reconcile VLANs", err)
 		return err
 	}
 
-	prefixes, err := dataLoader.LoadPrefixes("definitions/prefixes")
-	if err != nil {
-		logger.Error("Failed to load prefixes", err)
-		return err
-	}
-	if err := networkReconciler.ReconcilePrefixes(prefixes); err != nil {
+	if err := networkReconciler.ReconcilePrefixes(ds.Prefixes); err != nil {
 		logger.Error("Failed to reconcile prefixes", err)
 		return err
 	}
@@ -453,41 +385,17 @@ func runNetwork(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *u
 }
 
 // runDeviceTypes reconciles module types and device types.
-func runDeviceTypes(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
+func runDeviceTypes(c *client.NetBoxClient, ds loader.Dataset, logger *utils.Logger) error {
 	deviceTypeReconciler := reconciler.NewDeviceTypeReconciler(c)
 
-	moduleTypes, err := dataLoader.LoadModuleTypes("definitions/module_types")
-	if err != nil {
-		logger.Error("Failed to load module types", err)
-		return err
-	}
-
-	libraryModuleTypes, err := dataLoader.LoadModuleTypeLibrary(resolveModuleTypeLibrary())
-	if err != nil {
-		logger.Error("Failed to load the module type library", err)
-		return err
-	}
-	moduleTypes = loader.MergeModuleTypes(moduleTypes, libraryModuleTypes, logger)
-
-	if err := deviceTypeReconciler.ReconcileModuleTypes(moduleTypes); err != nil {
+	// Native definitions merged with the libraries, exactly as the loader
+	// hands them to every checker.
+	if err := deviceTypeReconciler.ReconcileModuleTypes(ds.ModuleTypes); err != nil {
 		logger.Error("Failed to reconcile module types", err)
 		return err
 	}
 
-	deviceTypes, err := dataLoader.LoadDeviceTypes("definitions/device_types")
-	if err != nil {
-		logger.Error("Failed to load device types", err)
-		return err
-	}
-
-	libraryTypes, err := dataLoader.LoadDeviceTypeLibrary(resolveDeviceTypeLibrary())
-	if err != nil {
-		logger.Error("Failed to load the device type library", err)
-		return err
-	}
-	deviceTypes = loader.MergeDeviceTypes(deviceTypes, libraryTypes, logger)
-
-	if err := deviceTypeReconciler.ReconcileDeviceTypes(deviceTypes); err != nil {
+	if err := deviceTypeReconciler.ReconcileDeviceTypes(ds.DeviceTypes); err != nil {
 		logger.Error("Failed to reconcile device types", err)
 		return err
 	}
@@ -545,22 +453,29 @@ func resolveModuleTypeLibrary() string {
 		filepath.Join(dataDir, "definitions", "module_type_library"))
 }
 
-// preflight loads every definition and inventory folder the way the phases
-// will — same ignore patterns, same libraries — and reports every problem at
-// once, one per line. It writes nothing and needs no NetBox.
-func preflight(logger *utils.Logger) error {
+// preflight loads every definition and inventory folder the selected phases
+// apply — with the ignore patterns and libraries configured for the run — and
+// reports every problem at once, one per line. It writes nothing and needs
+// no NetBox. The dataset it returns is what the phases reconcile; a phase
+// not selected has nothing loaded for it. The loader comes back too, for the
+// files it skipped.
+func preflight(logger *utils.Logger, phases map[string]bool) (loader.Dataset, *loader.DataLoader, error) {
 	patterns, err := resolveIgnorePatterns()
 	if err != nil {
 		logger.Error("Invalid ignore pattern", err)
-		return err
+		return loader.Dataset{}, nil, err
 	}
-	dl := loader.NewDataLoader(dataDir, utils.NewDiscardLogger())
+	dl := loader.NewDataLoader(dataDir, logger)
 	dl.SetIgnorePatterns(patterns)
-	_, err = dl.LoadDataset(loader.DatasetOptions{
+	ds, err := dl.LoadDataset(loader.DatasetOptions{
 		DeviceTypeLibrary: resolveDeviceTypeLibrary(),
 		ModuleTypeLibrary: resolveModuleTypeLibrary(),
+		Phases:            phases,
 	})
-	return reportLoadProblems(logger, err, "nothing was sent to NetBox")
+	if err := reportLoadProblems(logger, err, "nothing was sent to NetBox"); err != nil {
+		return loader.Dataset{}, nil, err
+	}
+	return ds, dl, nil
 }
 
 // reportLoadProblems prints every problem a load returned on its own line,
@@ -617,16 +532,8 @@ func resolveDeviceTypeLibrary() string {
 
 // runDevices loads the device inventory, applies the --site/--device
 // filters, loads the required site caches and reconciles the devices.
-func runDevices(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
-	var allDevices []*models.DeviceConfig
-	for _, folder := range loader.DeviceFolders {
-		devices, err := dataLoader.LoadDevices(folder)
-		if err != nil {
-			logger.Error("Failed to load devices from "+folder, err)
-			return err
-		}
-		allDevices = append(allDevices, devices...)
-	}
+func runDevices(c *client.NetBoxClient, ds loader.Dataset, logger *utils.Logger) error {
+	allDevices := ds.Devices
 	logger.Info("Loaded %d devices from inventory", len(allDevices))
 
 	if siteFilter != "" || deviceFilter != "" {
@@ -665,48 +572,25 @@ func runDevices(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *u
 
 // runVirtualization reconciles cluster types, cluster groups and clusters.
 // (Virtual machines are reconciled in a later step.)
-func runVirtualization(c *client.NetBoxClient, dataLoader *loader.DataLoader, logger *utils.Logger) error {
+func runVirtualization(c *client.NetBoxClient, ds loader.Dataset, logger *utils.Logger) error {
 	virtReconciler := reconciler.NewVirtualizationReconciler(c)
 
-	clusterTypes, err := dataLoader.LoadClusterTypes("definitions/virtualization/cluster_types")
-	if err != nil {
-		logger.Error("Failed to load cluster types", err)
-		return err
-	}
-	if err := virtReconciler.ReconcileClusterTypes(clusterTypes); err != nil {
+	if err := virtReconciler.ReconcileClusterTypes(ds.ClusterTypes); err != nil {
 		logger.Error("Failed to reconcile cluster types", err)
 		return err
 	}
 
-	clusterGroups, err := dataLoader.LoadClusterGroups("definitions/virtualization/cluster_groups")
-	if err != nil {
-		logger.Error("Failed to load cluster groups", err)
-		return err
-	}
-	if err := virtReconciler.ReconcileClusterGroups(clusterGroups); err != nil {
+	if err := virtReconciler.ReconcileClusterGroups(ds.ClusterGroups); err != nil {
 		logger.Error("Failed to reconcile cluster groups", err)
 		return err
 	}
 
-	clusters, err := dataLoader.LoadClusters("definitions/virtualization/clusters")
-	if err != nil {
-		logger.Error("Failed to load clusters", err)
-		return err
-	}
-	if err := virtReconciler.ReconcileClusters(clusters); err != nil {
+	if err := virtReconciler.ReconcileClusters(ds.Clusters); err != nil {
 		logger.Error("Failed to reconcile clusters", err)
 		return err
 	}
 
-	var vms []*models.VMConfig
-	for _, folder := range loader.VMFolders {
-		found, err := dataLoader.LoadVMs(folder)
-		if err != nil {
-			logger.Error("Failed to load virtual machines from "+folder, err)
-			return err
-		}
-		vms = append(vms, found...)
-	}
+	vms := ds.VMs
 
 	if siteFilter != "" || vmFilter != "" {
 		filtered := filterVMs(vms, siteFilter, vmFilter)
@@ -723,7 +607,7 @@ func runVirtualization(c *client.NetBoxClient, dataLoader *loader.DataLoader, lo
 	// inherits its cluster's site, so warm caches for sites referenced by both
 	// clusters and VMs.
 	uniqueSites := make(map[string]bool)
-	for _, cl := range clusters {
+	for _, cl := range ds.Clusters {
 		if cl.SiteSlug != "" {
 			uniqueSites[cl.SiteSlug] = true
 		}

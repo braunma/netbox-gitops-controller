@@ -846,9 +846,9 @@ func (c *checker) checkVMs() {
 	}
 }
 
-// checkTags reports a `tags:` entry that names no declared tag. The sync
-// leaves such a tag off with a warning, so the object silently lacks it.
-// Only the kinds the dataset carries are checked.
+// checkTags reports a `tags:` entry that names no declared tag, on every
+// kind the sync sends tags for. The sync leaves such a tag off with a
+// warning, so the object silently lacks it.
 func (c *checker) checkTags() {
 	check := func(ref string, tags []string) {
 		for _, tag := range tags {
@@ -866,6 +866,9 @@ func (c *checker) checkTags() {
 	for _, v := range c.ds.VRFs {
 		check("VRF "+v.Name, v.Tags)
 	}
+	for _, g := range c.ds.VLANGroups {
+		check("VLAN group "+g.Slug, g.Tags)
+	}
 	for _, v := range c.ds.VLANs {
 		check(fmt.Sprintf("VLAN %s (%d)", v.Name, v.VID), v.Tags)
 	}
@@ -881,8 +884,17 @@ func (c *checker) checkTags() {
 	for _, p := range c.ds.Platforms {
 		check("platform "+p.Slug, p.Tags)
 	}
+	for _, g := range c.ds.TenantGroups {
+		check("tenant group "+g.Slug, g.Tags)
+	}
 	for _, t := range c.ds.Tenants {
 		check("tenant "+t.Slug, t.Tags)
+	}
+	for _, ct := range c.ds.ClusterTypes {
+		check("cluster type "+ct.Slug, ct.Tags)
+	}
+	for _, cg := range c.ds.ClusterGroups {
+		check("cluster group "+cg.Slug, cg.Tags)
 	}
 	for _, cl := range c.ds.Clusters {
 		check("cluster "+cl.Name, cl.Tags)

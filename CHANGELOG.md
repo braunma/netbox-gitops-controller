@@ -34,7 +34,10 @@ are about to run before applying a sync with pruning enabled.
   is rejected. The README lists every one per object type.
 - **Per-interface defaults.** `defaults.interfaces` maps an interface name to
   fields every listed interface of that name gets, merged key by key into
-  `ip` and `link`. A default name no device in the file lists is an error.
+  `ip` and `link`. An `ip` default applies only to interfaces that declare an
+  address and a `link` default only to those that declare a peer, so listing
+  an interface by name alone is always enough to opt in. A default name no
+  device in the file lists is an error.
 
 - **`unknown-tag` lint check.** `yamlcheck` reports a `tags:` entry that no
   tag definition declares. It caught two in the bundled examples (`gpu`,
@@ -49,12 +52,15 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
-- **A sync checks the whole data directory before it contacts NetBox.** The
-  phases load their files one kind at a time, between writes, so a mistake in
+- **A sync checks its data before it contacts NetBox.** The phases loaded
+  their files one kind at a time, between writes, so a mistake in
   `racks.yaml` used to stop the run only after sites, roles and tags had been
-  applied. Every definition and inventory folder is now loaded and validated
+  applied. Every folder the selected phases apply is now loaded and validated
   first, with the same ignore patterns and libraries; any problem stops the
-  run with nothing sent. `validate` and `ingest` report load problems the
+  run with nothing sent, and the phases work from that one load instead of
+  reading the files again. A run restricted with `--only` reads only the
+  files of its phases, so a half-written inventory file does not stop a
+  foundation-only sync. `validate` and `ingest` report load problems the
   same way.
 - **Load problems are listed, all of them, one line each.** A load used to
   stop at the first bad file, and within an entry at the first unknown key,
@@ -64,7 +70,13 @@ are about to run before applying a sync with pruning enabled.
   `inventory/hardware/active/servers.yaml: entry 3: device "srv-03":
   device_type is required`. The file is no longer printed twice, and a
   validation error with several missing fields is several lines, each with
-  its context, instead of one line followed by bare continuations.
+  its context, instead of one line followed by bare continuations. A value
+  of the wrong type is reported the same way, per field and by its path
+  (`interfaces[1].mtu: cannot unmarshal !!str `big` into int`).
+- **A tag defined in the same `--dry-run` is named in the plan.** It has no
+  ID yet, so it cannot be planned onto its objects; the run now says so per
+  object instead of leaving it out silently. An apply's diff shows a
+  changed tag set as the IDs on each side instead of skipping it.
 - **Short field names everywhere the tool speaks.** Validation errors name
   the key as it is written now (`site is required`, not `site_slug is
   required`), and the skeletons `ingest`/`collect` generate use `site:`,

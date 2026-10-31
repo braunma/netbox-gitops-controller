@@ -379,6 +379,7 @@ devices:
     interfaces:
       - name: "idrac"
         ip: { address: "10.0.10.2/24", dns_name: "srv-02-idrac" }
+      - name: "eth0"
 `)
 	devices, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDevices("devices")
 	if err != nil {
@@ -406,13 +407,27 @@ devices:
 		t.Errorf("srv-01 eth1 = %+v, want the default description", srv1.Interfaces[2])
 	}
 
-	if len(srv2.Interfaces) != 1 {
-		t.Fatalf("srv-02 interfaces = %+v, want only the listed idrac", srv2.Interfaces)
+	if len(srv2.Interfaces) != 2 {
+		t.Fatalf("srv-02 interfaces = %+v, want only the listed idrac and eth0", srv2.Interfaces)
 	}
 	idrac2 := srv2.Interfaces[0]
 	if idrac2.IP.VRF != "Management" || idrac2.IP.DNSName != "srv-02-idrac" ||
 		!reflect.DeepEqual(idrac2.Tags, []string{"oob"}) {
 		t.Errorf("srv-02 idrac = %+v ip %+v, want defaults without srv-01's values", idrac2, idrac2.IP)
+	}
+	// Listing the name alone is enough to opt in: the `ip` default (a VRF,
+	// no address) is for interfaces that have an address and the `link`
+	// default (a cable type, no peer) for those that are cabled. This one
+	// has neither, so it gets the other defaults and no ip or link block.
+	eth0b := srv2.Interfaces[1]
+	if eth0b.AddressRole != "primary" {
+		t.Errorf("srv-02 eth0 = %+v, want the scalar defaults applied", eth0b)
+	}
+	if eth0b.IP != nil {
+		t.Errorf("srv-02 eth0 ip = %+v, want none: it declares no address", eth0b.IP)
+	}
+	if eth0b.Link != nil {
+		t.Errorf("srv-02 eth0 link = %+v, want none: it declares no peer", eth0b.Link)
 	}
 }
 

@@ -132,7 +132,8 @@ func ensureManufacturer(c *client.NetBoxClient, name string) (int, error) {
 // A tag that cannot be resolved is left off with a warning instead of failing
 // the object: define it in definitions/extras and the next run adds it. A tag
 // only planned in this --dry-run (ID 0) is left off too, since there is no ID
-// to send yet.
+// to send yet; that is logged, so the plan says where it differs from the
+// apply.
 func setTags(c *client.NetBoxClient, payload map[string]interface{}, slugs []string, forKind, forName string) {
 	if len(slugs) == 0 {
 		return
@@ -145,7 +146,14 @@ func setTags(c *client.NetBoxClient, payload map[string]interface{}, slugs []str
 			c.Logger().Warning("Tag %s not found for %s %s, leaving it off (define it in definitions/extras)", slug, forKind, forName)
 			continue
 		}
-		if id == 0 || seen[id] {
+		if id == 0 {
+			// Defined in this same --dry-run, so there is no ID to plan
+			// with. The apply resolves it; say so, or the plan would
+			// silently differ from what is sent.
+			c.Logger().Info("Tag %s for %s %s is only planned in this run; the apply sends it", slug, forKind, forName)
+			continue
+		}
+		if seen[id] {
 			continue
 		}
 		seen[id] = true

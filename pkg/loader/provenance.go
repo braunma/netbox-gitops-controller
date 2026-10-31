@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"regexp"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 
@@ -184,7 +186,7 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 	var errs []error
 	if defaultsNode != nil {
 		if err := defaultsNode.Decode(&defaults); err != nil {
-			return nil, fmt.Errorf("%s: defaults: must be a mapping of fields: %w", file, err)
+			return nil, prefixed(file+": defaults: must be a mapping of fields", err)
 		}
 		if ifaceDefaults, err = interfaceDefaults(defaults, modelType); err != nil {
 			errs = append(errs, err)
@@ -263,18 +265,77 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 	return declared, nil
 }
 
-// decodeMerged turns a defaults-merged mapping into the typed model.
+// decodeMerged turns a defaults-merged mapping into the typed model. A value
+// of the wrong type is reported per field, by its path (`interfaces[1].mtu`),
+// since the line numbers the decoder knows are those of the re-serialized
+// mapping, not of the file.
 func decodeMerged[T models.Validator](raw map[string]interface{}) (T, error) {
 	var zero T
 	data, err := yaml.Marshal(raw)
 	if err != nil {
 		return zero, err
 	}
+	var doc yaml.Node
+	if err := yaml.Unmarshal(data, &doc); err != nil {
+		return zero, err
+	}
 	var object T
-	if err := yaml.Unmarshal(data, &object); err != nil {
+	if err := doc.Decode(&object); err != nil {
+		var typeErr *yaml.TypeError
+		if errors.As(err, &typeErr) {
+			return zero, fieldTypeErrors(typeErr, &doc)
+		}
 		return zero, err
 	}
 	return object, nil
+}
+
+// typeErrorLine matches the decoder's per-field message, `line 3: cannot
+// unmarshal !!str `big` into int`.
+var typeErrorLine = regexp.MustCompile(`^line (\d+): (.*)$`)
+
+// fieldTypeErrors rewrites each message of a decoder type error to name the
+// field by its path instead of by the line of the serialized document it was
+// decoded from.
+func fieldTypeErrors(typeErr *yaml.TypeError, doc *yaml.Node) error {
+	paths := map[int]string{}
+	var walk func(n *yaml.Node, path string)
+	walk = func(n *yaml.Node, path string) {
+		// A child is recorded after its parent, so a line shared by both
+		// (a block sequence and its first item) names the more precise one.
+		if path != "" {
+			paths[n.Line] = path
+		}
+		switch n.Kind {
+		case yaml.DocumentNode:
+			for _, c := range n.Content {
+				walk(c, path)
+			}
+		case yaml.MappingNode:
+			for i := 0; i+1 < len(n.Content); i += 2 {
+				walk(n.Content[i+1], joinPath(path, n.Content[i].Value))
+			}
+		case yaml.SequenceNode:
+			for i, c := range n.Content {
+				walk(c, fmt.Sprintf("%s[%d]", path, i+1))
+			}
+		}
+	}
+	walk(doc, "")
+
+	errs := make([]error, 0, len(typeErr.Errors))
+	for _, msg := range typeErr.Errors {
+		if m := typeErrorLine.FindStringSubmatch(msg); m != nil {
+			if line, err := strconv.Atoi(m[1]); err == nil {
+				if path, ok := paths[line]; ok {
+					errs = append(errs, fmt.Errorf("%s: %s", path, m[2]))
+					continue
+				}
+			}
+		}
+		errs = append(errs, errors.New(msg))
+	}
+	return errors.Join(errs...)
 }
 
 // ItemNodes returns the object nodes of a document, and the file's `defaults`

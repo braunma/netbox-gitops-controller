@@ -268,7 +268,9 @@ func interfaceDefaults(defaults map[string]interface{}, t reflect.Type) (map[str
 
 // applyInterfaceDefaults merges the per-interface defaults into every listed
 // interface of that name. The interface's own values win, nested mappings
-// (`ip`, `link`) are merged key by key, and tags are combined. It records the
+// (`ip`, `link`) are merged key by key, and tags are combined. An `ip` default
+// only applies to an interface that declares an address, a `link` default to
+// one that declares a peer (see nestedDefaultRequires). It records the
 // default names it used in used, so the caller can flag one that matched
 // nothing.
 func applyInterfaceDefaults(item map[string]interface{}, defaults map[string]map[string]interface{}, used map[string]bool) {
@@ -292,9 +294,31 @@ func applyInterfaceDefaults(item map[string]interface{}, defaults map[string]map
 			continue
 		}
 		used[name] = true
-		merged[i] = deepMerge(def, iface)
+		out := deepMerge(def, iface)
+		// A default may carry `ip` fields (a VRF, a status) for the
+		// interfaces that have an address, or `link` fields (a cable type)
+		// for those that are cabled. An interface that declares no address
+		// or no peer gets no such block at all, rather than one validation
+		// would reject for the field only the interface itself can supply.
+		for block, required := range nestedDefaultRequires {
+			if m, ok := out[block].(map[string]interface{}); ok {
+				if value, _ := m[required].(string); value == "" {
+					delete(out, block)
+				}
+			}
+		}
+		merged[i] = out
 	}
 	item["interfaces"] = merged
+}
+
+// nestedDefaultRequires names, for each nested block a per-interface default
+// may fill in, the field only the interface itself can provide. A merged block
+// without it is dropped: the default was meant for the interfaces that have
+// one.
+var nestedDefaultRequires = map[string]string{
+	"ip":   "address",
+	"link": "peer_device",
 }
 
 // deepMerge returns base overlaid with over: over's values win, mappings on

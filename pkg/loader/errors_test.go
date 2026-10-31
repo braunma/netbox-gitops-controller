@@ -67,6 +67,46 @@ func TestEveryProblemIsReportedOnItsOwnLine(t *testing.T) {
 	}
 }
 
+// TestDecoderTypeErrorsAreOnePerLine verifies that a value of the wrong type
+// — which the YAML decoder reports for every such field of an entry in one
+// multi-line error — is split into one prefixed line per field, naming the
+// field by its path rather than by a line of the re-serialized entry.
+func TestDecoderTypeErrorsAreOnePerLine(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "devices", "a.yaml", `
+- name: "srv-01"
+  site: "s"
+  role: "r"
+  device_type: "dt"
+  position: "top"
+  interfaces:
+    - name: "eth0"
+      mtu: "big"
+`)
+	_, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDevices("devices")
+	if err == nil {
+		t.Fatal("LoadDevices() = nil, want the type errors reported")
+	}
+	got := Problems(err)
+	if len(got) != 2 {
+		t.Fatalf("got %d problems, want one per field:\n%v", len(got), err)
+	}
+	for _, p := range got {
+		line := p.Error()
+		if strings.Contains(line, "\n") {
+			t.Errorf("problem spans several lines: %q", line)
+		}
+		if !strings.Contains(line, `a.yaml: entry 1: device "srv-01": `) {
+			t.Errorf("problem lacks its file, entry and object: %q", line)
+		}
+	}
+	for _, want := range []string{`: position: cannot unmarshal`, `: interfaces[1].mtu: cannot unmarshal`} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("no line naming %q in:\n%v", want, err)
+		}
+	}
+}
+
 // TestKindOfMatchesValidation keeps the loader's object labels and the
 // models' validation labels the same word for every kind.
 func TestKindOfMatchesValidation(t *testing.T) {
@@ -83,5 +123,35 @@ func TestKindOfMatchesValidation(t *testing.T) {
 				t.Errorf("%s: validation says %q, KindOf says %q", kind.Name(), p.Error(), want)
 			}
 		}
+	}
+}
+
+// TestLoadDatasetPhases verifies that a dataset restricted to some phases
+// reads only their folders: a problem in an unselected phase's file is not
+// reported, and its kinds stay empty, while every kind is read with no
+// restriction.
+func TestLoadDatasetPhases(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "definitions/sites", "sites.yaml", `
+- { name: "Berlin", slug: "berlin" }
+`)
+	writeFile(t, dir, "definitions/vlan_groups", "groups.yaml", `
+- { name: "Berlin VLANs", slug: "berlin-vlans", site: "berlin" }
+`)
+	writeFile(t, dir, "inventory/hardware/active", "servers.yaml", `
+- { name: "srv-01", sight: "berlin", role: "r", device_type: "dt" }
+`)
+	dl := NewDataLoader(dir, utils.NewLogger(false))
+
+	ds, err := dl.LoadDataset(DatasetOptions{Phases: map[string]bool{PhaseFoundation: true, PhaseNetwork: true}})
+	if err != nil {
+		t.Fatalf("LoadDataset(foundation, network) error = %v; the device inventory is not part of those phases", err)
+	}
+	if len(ds.Sites) != 1 || len(ds.VLANGroups) != 1 || len(ds.Devices) != 0 {
+		t.Errorf("sites=%d vlan groups=%d devices=%d, want 1, 1, 0", len(ds.Sites), len(ds.VLANGroups), len(ds.Devices))
+	}
+
+	if _, err := dl.LoadDataset(DatasetOptions{}); err == nil || !strings.Contains(err.Error(), `unknown field "sight"`) {
+		t.Errorf("LoadDataset() with every phase = %v, want the inventory's problem", err)
 	}
 }
