@@ -20,6 +20,10 @@ func transportOf(t *testing.T, c *NetBoxClient) *tls.Config {
 }
 
 func TestCertificatesAreVerifiedByDefault(t *testing.T) {
+	// The default is what the environment does not say. A CI runner that sets
+	// IGNORE_SSL_ERRORS for the jobs that reach a lab NetBox passes it to the
+	// tests too, so the test pins it to empty rather than assuming it.
+	t.Setenv("IGNORE_SSL_ERRORS", "")
 	c, err := NewClient("https://netbox.example.com", "token", true)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
@@ -68,6 +72,7 @@ func TestSelfSignedServerIsRefusedUnlessOptedOut(t *testing.T) {
 	}))
 	defer srv.Close()
 
+	t.Setenv("IGNORE_SSL_ERRORS", "") // see TestCertificatesAreVerifiedByDefault
 	c, err := NewClient(srv.URL, "token", true)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
