@@ -42,6 +42,19 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **The controller fills in what the data already says.** A device's site
+  from its rack or parent device, an address's VRF from the prefix it falls
+  into, a prefix's site from its VLAN, a VLAN's group from the one group at
+  its site. An interface's VLAN is deliberately not derived from its
+  address. Every derivation is printed by every run
+  (`Derived: …`), a written value is never changed, and the README lists the
+  rules. A device's `site` is therefore required only when neither a rack nor
+  a parent device can supply it.
+- **Errors name the way out.** Every "is not declared" message lists what is
+  declared (racks at the site, VLANs at the site, VRFs, device types, the
+  template's ports); `rack-collision` lists the free units of the rack;
+  `duplicate-ip` names the next free address in the prefix;
+  `untyped-interface` and `unknown-peer-port` list the device type's ports.
 - **`always: true` on a per-interface default.** Under `defaults.interfaces`,
   an entry so marked is added to every device of the file that does not list
   the interface, so a port whose whole configuration is shared (PXE and its

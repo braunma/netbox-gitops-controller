@@ -44,6 +44,9 @@ type Dataset struct {
 	// with every port along it. The cables themselves are already on the
 	// devices; this is for the log and the checks.
 	CablePaths []string
+	// Derivations lists what DeriveDefaults filled in, one line each, so a
+	// run can say what the YAML left to the rules.
+	Derivations []string
 }
 
 // DatasetOptions carries the paths that are resolved outside the loader, and
@@ -165,6 +168,17 @@ func (dl *DataLoader) LoadDataset(opts DatasetOptions) (Dataset, error) {
 	ds.CablePaths = paths
 	for _, p := range paths {
 		dl.logger.Info("Cable path: %s", p)
+	}
+
+	// What the YAML leaves out and another object determines is filled in
+	// here, and said out loud, so the plan and the log show it.
+	derived, err := DeriveDefaults(&ds)
+	if err != nil {
+		return Dataset{}, err
+	}
+	ds.Derivations = derived
+	for _, line := range derived {
+		dl.logger.Info("%s", line)
 	}
 	return ds, nil
 }

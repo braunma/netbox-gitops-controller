@@ -396,6 +396,11 @@ both forms of one field in the same mapping is an error.
 | cluster | `site`, `type`, `group` | `site_slug`, `type_slug`, `group_slug` |
 | VM | `site`, `role` | `site_slug`, `role_slug` |
 
+Every "is not declared" error lists what is declared — the racks at that
+site, the VLANs at that site, the device type's template ports — and a
+collision names the way out: `rack-collision` lists the free units of the
+rack, `duplicate-ip` the next free address in the prefix.
+
 Every key is checked against the object it belongs to, nested ones (an
 interface's `ip`, a module) included. A misspelled field — `vfr:` for `vrf:`,
 `rack_name:` for `rack:` — fails the load with the file, the entry and the
@@ -488,6 +493,30 @@ Cable path: srv[eth1] > pp-a01[front 2] > pp-a01[rear 2] > pp-b02[rear 2] > pp-b
 
 `tests/e2e/repo-data.sh` asks NetBox to trace both sample strands end to end,
 so the shape above is exercised against a real NetBox on every e2e run.
+
+### What the controller fills in
+
+A value the YAML leaves out and another declared object determines is filled
+in when the data is loaded, and said out loud: every run, `yamlcheck` and the
+plan print one line per value (`Derived: device srv-01 interface idrac: vrf
+"Management" (from prefix 10.0.10.0/24)`), so nothing reaches NetBox that is
+not on the record. A value written in the YAML is never changed. The rules:
+
+| Left out | Filled from | Rule |
+|---|---|---|
+| a device's `site` | its `rack`, or its `parent_device` | a rack is at one site; a child sits where its chassis sits |
+| a device's `face` | its `position` | a positioned device is front-mounted unless it says `rear` |
+| an address's `vrf` | the prefix it falls into | the most specific declared prefix containing the address, when that prefix is in a VRF |
+| a prefix's `site` | its `vlan` | when that VLAN is declared at exactly one site |
+| a VLAN's `group` | its site | when the site has exactly one VLAN group |
+| `status` on sites, racks, VLANs, prefixes, devices, modules | — | `active` |
+| the `gitops` tag | — | on every object |
+
+A device with neither `site`, `rack` nor `parent_device` is an error naming
+all three. Not derived, on purpose: an interface's VLAN. A port's layer 2
+(access, trunk, routed) is not implied by its address, and a wrong guess
+there changes what the switch is told. With these rules a server in an existing rack is its name, its
+position, its serial and asset tag, and its addresses.
 
 ### Conventions that keep the YAML small
 
