@@ -59,7 +59,7 @@ func generatedVMFile(source, cluster string, vms []discovery.VM, parked bool) st
 		b.WriteString("#\n")
 		b.WriteString("# These guests could not be placed in a NetBox cluster: the source that\n")
 		b.WriteString("# found them declares no `cluster:` in collectors.yaml. Give it one, or\n")
-		b.WriteString("# add a site_slug to each VM below and rename this file without the\n")
+		b.WriteString("# add a `site:` to each VM below and rename this file without the\n")
 		b.WriteString("# leading underscore.\n")
 	}
 	b.WriteString("#\n")
@@ -90,7 +90,7 @@ func renderVM(vm discovery.VM, needsSite bool) string {
 	if vm.Cluster != "" {
 		b.WriteString("  cluster: " + quoted(vm.Cluster) + "\n")
 	} else if needsSite {
-		b.WriteString("  site_slug: \"TODO\" # TODO: the site this VM belongs to (or give the source a cluster)\n")
+		b.WriteString("  site: \"TODO\" # TODO: the site this VM belongs to (or give the source a cluster)\n")
 	}
 	if vm.Node != "" {
 		b.WriteString("  node: " + quoted(vm.Node) + "\n")
@@ -169,14 +169,14 @@ func parkedDeviceFile(source string, dev discovery.Device, prefix string) string
 	b.WriteString("\n")
 
 	b.WriteString("- name: " + quoted(deviceSkeletonName(dev)) + " # TODO: the name this device should carry in NetBox\n")
-	b.WriteString("  site_slug: \"TODO\" # TODO\n")
-	b.WriteString("  role_slug: \"TODO\" # TODO\n")
-	b.WriteString("  device_type_slug: \"TODO\" # TODO")
+	b.WriteString("  site: \"TODO\" # TODO\n")
+	b.WriteString("  role: \"TODO\" # TODO\n")
+	b.WriteString("  device_type: \"TODO\" # TODO")
 	if dev.Model != "" {
 		b.WriteString(" — the scan reports the model as " + dev.Model)
 	}
 	b.WriteString("\n")
-	b.WriteString("  rack_slug: \"TODO\" # TODO\n")
+	b.WriteString("  rack: \"TODO\" # TODO\n")
 	b.WriteString("  position: 0 # TODO: lowest rack unit the chassis occupies\n")
 	b.WriteString("  face: \"front\" # TODO: front or rear\n")
 	if dev.Serial != "" {

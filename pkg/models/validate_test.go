@@ -53,7 +53,7 @@ func TestRackValidate(t *testing.T) {
 		wantErrs []string
 	}{
 		{"valid", Rack{Name: "R01", SiteSlug: "berlin-dc"}, nil},
-		{"missing site_slug", Rack{Name: "R01"}, []string{`rack "R01"`, "site_slug is required"}},
+		{"missing site_slug", Rack{Name: "R01"}, []string{`rack "R01"`, "site is required"}},
 		{"missing name", Rack{SiteSlug: "berlin-dc"}, []string{"name is required"}},
 	}
 	for _, tt := range tests {
@@ -106,7 +106,7 @@ func TestVLANValidate(t *testing.T) {
 		{"vid upper bound", VLAN{Name: "mgmt", VID: 4094, SiteSlug: "berlin-dc"}, nil},
 		{"vid zero", VLAN{Name: "mgmt", VID: 0, SiteSlug: "berlin-dc"}, []string{"vid must be between 1 and 4094, got 0"}},
 		{"vid too large", VLAN{Name: "mgmt", VID: 4095, SiteSlug: "berlin-dc"}, []string{"vid must be between 1 and 4094, got 4095"}},
-		{"missing site_slug", VLAN{Name: "mgmt", VID: 100}, []string{"site_slug is required"}},
+		{"missing site_slug", VLAN{Name: "mgmt", VID: 100}, []string{"site is required"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -250,10 +250,10 @@ func TestDeviceConfigValidate(t *testing.T) {
 		wantErrs []string
 	}{
 		{"valid minimal", base, nil},
-		{"missing role_slug", withFields(func(d *DeviceConfig) { d.RoleSlug = "" }), []string{"role_slug is required"}},
+		{"missing role_slug", withFields(func(d *DeviceConfig) { d.RoleSlug = "" }), []string{"role is required"}},
 		{"missing everything", DeviceConfig{}, []string{
 			`device "<unnamed>"`,
-			"name is required", "site_slug is required", "device_type_slug is required", "role_slug is required",
+			"name is required", "site is required", "device_type is required", "role is required",
 		}},
 		{
 			"parent_device without device_bay",
@@ -350,7 +350,7 @@ func TestDeviceConfigValidate(t *testing.T) {
 			withFields(func(d *DeviceConfig) {
 				d.Modules = []ModuleConfig{{Name: "gpu-1"}}
 			}),
-			[]string{`module "gpu-1": module_type_slug is required`},
+			[]string{`module "gpu-1": module_type is required`},
 		},
 		{
 			"module missing name",
@@ -471,7 +471,7 @@ func TestClusterValidate(t *testing.T) {
 		wantErrs []string
 	}{
 		{"valid", Cluster{Name: "prod-cluster", TypeSlug: "vmware-vsphere"}, nil},
-		{"missing type_slug", Cluster{Name: "prod-cluster"}, []string{`cluster "prod-cluster"`, "type_slug is required"}},
+		{"missing type_slug", Cluster{Name: "prod-cluster"}, []string{`cluster "prod-cluster"`, "type is required"}},
 		{"missing name", Cluster{TypeSlug: "vmware-vsphere"}, []string{"name is required"}},
 	}
 	for _, tt := range tests {
@@ -494,7 +494,7 @@ func TestVMConfigValidate(t *testing.T) {
 		{
 			"neither cluster nor site",
 			VMConfig{Name: "web-01"},
-			[]string{`virtual machine "web-01"`, "one of cluster or site_slug is required"},
+			[]string{`virtual machine "web-01"`, "one of cluster or site is required"},
 		},
 		{
 			"interface without name",

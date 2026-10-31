@@ -573,8 +573,8 @@ func TestParkedSkeletonForAnUnknownDevice(t *testing.T) {
 	got := read(t, root, rel)
 	for _, want := range []string{
 		"NOT APPLIED",
-		`site_slug: "TODO"`, `rack_slug: "TODO"`, "position: 0 # TODO", `face: "front" # TODO`,
-		`role_slug: "TODO"`, `device_type_slug: "TODO"`,
+		`site: "TODO"`, `rack: "TODO"`, "position: 0 # TODO", `face: "front" # TODO`,
+		`role: "TODO"`, `device_type: "TODO"`,
 		`serial: "CN7792048K0042"`, `asset_tag: "7XKQ2M3"`,
 		"hw_cpu_count: 1", "hw_power_state: \"On\"",
 		"#   management address: 10.0.1.11",
@@ -594,7 +594,7 @@ func TestASecondScanRefreshesTheParkedSkeletonInPlace(t *testing.T) {
 	run(t, root, &discovery.Snapshot{Source: "idrac", Devices: []discovery.Device{scannedSrv01()}}, true)
 
 	rel := "inventory/discovered/hardware/idrac/_cn7792048k0042.yaml"
-	completed := strings.Replace(read(t, root, rel), `site_slug: "TODO"`, `site_slug: "berlin-dc"`, 1)
+	completed := strings.Replace(read(t, root, rel), `site: "TODO"`, `site: "berlin-dc"`, 1)
 	if err := os.WriteFile(filepath.Join(root, rel), []byte(completed), 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -613,7 +613,7 @@ func TestASecondScanRefreshesTheParkedSkeletonInPlace(t *testing.T) {
 	if !strings.Contains(got, "hw_power_consumed_watts: 999") {
 		t.Errorf("the skeleton's facts were not refreshed:\n%s", got)
 	}
-	if !strings.Contains(got, `site_slug: "berlin-dc"`) {
+	if !strings.Contains(got, `site: "berlin-dc"`) {
 		t.Error("the human's completed field was overwritten")
 	}
 }

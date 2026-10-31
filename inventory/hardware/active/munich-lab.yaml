@@ -4,13 +4,20 @@
 # hardware batch keeps each device down to its name, position and addresses.
 
 defaults:
-  site_slug: "munich-lab"
-  role_slug: "server"
-  device_type_slug: "poweredge-r740"
-  rack_slug: "munich-lab-rack-01"
+  site: "munich-lab"
+  role: "server"
+  device_type: "poweredge-r740"
+  rack: "munich-lab-rack-01"
   face: "front"
-  status: "active"
-  tags: ["gitops", "lab", "development"]
+  tags: ["lab", "development"]
+  interfaces:
+    idrac:
+      description: "Dell iDRAC interface"
+      ip: { status: "active", vrf: "Lab" }
+    eth0:
+      description: "Primary lab interface"
+      ip: { status: "active", vrf: "Lab" }
+      address_role: "primary"
 
 devices:
   - name: "munich-lab-srv-01"
@@ -19,18 +26,7 @@ devices:
 
     interfaces:
       - name: "idrac"
-        description: "Dell iDRAC interface"
-        ip:
-          address: "192.168.100.10/24"
-          dns_name: "munich-lab-srv-01-idrac.lab.example.com"
-          status: "active"
-          vrf: "Lab"
+        ip: { address: "192.168.100.10/24", dns_name: "munich-lab-srv-01-idrac.lab.example.com" }
 
       - name: "eth0"
-        description: "Primary lab interface"
-        ip:
-          address: "192.168.200.10/24"
-          dns_name: "munich-lab-srv-01.lab.example.com"
-          status: "active"
-          vrf: "Lab"
-        address_role: "primary"
+        ip: { address: "192.168.200.10/24", dns_name: "munich-lab-srv-01.lab.example.com" }

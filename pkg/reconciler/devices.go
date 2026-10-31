@@ -246,7 +246,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	// A bay-mounted device is the exception: NetBox derives its location from
 	// the parent and installDeviceIntoBay has to clear rack/position/face to
 	// install it, so sending a rack here would be undone on install and
-	// re-sent on the next run forever. Inventory files commonly set rack_slug
+	// re-sent on the next run forever. Inventory files commonly set `rack`
 	// in a shared `defaults` block, so a blade inherits one it must not use.
 	switch {
 	case deviceBayID > 0:
@@ -316,6 +316,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		return err
 	}
 
+	setTags(dr.client, payload, device.Tags, "device", device.Name)
 	deviceObj, err := dr.client.Apply("dcim", "devices", lookup, payload)
 	if err != nil {
 		return fmt.Errorf("failed to apply device: %w", err)
@@ -441,6 +442,7 @@ func (dr *DeviceReconciler) reconcileInterfaces(deviceID int, device *models.Dev
 		if err != nil {
 			return err
 		}
+		setTags(dr.client, payload, iface.Tags, "interface", device.Name+" "+iface.Name)
 		ifaceObj, err := dr.client.Apply("dcim", "interfaces", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to apply interface %s: %w", iface.Name, err)
@@ -508,15 +510,30 @@ func (dr *DeviceReconciler) reconcileLAGMembers(deviceID int, device *models.Dev
 				continue
 			}
 			dr.logger.Debug("      LAG %s ← member %s", iface.Name, member)
+			payload := map[string]interface{}{"device": deviceID, "name": member, "lag": lagID}
+			// The client stamps tags on every payload, so the member's own
+			// declared tags must ride along or binding it would strip them.
+			setTags(dr.client, payload, declaredInterfaceTags(device, member), "interface", device.Name+" "+member)
 			if _, err := dr.client.Apply("dcim", "interfaces",
 				map[string]interface{}{"device_id": deviceID, "name": member},
-				map[string]interface{}{"device": deviceID, "name": member, "lag": lagID},
+				payload,
 			); err != nil {
 				return fmt.Errorf("failed to bind %s into LAG %s: %w", member, iface.Name, err)
 			}
 		}
 	}
 
+	return nil
+}
+
+// declaredInterfaceTags returns the tags a device declares on one of its
+// interfaces, nil when the interface is not listed.
+func declaredInterfaceTags(device *models.DeviceConfig, name string) []string {
+	for _, iface := range device.Interfaces {
+		if iface.Name == name {
+			return iface.Tags
+		}
+	}
 	return nil
 }
 
@@ -572,6 +589,7 @@ func (dr *DeviceReconciler) reconcileIPAddress(deviceID, ifaceID int, iface *mod
 		}
 	}
 
+	setTags(dr.client, payload, ipConfig.Tags, "IP address", ipConfig.Address)
 	ipObj, err := dr.client.Apply("ipam", "ip-addresses", lookup, payload)
 	if err != nil {
 		return fmt.Errorf("failed to apply IP address: %w", err)
@@ -697,10 +715,7 @@ func (dr *DeviceReconciler) reconcileModules(deviceID int, device *models.Device
 			payload["description"] = module.Description
 		}
 
-		// Add managed tag if available
-		if dr.client.ManagedTagID() > 0 {
-			payload["tags"] = []int{dr.client.ManagedTagID()}
-		}
+		setTags(dr.client, payload, module.Tags, "module", device.Name+" "+module.Name)
 
 		lookup := map[string]interface{}{
 			"device_id":     deviceID,
@@ -886,6 +901,7 @@ func (dr *DeviceReconciler) reconcileFrontPorts(deviceID int, device *models.Dev
 			"name":      port.Name,
 		}
 
+		setTags(dr.client, payload, port.Tags, "front port", device.Name+" "+port.Name)
 		portObj, err := dr.client.Apply("dcim", "front-ports", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to apply front port %s: %w", port.Name, err)
@@ -943,6 +959,7 @@ func (dr *DeviceReconciler) reconcileRearPorts(deviceID int, device *models.Devi
 			"name":      port.Name,
 		}
 
+		setTags(dr.client, payload, port.Tags, "rear port", device.Name+" "+port.Name)
 		portObj, err := dr.client.Apply("dcim", "rear-ports", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to apply rear port %s: %w", port.Name, err)

@@ -126,7 +126,7 @@ absent  "the scan did not write a model"                "${SERVERS}" "PowerEdge 
 absent  "the scan did not write a manufacturer"         "${SERVERS}" "Dell Inc."
 # The file around the edit is intact.
 contains "the file's own comments survived"             "${SERVERS}" "# Example Server Inventory for Testing"
-contains "the defaults block survived"                  "${SERVERS}" 'device_type_slug: "example-server-r100"'
+contains "the defaults block survived"                  "${SERVERS}" 'device_type: "example-server-r100"'
 contains "cabling survived"                             "${SERVERS}" 'peer_port: "GigabitEthernet1/0/1"'
 # Only the edited device's block moved.
 if diff "${ORIGINAL}" "${SERVERS}" | grep -q '^< '; then
@@ -143,10 +143,10 @@ contains "the run named it in the summary"        "${WORK}/apply.log" "_unknown-
 contains "it says it is not applied"              "${SKELETON}" "NOT APPLIED"
 contains "it carries what the scan knew"          "${SKELETON}" 'serial: "UNKNOWN-42"'
 contains "and the hardware facts"                 "${SKELETON}" "hw_cpu_cores: 64"
-contains "it marks the site as unknown"           "${SKELETON}" 'site_slug: "TODO"'
-contains "and the rack"                           "${SKELETON}" 'rack_slug: "TODO"'
-contains "and the role"                           "${SKELETON}" 'role_slug: "TODO"'
-contains "and the device type"                    "${SKELETON}" 'device_type_slug: "TODO"'
+contains "it marks the site as unknown"           "${SKELETON}" 'site: "TODO"'
+contains "and the rack"                           "${SKELETON}" 'rack: "TODO"'
+contains "and the role"                           "${SKELETON}" 'role: "TODO"'
+contains "and the device type"                    "${SKELETON}" 'device_type: "TODO"'
 contains "it records the address it answered on"  "${SKELETON}" "management address: 10.0.9.9"
 
 # Parked, so the reconciler's loader never sees it.

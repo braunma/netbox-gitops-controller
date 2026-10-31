@@ -46,6 +46,7 @@ func (nr *NetworkReconciler) ReconcileVRFs(vrfs []*models.VRF) error {
 			renameField: "name",
 			renameFrom:  nonEmpty(vrf.RenameFrom),
 			payload:     payload,
+			tags:        vrf.Tags,
 			// Register so a VRF created in this same run resolves for the
 			// prefixes and interfaces that reference it later. Without this,
 			// the global cache — loaded once, before any phase — still has no
@@ -100,6 +101,7 @@ func (nr *NetworkReconciler) ReconcileVLANGroups(groups []*models.VLANGroup) err
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(group.RenameFrom),
 			payload:     payload,
+			tags:        group.Tags,
 			// Seed the cache so VLANs reconciled later in this phase can
 			// resolve their group. Site caches (which hold vlan_groups) are
 			// not loaded until the device phase, so without this the group
@@ -181,6 +183,7 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 			renameField: "vid",
 			renameFrom:  nonEmpty(vlan.RenameFrom),
 			payload:     payload,
+			tags:        vlan.Tags,
 			// Seed the cache so prefixes reconciled later in this phase can
 			// resolve their VLAN. VLANs are site-scoped and not loaded into
 			// the cache until the device phase, so without this the site-aware
@@ -272,6 +275,7 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 			renameField: "prefix",
 			renameFrom:  nonEmpty(prefix.RenameFrom),
 			payload:     payload,
+			tags:        prefix.Tags,
 		}); err != nil {
 			return err
 		}

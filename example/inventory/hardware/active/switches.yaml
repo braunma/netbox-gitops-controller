@@ -6,14 +6,13 @@
 # file just documents switch-specific settings.
 
 - name: "example-switch-01"
-  device_type_slug: "example-switch-48"
-  role_slug: "switch"
-  site_slug: "berlin-dc"
-  rack_slug: "rack-a01"
+  device_type: "example-switch-48"
+  role: "switch"
+  site: "berlin-dc"
+  rack: "rack-a01"
   position: 1
   face: "front"
-  status: "active"
-  tags: ["gitops", "production"]
+  tags: ["production"]
   interfaces:
     - name: "GigabitEthernet1/0/1"
       description: "Downlink to example-server-01"

@@ -35,10 +35,52 @@ DELL_CHASSIS = ("PowerEdge MX7000","MX7000",7,8)
 DELL_SLED    = ("PowerEdge MX750c","MX750c")
 DELL_PANEL   = ("Dell Networking Patch Panel 24","PP-24",1)
 
+# The short field names the loader accepts for the canonical keys, by the
+# folder a file lives in (pkg/models/aliases.go is the source of truth). The
+# generator builds every object with the canonical keys, which it also uses
+# for its own lookups, and spells each object's references one way or the
+# other at write time, so every seed exercises both spellings.
+SHORT_NAMES = {
+    "/hardware/": {"site_slug":"site","role_slug":"role","device_type_slug":"device_type","rack_slug":"rack"},
+    "/virtual/": {"site_slug":"site","role_slug":"role"},
+    "/racks/": {"site_slug":"site"},
+    "/vlans/": {"site_slug":"site","group_slug":"group"},
+    "/vlan_groups/": {"site_slug":"site"},
+    "/prefixes/": {"site_slug":"site","vrf_name":"vrf","vlan_name":"vlan"},
+    "/tenants/": {"group_slug":"group"},
+    "/tenant_groups/": {"parent_slug":"parent"},
+    "/clusters/": {"type_slug":"type","group_slug":"group","site_slug":"site"},
+}
+MODULE_SHORT_NAMES = {"module_type_slug":"module_type"}
+
+# The data directory being generated, so spell() can hang its choice off a
+# file's path inside it rather than the absolute path, which includes the
+# run's temporary directory and would make a seed irreproducible.
+ROOT = ""
+
+def spell(path, data):
+    """Rewrite each object's reference keys to the short form for about half of
+    the objects. The choice hangs off the file's path within the data directory
+    and the object's position, not the seed's generator, so the rest of a
+    seed's dataset stays unchanged and the same seed gives the same files."""
+    table = next((t for d, t in SHORT_NAMES.items() if d in path), None)
+    if table is None or not isinstance(data, list):
+        return data
+    rel = os.path.relpath(path, ROOT) if ROOT else path
+    out = []
+    for i, obj in enumerate(data):
+        if not isinstance(obj, dict) or random.Random(f"{rel}:{i}").random() < 0.5:
+            out.append(obj); continue
+        obj = {table.get(k, k): v for k, v in obj.items()}
+        if isinstance(obj.get("modules"), list):
+            obj["modules"] = [{MODULE_SHORT_NAMES.get(k, k): v for k, v in m.items()} for m in obj["modules"]]
+        out.append(obj)
+    return out
+
 def w(path, data):
     os.makedirs(os.path.dirname(path), exist_ok=True)
     with open(path,"w") as f:
-        yaml.safe_dump(data, f, sort_keys=False, allow_unicode=True, default_flow_style=False)
+        yaml.safe_dump(spell(path, data), f, sort_keys=False, allow_unicode=True, default_flow_style=False)
 
 def slugify(s):
     """Mirror of utils.Slugify, for predicting a library module type's key."""
@@ -65,6 +107,8 @@ def to_library(dt, kind="device"):
     return out
 
 def gen(root, seed):
+    global ROOT
+    ROOT = root
     rnd = random.Random(seed)
     shutil.rmtree(root, ignore_errors=True)
     D, I = f"{root}/definitions", f"{root}/inventory"

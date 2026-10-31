@@ -107,6 +107,9 @@ type FrontPortConfig struct {
 }
 
 // ModuleConfig represents a module configuration (e.g., installed GPU)
+//
+// In YAML the references are usually written by their short names (module_type
+// for module_type_slug); see YAMLAliases.
 type ModuleConfig struct {
 	Name           string   `yaml:"name" json:"name" validate:"required"`
 	ModuleTypeSlug string   `yaml:"module_type_slug" json:"module_type_slug" validate:"required"`
@@ -118,6 +121,9 @@ type ModuleConfig struct {
 }
 
 // DeviceConfig represents a device configuration (concrete device)
+//
+// In YAML the references are usually written by their short names (site, role,
+// device_type and rack for the *_slug keys); see YAMLAliases.
 type DeviceConfig struct {
 	Name     string `yaml:"name" json:"name" validate:"required"`
 	SiteSlug string `yaml:"site_slug" json:"site_slug" validate:"required"`

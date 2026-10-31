@@ -3,24 +3,20 @@
 
 - name: "Berlin DC"
   slug: "berlin-dc"
-  status: "active"
   time_zone: "Europe/Berlin"
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 - name: "Frankfurt DC"
   slug: "frankfurt-dc"
-  status: "active"
   time_zone: "Europe/Berlin"
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 - name: "Munich Lab"
   slug: "munich-lab"
-  status: "active"
   time_zone: "Europe/Berlin"
-  tags: ["gitops", "development"]
+  tags: ["development"]
 
 - name: "Hamburg DR"
   slug: "hamburg-dr"
-  status: "active"
   time_zone: "Europe/Berlin"
-  tags: ["gitops", "disaster-recovery"]
+  tags: ["disaster-recovery"]

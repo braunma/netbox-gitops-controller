@@ -7,6 +7,7 @@
 package loader
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -326,15 +327,22 @@ func loadKind[T models.Validator](dl *DataLoader, folder string) ([]T, error) {
 		return nil, nil
 	}
 
+	// Every file is read even after one fails, so a single run reports the
+	// problems of all of them.
 	var objects []T
+	var errs []error
 	for _, file := range yamlFiles {
 		declared, err := declaredFromFile[T](file, false)
 		if err != nil {
-			return nil, fmt.Errorf("failed to load %s: %w", file, err)
+			errs = append(errs, err)
+			continue
 		}
 		for _, d := range declared {
 			objects = append(objects, d.Object)
 		}
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
 	}
 	return objects, nil
 }

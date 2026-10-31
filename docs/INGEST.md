@@ -245,10 +245,10 @@ markers for everything it does not:
 
 ```yaml
 - name: "mystery-box" # TODO: the name this device should carry in NetBox
-  site_slug: "TODO" # TODO
-  role_slug: "TODO" # TODO
-  device_type_slug: "TODO" # TODO — the scan reports the model as PowerEdge R7615
-  rack_slug: "TODO" # TODO
+  site: "TODO" # TODO
+  role: "TODO" # TODO
+  device_type: "TODO" # TODO — the scan reports the model as PowerEdge R7615
+  rack: "TODO" # TODO
   position: 0 # TODO: lowest rack unit the chassis occupies
   face: "front" # TODO: front or rear
   serial: "UNKNOWN-42"

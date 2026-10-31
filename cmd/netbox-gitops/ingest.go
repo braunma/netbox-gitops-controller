@@ -293,7 +293,7 @@ func processSnapshot(snap *discovery.Snapshot, tracker *ingest.ConflictTracker, 
 	// useless. LoadInventoryWithProvenance handles that itself.
 	inv, err := dl.LoadInventoryWithProvenance()
 	if err != nil {
-		return false, err
+		return false, reportLoadProblems(logger, err, "no file was written")
 	}
 
 	plan, err := ingest.BuildPlan(snap, inv, ingest.Options{

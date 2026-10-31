@@ -41,6 +41,7 @@ func (cm *CacheManager) LoadGlobal() error {
 		"cluster_types":  "virtualization/cluster-types",
 		"cluster_groups": "virtualization/cluster-groups",
 		"clusters":       "virtualization/clusters",
+		"tags":           "extras/tags",
 	}
 
 	for resource, path := range resources {

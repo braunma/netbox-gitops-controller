@@ -164,7 +164,7 @@ func TestProvenanceValidatesUnparkedObjects(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected a validation error for a device with no site")
 	}
-	if !strings.Contains(err.Error(), "site_slug") {
+	if !strings.Contains(err.Error(), "site is required") {
 		t.Errorf("error = %q, want it to name the missing field", err)
 	}
 }

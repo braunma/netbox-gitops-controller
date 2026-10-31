@@ -17,7 +17,9 @@ type Validator interface {
 	Validate() error
 }
 
-// requireFields collects an error for every empty required field.
+// requireFields collects an error for every empty required field. Fields are
+// named by the key the YAML is written with, the short form where a model has
+// one (see YAMLAliases).
 func requireFields(fields map[string]string) []error {
 	var errs []error
 	for field, value := range fields {
@@ -46,8 +48,8 @@ func (s *Site) Validate() error {
 // Validate checks required fields of a Rack.
 func (r *Rack) Validate() error {
 	errs := requireFields(map[string]string{
-		"name":      r.Name,
-		"site_slug": r.SiteSlug,
+		"name": r.Name,
+		"site": r.SiteSlug,
 	})
 	errs = appendNonNil(errs,
 		validateChoice("status", r.Status, RackStatuses),
@@ -80,8 +82,8 @@ func (t *Tag) Validate() error {
 // Validate checks required fields and VID range of a VLAN.
 func (v *VLAN) Validate() error {
 	errs := requireFields(map[string]string{
-		"name":      v.Name,
-		"site_slug": v.SiteSlug,
+		"name": v.Name,
+		"site": v.SiteSlug,
 	})
 	if v.VID < 1 || v.VID > 4094 {
 		errs = append(errs, fmt.Errorf("vid must be between 1 and 4094, got %d", v.VID))
@@ -276,10 +278,10 @@ func (d *DeviceType) Validate() error {
 // DeviceConfig, including its nested interface, port, and module configs.
 func (d *DeviceConfig) Validate() error {
 	errs := requireFields(map[string]string{
-		"name":             d.Name,
-		"site_slug":        d.SiteSlug,
-		"device_type_slug": d.DeviceTypeSlug,
-		"role_slug":        d.RoleSlug,
+		"name":        d.Name,
+		"site":        d.SiteSlug,
+		"device_type": d.DeviceTypeSlug,
+		"role":        d.RoleSlug,
 	})
 
 	if d.ParentDevice != "" && d.DeviceBay == "" {
@@ -339,7 +341,7 @@ func (d *DeviceConfig) Validate() error {
 			continue
 		}
 		if mod.ModuleTypeSlug == "" {
-			errs = append(errs, fmt.Errorf("module %q: module_type_slug is required", mod.Name))
+			errs = append(errs, fmt.Errorf("module %q: module_type is required", mod.Name))
 		}
 	}
 
@@ -412,8 +414,8 @@ func (c *ClusterGroup) Validate() error {
 // Validate checks required fields of a Cluster.
 func (c *Cluster) Validate() error {
 	errs := requireFields(map[string]string{
-		"name":      c.Name,
-		"type_slug": c.TypeSlug,
+		"name": c.Name,
+		"type": c.TypeSlug,
 	})
 	errs = appendNonNil(errs, validateRename("name", c.RenameFrom, c.Name))
 	return wrap("cluster", c.Name, errs)
@@ -426,7 +428,7 @@ func (v *VMConfig) Validate() error {
 	errs := requireFields(map[string]string{"name": v.Name})
 
 	if v.Cluster == "" && v.SiteSlug == "" {
-		errs = append(errs, errors.New("one of cluster or site_slug is required"))
+		errs = append(errs, errors.New("one of cluster or site is required"))
 	}
 	errs = appendNonNil(errs,
 		validateChoice("status", v.Status, VMStatuses),
@@ -480,7 +482,59 @@ func wrap(kind, name string, errs []error) error {
 	if name == "" {
 		name = "<unnamed>"
 	}
-	return fmt.Errorf("%s %q: %w", kind, name, errors.Join(errs...))
+	// Each problem keeps the object in front of it, so a list of them reads
+	// line by line without losing which object a line is about.
+	wrapped := make([]error, len(errs))
+	for i, err := range errs {
+		wrapped[i] = fmt.Errorf("%s %q: %w", kind, name, err)
+	}
+	return errors.Join(wrapped...)
+}
+
+// KindOf names a model the way its validation errors do ("device", "virtual
+// machine", ...), so an error found before validation can say the same.
+func KindOf(v Validator) string {
+	switch v.(type) {
+	case *Site:
+		return "site"
+	case *Rack:
+		return "rack"
+	case *Role:
+		return "role"
+	case *Tag:
+		return "tag"
+	case *VLAN:
+		return "vlan"
+	case *VLANGroup:
+		return "vlan group"
+	case *VRF:
+		return "vrf"
+	case *Prefix:
+		return "prefix"
+	case *ModuleType:
+		return "module type"
+	case *DeviceType:
+		return "device type"
+	case *DeviceConfig:
+		return "device"
+	case *Platform:
+		return "platform"
+	case *TenantGroup:
+		return "tenant group"
+	case *CustomField:
+		return "custom field"
+	case *Tenant:
+		return "tenant"
+	case *ClusterType:
+		return "cluster type"
+	case *ClusterGroup:
+		return "cluster group"
+	case *Cluster:
+		return "cluster"
+	case *VMConfig:
+		return "virtual machine"
+	}
+	return "object"
 }
 
 // validateRename checks a declared rename_from against the identity it is meant

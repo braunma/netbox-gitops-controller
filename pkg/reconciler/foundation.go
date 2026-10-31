@@ -53,6 +53,7 @@ func (fr *FoundationReconciler) ReconcileSites(sites []*models.Site) error {
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(site.RenameFrom),
 			payload:     payload,
+			tags:        site.Tags,
 			// Register so later phases (racks, VLANs, devices) can resolve a
 			// site created in this same run, including in --dry-run where it
 			// is not written to NetBox.
@@ -108,9 +109,10 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 			renameField: "name",
 			renameFrom:  nonEmpty(rack.RenameFrom),
 			payload:     payload,
+			tags:        rack.Tags,
 			// NetBox racks have no slug of their own — they are identified by
 			// name within a site — so the YAML slug exists only here. Register
-			// it (and the name) site-scoped, or a device's rack_slug resolves
+			// it (and the name) site-scoped, or a device's `rack` resolves
 			// nothing and the device is silently created with no rack,
 			// position or face.
 			register: func(id int) {
@@ -187,6 +189,7 @@ func (fr *FoundationReconciler) ReconcilePlatforms(platforms []*models.Platform)
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(platform.RenameFrom),
 			payload:     payload,
+			tags:        platform.Tags,
 		}); err != nil {
 			return err
 		}
@@ -225,6 +228,7 @@ func (fr *FoundationReconciler) ReconcileTenantGroups(groups []*models.TenantGro
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(group.RenameFrom),
 			payload:     payload,
+			tags:        group.Tags,
 		}); err != nil {
 			return err
 		}
@@ -263,6 +267,7 @@ func (fr *FoundationReconciler) ReconcileTenants(tenants []*models.Tenant) error
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(tenant.RenameFrom),
 			payload:     payload,
+			tags:        tenant.Tags,
 		}); err != nil {
 			return err
 		}
@@ -337,6 +342,11 @@ func (fr *FoundationReconciler) ReconcileTags(tags []*models.Tag) error {
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(tag.RenameFrom),
 			payload:     payload,
+			// Register so objects reconciled later in this run can carry a
+			// tag defined in this same run.
+			register: func(id int) {
+				fr.client.Cache().Register("tags", id, tag.Slug, tag.Name)
+			},
 		}); err != nil {
 			return err
 		}

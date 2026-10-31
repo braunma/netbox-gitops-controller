@@ -3,6 +3,7 @@
 package client
 
 import (
+	"reflect"
 	"testing"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -715,5 +716,20 @@ func TestTrimStringValues(t *testing.T) {
 	}
 	if nested, ok := got["nested"].(map[string]interface{}); !ok || nested["keep"] != " untouched " {
 		t.Errorf("nested = %v, want nested values left alone", got["nested"])
+	}
+}
+
+// TestInjectTagKeepsIntTags verifies that declared tags sent as []int, the
+// shape the reconcilers build, survive with the managed tag added once.
+func TestInjectTagKeepsIntTags(t *testing.T) {
+	tm := &TagManager{}
+	got := tm.InjectTag(map[string]interface{}{"tags": []int{7, 9}}, 9)["tags"]
+	want := []int{7, 9}
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("tags = %v, want %v (managed tag 9 already present)", got, want)
+	}
+	got = tm.InjectTag(map[string]interface{}{"tags": []int{7}}, 9)["tags"]
+	if !reflect.DeepEqual(got, []int{7, 9}) {
+		t.Errorf("tags = %v, want [7 9]", got)
 	}
 }

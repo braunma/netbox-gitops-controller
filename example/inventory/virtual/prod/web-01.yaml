@@ -8,14 +8,14 @@
   vm_template_id: 800              # template VMID this VM was cloned from (documentation)
   node: "pve-01"                   # hypervisor node it runs on (documentation)
   cluster: "berlin-prod-cluster"   # clustered VM; inherits the cluster's site
-  role_slug: "vm"                  # role must have vm_role: true
+  role: "vm"                       # role must have vm_role: true
   platform: "ubuntu-22-04"
   tenant: "platform-engineering"
   status: "active"
   vcpus: 4
   memory: 8192                     # MB
   disk: 100                        # GB
-  tags: ["gitops", "production"]
+  tags: ["production"]
   interfaces:
     - name: "eth0"
       enabled: true

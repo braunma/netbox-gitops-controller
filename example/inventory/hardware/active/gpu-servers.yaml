@@ -2,39 +2,34 @@
 # This demonstrates module installation with managed tags
 
 - name: "example-gpu-server-01"
-  device_type_slug: "example-gpu-server"
-  role_slug: "server"
-  site_slug: "berlin-dc"
-  rack_slug: "rack-a01"
+  device_type: "example-gpu-server"
+  role: "server"
+  site: "berlin-dc"
+  rack: "rack-a01"
   position: 30
   face: "front"
-  status: "active"
   serial: "GPU-SRV-001"
   asset_tag: "GPU-001"
-  tags: ["gitops", "production", "gpu"]
+  tags: ["production", "gpu"]
 
   # Modules demonstrate the managed tag feature
   modules:
     - name: "GPU-1"
-      module_type_slug: "ex-gpu-a100"
-      status: "active"
+      module_type: "ex-gpu-a100"
       serial: "GPU-CARD-001"
       description: "Primary GPU"
 
     - name: "GPU-2"
-      module_type_slug: "ex-gpu-a100"
-      status: "active"
+      module_type: "ex-gpu-a100"
       serial: "GPU-CARD-002"
       description: "Secondary GPU"
 
     - name: "GPU-3"
-      module_type_slug: "ex-gpu-a100"
-      status: "active"
+      module_type: "ex-gpu-a100"
       serial: "GPU-CARD-003"
 
     - name: "GPU-4"
-      module_type_slug: "ex-gpu-a100"
-      status: "active"
+      module_type: "ex-gpu-a100"
       # No serial - will be set to empty string
 
   # eth0/eth1 come from the device type template; only overrides are listed

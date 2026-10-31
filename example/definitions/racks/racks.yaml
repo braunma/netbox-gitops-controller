@@ -1,25 +1,26 @@
 # Example Racks for Testing
+#
+# Grouped form: every field under `defaults` is merged into each rack in
+# `items`, so a rack lists only what sets it apart. A rack's own value wins over
+# the default; `tags` are combined. The form works for every definition kind,
+# not just inventory.
+#
+# `status` and the `gitops` tag are not written here: an omitted status is
+# "active", and the tool stamps its own tag on everything it manages.
 
-- name: "Rack A-01"
-  slug: "rack-a01"
-  site_slug: "berlin-dc"
-  status: "active"
+defaults:
+  site: "berlin-dc"
   u_height: 42
-  desc_units: true
-  tags: ["gitops"]
 
-- name: "Rack A-02"
-  slug: "rack-a02"
-  site_slug: "berlin-dc"
-  status: "active"
-  u_height: 42
-  desc_units: true
-  tags: ["gitops"]
+items:
+  - name: "Rack A-01"
+    slug: "rack-a01"
 
-- name: "Test Rack"
-  slug: "test-rack"
-  site_slug: "test-lab"
-  status: "active"
-  u_height: 24
-  desc_units: true
-  tags: ["gitops", "development"]
+  - name: "Rack A-02"
+    slug: "rack-a02"
+
+  - name: "Test Rack"
+    slug: "test-rack"
+    site: "test-lab"
+    u_height: 24
+    tags: ["development"]

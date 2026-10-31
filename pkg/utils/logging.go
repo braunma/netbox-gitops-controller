@@ -38,6 +38,12 @@ func NewLogger(dryRun bool) *Logger {
 	return &Logger{dryRun: dryRun, out: defaultOutput}
 }
 
+// NewDiscardLogger creates a logger whose non-error output goes nowhere, for a
+// pass whose progress messages would only repeat those of the real one.
+func NewDiscardLogger() *Logger {
+	return &Logger{out: io.Discard}
+}
+
 // writer returns the logger's output, falling back to the package default
 // so that nil or directly constructed loggers keep working.
 func (l *Logger) writer() io.Writer {

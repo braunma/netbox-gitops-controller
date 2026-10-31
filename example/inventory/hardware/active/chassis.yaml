@@ -3,41 +3,38 @@
 
 # Parent chassis device
 - name: "example-chassis-01"
-  device_type_slug: "example-blade-chassis"
-  role_slug: "server"
-  site_slug: "berlin-dc"
-  rack_slug: "rack-a01"
+  device_type: "example-blade-chassis"
+  role: "server"
+  site: "berlin-dc"
+  rack: "rack-a01"
   position: 20
   face: "front"
-  status: "active"
   serial: "CHASSIS-001"
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 # Blade servers installed in chassis bays
 # These demonstrate the parent_device and device_bay features.
 # eth0 comes from the blade device type template (type/enabled not repeated).
 - name: "example-blade-01"
-  device_type_slug: "example-blade-server"
-  role_slug: "server"
-  site_slug: "berlin-dc"
+  device_type: "example-blade-server"
+  role: "server"
+  site: "berlin-dc"
   parent_device: "example-chassis-01"  # Parent device
   device_bay: "Blade-1"                # Bay on parent to install into
-  status: "active"
   serial: "BLADE-001"
-  tags: ["gitops", "production"]
+  tags: ["production"]
   interfaces:
     - name: "eth0"
       description: "Management interface"
 
 - name: "example-blade-02"
-  device_type_slug: "example-blade-server"
-  role_slug: "server"
-  site_slug: "berlin-dc"
+  device_type: "example-blade-server"
+  role: "server"
+  site: "berlin-dc"
   parent_device: "example-chassis-01"
   device_bay: "Blade-2"
-  status: "active"
   serial: "BLADE-002"
-  tags: ["gitops", "production"]
+  tags: ["production"]
   interfaces:
     - name: "eth0"
       description: "Management interface"

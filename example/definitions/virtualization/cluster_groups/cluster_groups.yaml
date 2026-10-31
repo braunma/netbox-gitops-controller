@@ -4,4 +4,3 @@
 - name: "Production"
   slug: "production"
   description: "Production virtualization clusters"
-  tags: ["gitops"]

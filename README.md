@@ -246,9 +246,10 @@ A device installs a module by naming its bay and the module type:
 ```yaml
 modules:
   - name: OCP-1                       # the module bay on the device
-    module_type_slug: dell-ocp-25g
+    module_type: dell-ocp-25g
 ```
 
+(`module_type_slug:` is accepted as well; see [Field names](#field-names).)
 The slug is a local reference key, not something NetBox stores:
 
   * A module type defined **natively** uses the `slug` you gave it.
@@ -261,7 +262,7 @@ the bare name is ambiguous and is **not** accepted; use the
 manufacturer-qualified form, which always works:
 
 ```yaml
-    module_type_slug: dell/sfp-10g-sr
+    module_type: dell/sfp-10g-sr
 ```
 
 A run that detects the ambiguity warns and lists the qualified keys to use, so
@@ -273,36 +274,38 @@ installing another vendor's hardware.
 File: `inventory/hardware/active/servers.yaml`
 
 Inventory files support a grouped form: fields under `defaults` are merged
-into every device in the file (device values win, `tags` are combined).
+into every device in the file (device values win, `tags` are combined). The
+same form works for every definition kind too — racks, VLANs, prefixes and so
+on — with the list under `items:` instead of `devices:` (either key is
+accepted in any file, but not both at once).
 Since the ports already come from the device type template, an interface is
 only listed here when it carries device-specific data — IPs, VLANs, cabling —
 without repeating `type` or `enabled`.
 
 ```yaml
 defaults:
-  site_slug: "berlin"
-  role_slug: "server"
-  device_type_slug: "dell-r640"
-  rack_slug: "rack-a01"
-  status: "active"
-  tags: ["gitops", "production"]
+  site: "berlin"
+  role: "server"
+  device_type: "dell-r640"
+  rack: "rack-a01"
+  tags: ["production"]
+  interfaces:                    # per interface name, see below
+    idrac:
+      description: "Dell iDRAC"
+      ip: { vrf: "Management" }
+    eth0:
+      ip: { vrf: "Production" }
+      address_role: "primary"    # sets the primary IP on the device
 
 devices:
   - name: "srv-web-01"
     position: 10
     interfaces:
       - name: "idrac"
-        ip: "10.0.10.50/24"   # string shorthand for `ip: { address: ... }`
-
+        ip: "10.0.10.50/24"      # string shorthand for `ip: { address: ... }`
       - name: "eth0"
-        ip:
-          address: "10.0.20.50/24"
-          vrf: "Production"
-        address_role: "primary"  # Sets the Primary IP on the Device object
-        link:
-          peer_device: "sw-leaf-01"
-          peer_port: "Eth1/1"
-          cable_type: "cat6a"    # Optional
+        ip: "10.0.20.50/24"
+        link: { peer_device: "sw-leaf-01", peer_port: "Eth1/1", cable_type: "cat6a" }
 
   - name: "srv-web-02"
     position: 12
@@ -313,6 +316,49 @@ devices:
 
 The classic form — a plain YAML list of devices — is still fully supported;
 `defaults` is just a shortcut, and every field can still be set per device.
+
+#### Interface defaults
+
+Under `defaults`, `interfaces` is a mapping from an interface **name** to the
+fields every interface of that name gets. It works in device and VM files.
+
+  * It applies only to interfaces a device **lists**; it never adds one. A
+    device that should get the defaults lists the interface, if only by name
+    (`- name: "eth1"`).
+  * The device's own values win. Nested mappings — `ip`, `link` — are merged
+    key by key, so a default `ip: { vrf: ... }` combines with the device's
+    `ip: "10.0.0.5/24"` shorthand. `tags` are combined.
+  * An `ip` default is for the interfaces that have an address and a `link`
+    default for those that are cabled: an interface listed by name alone gets
+    neither block, only the other fields.
+  * A name under `defaults.interfaces` that no device in the file lists is an
+    error (it is a typo or a leftover), and so is a field the interface does
+    not have.
+
+#### Field names
+
+References to other objects use the short name of the object they point at.
+The longer spelling the repository used before is still accepted; writing
+both forms of one field in the same mapping is an error.
+
+| Object | Short name | Also accepted |
+|---|---|---|
+| device | `site`, `role`, `device_type`, `rack` | `site_slug`, `role_slug`, `device_type_slug`, `rack_slug` |
+| device module | `module_type` | `module_type_slug` |
+| rack, VLAN group | `site` | `site_slug` |
+| VLAN | `site`, `group` | `site_slug`, `group_slug` |
+| prefix | `site`, `vrf`, `vlan` | `site_slug`, `vrf_name`, `vlan_name` |
+| tenant | `group` | `group_slug` |
+| tenant group | `parent` | `parent_slug` |
+| cluster | `site`, `type`, `group` | `site_slug`, `type_slug`, `group_slug` |
+| VM | `site`, `role` | `site_slug`, `role_slug` |
+
+Every key is checked against the object it belongs to, nested ones (an
+interface's `ip`, a module) included. A misspelled field — `vfr:` for `vrf:`,
+`rack_name:` for `rack:` — fails the load with the file, the entry and the
+path to the key, and a suggestion where one is obvious, instead of being
+dropped without a word as it was before. `custom_fields` is free-form and not
+checked.
 
 ### Step 3: Configure Switch Ports & VLANs
 
@@ -354,7 +400,22 @@ File: `inventory/hardware/active/switches.yaml`
     but means every re-patch is a two-file edit.
   * **Group shared fields in `defaults`.** One file per rack, role or
     hardware batch with a `defaults` block keeps each device down to its name,
-    position and IPs.
+    position and IPs. Definitions take the same block with an `items:` list,
+    e.g. `defaults: { site: "berlin-dc", u_height: 42 }` for a site's
+    racks.
+  * **Put what every BMC or uplink shares in `defaults.interfaces`.** The
+    description, VRF, status and `address_role` of `idrac` or `eth0` are the
+    same on every server of a batch; written once under the interface's name,
+    each device keeps only its addresses and its cable. See
+    [Interface defaults](#interface-defaults).
+  * **Use the short field names.** `site`, `role`, `device_type`, `rack` and
+    the others in [Field names](#field-names) are what the bundled files use;
+    the `*_slug` spellings still load but read worse.
+  * **Leave out what is already the default.** `tags: ["gitops"]` is never
+    needed — the managed tag is stamped on every object automatically — and
+    `status: "active"` is what sites, racks, VLANs, prefixes, devices and
+    modules get when `status` is omitted. Write `status` only when it is
+    something else.
   * **Start from the parked template.** `inventory/hardware/active/_new-server.yaml`
     holds a filled-in skeleton. The leading underscore parks it, so it is never
     applied (see *Parking a File* below) — copy a block out of it rather than
@@ -366,28 +427,22 @@ With those conventions in place, a new machine in an existing rack is its
 identity and its addresses, and nothing else:
 
 ```yaml
-# inventory/hardware/active/servers.yaml  (defaults supply site, role,
-# device type, rack, face, status and tags)
+# inventory/hardware/active/servers.yaml — `defaults` supplies site, role and
+# face, and `defaults.interfaces` the description, VRF and status of idrac and
+# eth0 and eth0's primary-IP role
   - name: "berlin-srv-web-03"
-    device_type_slug: "poweredge-r740"
-    rack_slug: "berlin-rack-a01"
+    device_type: "poweredge-r740"
+    rack: "berlin-rack-a01"
     position: 14
     serial: "WEB03-SN-KLMNO"
     tags: ["production"]
 
     interfaces:
       - name: "idrac"
-        ip: "10.10.10.103/24"
-
+        ip: { address: "10.10.10.103/24", dns_name: "berlin-srv-web-03-idrac.example.com" }
       - name: "eth0"
-        ip:
-          address: "10.10.20.103/24"
-          vrf: "Production"
-        address_role: "primary"
-        link:
-          peer_device: "berlin-leaf-01"
-          peer_port: "Eth1/4"
-          cable_type: "dac-active"
+        ip: { address: "10.10.20.103/24", dns_name: "berlin-srv-web-03.example.com" }
+        link: { peer_device: "berlin-leaf-01", peer_port: "Eth1/4", cable_type: "dac-active" }
 ```
 
 Then check it before it reaches NetBox:
@@ -403,8 +458,9 @@ when the new port needs a VLAN it does not already have.
 ### Checking the YAML before it reaches NetBox
 
 `yamlcheck` reads the data directory and reports what is wrong with it without
-opening a connection: YAML syntax, then the typed model validation (required
-fields, cross-field constraints, NetBox choice values), then cross-object
+opening a connection — every problem in every file at once, one line each: YAML syntax, then the typed model validation (unknown or
+misspelled keys, required fields, cross-field constraints, NetBox choice
+values), then cross-object
 checks that no single object can see on its own.
 
 ```bash
@@ -428,6 +484,7 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `unknown-lag-member` | a LAG whose `members` name an interface the device does not have |
 | `unknown-module-bay`, `unknown-device-bay`, `missing-device-bay` | a module or child device installed into a bay the parent's device type does not have |
 | `unknown-site`, `unknown-role`, `unknown-rack`, `unknown-device-type`, `unknown-vlan`, `unknown-vrf`, `unknown-module-type`, `unknown-cluster`, `unknown-platform`, `unknown-tenant`, `unknown-parent-device` | a reference that resolves to nothing declared here (VLANs are matched within the device's site, as NetBox resolves them) |
+| `unknown-tag` | a `tags:` entry that names no tag in `definitions/extras` (the managed `gitops` tag is always accepted; silent when the repository defines no tags at all) |
 | `unknown-custom-field`, `custom-field-wrong-type` | a device setting a custom field this repository does not declare, or declares for another content type — the mistake a repository makes when it ingests `hw_*` facts without copying the definitions in |
 | `invalid-ip`, `network-address`, `broadcast-address` | an address that is not a host address (a /31 point-to-point link is not flagged) |
 
@@ -590,7 +647,7 @@ Declare where the object came from and it is renamed in place instead:
 ```yaml
 - name: Rack 01          # was "Rakc 01"
   slug: rack-01
-  site_slug: frankfurt
+  site: frankfurt
   rename_from: Rakc 01   # ← the previous identity
 ```
 
@@ -731,14 +788,81 @@ image — the reverse order used for `--prune` — by
 
 ### The `gitops` Tag
 
-  * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`).
+  * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`). You never write `gitops` into a `tags:` list yourself.
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
   * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
 
+### Your Own Tags
+
+Any object can carry tags of its own — sites, racks, VRFs, VLANs, VLAN groups,
+prefixes, platforms, tenants and tenant groups, device and module types,
+devices, their interfaces, modules, front/rear ports and IP addresses, cluster
+types/groups, clusters, VMs and VM interfaces:
+
+```yaml
+# definitions/extras/tags.yaml — define the tag once
+- name: "Production"
+  slug: "production"
+  color: "f44336"
+
+# anywhere else — reference it by slug (the name works too)
+- name: "berlin-srv-web-01"
+  tags: ["production"]
+  interfaces:
+    - name: "eth0"
+      tags: ["uplink"]
+      ip:
+        address: "10.10.20.101/24"
+        tags: ["dmz"]
+```
+
+  * **The YAML is the full set.** An object ends up with exactly the tags it
+    declares plus `gitops`. Removing a tag from the YAML removes it in NetBox,
+    and a tag added by hand in the UI is replaced on the next sync — as it
+    always was, since the managed tag alone was sent before.
+  * **`defaults` combine.** A `tags:` list under `defaults` is merged with each
+    object's own list rather than replaced by it.
+  * **Undefined tags are left off, not fatal.** A tag that exists neither in
+    `definitions/extras` nor in NetBox is skipped with a warning, and the
+    object is synced without it. `yamlcheck` reports it beforehand as
+    `unknown-tag`.
+
 ### Common Errors
 
-Run `go run ./cmd/yamlcheck` first — the first three below are reported by name
-before a single request is made.
+The first six below are found in the YAML alone. `yamlcheck` reports them, and
+so does every sync before it sends a single request: the whole data directory
+is read and checked first, and any problem stops the run with nothing written.
+Each problem is one line naming the file, the entry and the object:
+
+```text
+✗ inventory/hardware/active/servers.yaml: entry 1: device "srv-01": interfaces[1].ip: unknown field "vfr" (did you mean "vrf"?)
+✗ inventory/hardware/active/servers.yaml: entry 3: device "srv-03": device_type is required
+✗ 2 problem(s) in .; nothing was sent to NetBox. `yamlcheck` reports the same list.
+```
+
+**`… device "srv-01": interfaces[1].ip: unknown field "vfr" (did you mean "vrf"?)`**
+
+  * **Cause:** a key the object does not have — usually a typo, sometimes a
+    field from another object type. The path after the entry number says
+    where; the hint appears when one spelling is clearly meant. Such a key
+    used to be dropped without a word, so the object synced without it; it
+    now stops the load.
+  * **Fix:** correct the key. [Field names](#field-names) lists the reference
+    keys per object type.
+
+**`… device "srv-02": both "site" and "site_slug" are set; they are the same field, keep one`**
+
+  * **Cause:** the short and the long spelling of one field in the same
+    mapping. Across `defaults` and an entry they do not collide — the entry's
+    value wins in either spelling.
+  * **Fix:** delete one of the two lines.
+
+**`….yaml: defaults.interfaces.idrca matches no interface listed in this file`**
+
+  * **Cause:** per-interface defaults apply only to interfaces a device lists,
+    by exact name. A name nobody lists is a typo or a leftover.
+  * **Fix:** correct the name, list the interface on the devices that should
+    get it (`- name: "idrac"` is enough), or delete the block.
 
 **`400 Bad Request: {"face": ["Must specify rack face when defining rack position."]}`**
 
@@ -911,7 +1035,7 @@ them in.
 > Likewise `--only virtualization` assumes its sites, roles, platforms, tenants
 > and VLANs already exist.
 >
-> **Note:** `--site` matches a VM only if the VM declares that `site_slug`
+> **Note:** `--site` matches a VM only if the VM declares that `site`
 > directly; a clustered VM (whose site comes from its cluster) is not matched by
 > `--site`. Use `--vm` to target such a VM by name.
 

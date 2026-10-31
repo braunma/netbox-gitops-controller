@@ -5,22 +5,20 @@
   rd: "65000:100"
   description: "Production VRF - isolated routing for production workloads"
   enforce_unique: true
-  tags: ["gitops", "production"]
+  tags: ["production"]
 
 - name: "Management"
   rd: "65000:10"
   description: "Management VRF - isolated routing for management interfaces"
   enforce_unique: true
-  tags: ["gitops"]
 
 - name: "Storage"
   rd: "65000:30"
   description: "Storage VRF - isolated routing for storage traffic"
   enforce_unique: true
-  tags: ["gitops"]
 
 - name: "Lab"
   rd: "65000:999"
   description: "Lab VRF - isolated routing for lab/testing"
   enforce_unique: false
-  tags: ["gitops", "lab"]
+  tags: ["lab"]

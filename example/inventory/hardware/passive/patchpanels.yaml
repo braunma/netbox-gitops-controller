@@ -1,14 +1,12 @@
 # Example Patch Panel Inventory for Testing
 
 - name: "example-patchpanel-01"
-  device_type_slug: "patch-panel"
-  role_slug: "patch-panel"
-  site_slug: "berlin-dc"
-  rack_slug: "rack-a02"
+  device_type: "patch-panel"
+  role: "patch-panel"
+  site: "berlin-dc"
+  rack: "rack-a02"
   position: 42
   face: "front"
-  status: "active"
-  tags: ["gitops"]
   front_ports:
     - name: "Port 1"
       type: "8p8c"

@@ -12,7 +12,95 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Fixed
+
+- **Declared `tags:` now reach NetBox.** Every model accepted a `tags:` list,
+  but the reconcilers never sent it: each object got the managed `gitops` tag
+  and nothing else, so `tags: ["production"]` was silently ignored. Declared
+  tags are now resolved by slug (or name) and sent with the managed tag, on
+  every kind that has a `tags:` field — including interfaces, IP addresses,
+  modules and ports. The YAML is the full set: a tag removed from the YAML is
+  removed from NetBox. **Upgrade note:** objects whose YAML already lists tags
+  will be updated on the first sync to carry them; read the `--dry-run` plan.
+  A tag that is defined nowhere is skipped with a warning.
+- Binding an interface into its LAG no longer strips the member's own tags.
+
+### Added
+
+- **Short field names.** References use the name of what they point at:
+  `site`, `role`, `device_type`, `rack`, `module_type`, `group`, `parent`,
+  `type`, and on prefixes `vrf`/`vlan`. The previous spellings (`site_slug`,
+  `vrf_name`, ...) keep working; a mapping that sets both forms of one field
+  is rejected. The README lists every one per object type.
+- **Per-interface defaults.** `defaults.interfaces` maps an interface name to
+  fields every listed interface of that name gets, merged key by key into
+  `ip` and `link`. An `ip` default applies only to interfaces that declare an
+  address and a `link` default only to those that declare a peer, so listing
+  an interface by name alone is always enough to opt in. A default name no
+  device in the file lists is an error.
+
+- **`unknown-tag` lint check.** `yamlcheck` reports a `tags:` entry that no
+  tag definition declares. It caught two in the bundled examples (`gpu`,
+  `lab`), which are now defined.
+
+- **The grouped `defaults:` form works for every kind under `items:`.**
+  Racks, VLANs, prefixes and the other definition kinds could already be
+  grouped, but only under a key named `devices:`. The list may now be called
+  `items:`; `devices:` keeps working, and a file with both is rejected rather
+  than loading one list and dropping the other. `definitions/racks/racks.yaml`
+  and the example racks show the form.
+
 ### Changed
+
+- **A sync checks its data before it contacts NetBox.** The phases loaded
+  their files one kind at a time, between writes, so a mistake in
+  `racks.yaml` used to stop the run only after sites, roles and tags had been
+  applied. Every folder the selected phases apply is now loaded and validated
+  first, with the same ignore patterns and libraries; any problem stops the
+  run with nothing sent, and the phases work from that one load instead of
+  reading the files again. A run restricted with `--only` reads only the
+  files of its phases, so a half-written inventory file does not stop a
+  foundation-only sync. `validate` and `ingest` report load problems the
+  same way.
+- **Load problems are listed, all of them, one line each.** A load used to
+  stop at the first bad file, and within an entry at the first unknown key,
+  so fixing a directory took one run per mistake. Now every file, entry and
+  key is checked, and each problem is one line naming the file (relative to
+  the working directory), the entry and the object:
+  `inventory/hardware/active/servers.yaml: entry 3: device "srv-03":
+  device_type is required`. The file is no longer printed twice, and a
+  validation error with several missing fields is several lines, each with
+  its context, instead of one line followed by bare continuations. A value
+  of the wrong type is reported the same way, per field and by its path
+  (`interfaces[1].mtu: cannot unmarshal !!str `big` into int`).
+- **A tag defined in the same `--dry-run` is named in the plan.** It has no
+  ID yet, so it cannot be planned onto its objects; the run now says so per
+  object instead of leaving it out silently. An apply's diff shows a
+  changed tag set as the IDs on each side instead of skipping it.
+- **Short field names everywhere the tool speaks.** Validation errors name
+  the key as it is written now (`site is required`, not `site_slug is
+  required`), and the skeletons `ingest`/`collect` generate use `site:`,
+  `role:`, `device_type:` and `rack:`. **Upgrade note:** a parked VM file
+  that a previous run generated with `site_slug: "TODO"` is rewritten with
+  `site: "TODO"` the next time its source is collected — a one-line diff
+  per VM, nothing else.
+- **An unknown key gets a spelling hint.** `vfr` suggests `vrf`, `rack_name`
+  suggests `rack`; no hint is given when two keys are equally close.
+- **Unknown YAML keys are now an error.** A key the model does not have used
+  to be dropped silently, so a typo (`vfr:`, `site:` before short names
+  existed) synced the object without that field. Every key is now checked,
+  nested ones included, and the error names the file, the entry and the key
+  path. **Upgrade note:** a file that carries a stray or misspelled key stops
+  loading until it is fixed — run `yamlcheck` before syncing. The bundled
+  example racks carried `desc_units`, which no model field ever read; it has
+  been removed.
+
+- **The bundled YAML no longer spells out defaults.** `tags: ["gitops"]` and
+  `status: "active"` were removed from the example, definitions and inventory
+  files. The managed tag is stamped automatically, and sites, racks, VLANs,
+  prefixes, devices and modules already default an omitted status to
+  `active`, so nothing synced differs. IP addresses, VMs and clusters keep
+  their explicit `status`: their reconcilers send status only when declared.
 
 - **Every YAML kind is decoded through one path.** The loader had two
   decoders for the same file format: a plain one for most kinds and a

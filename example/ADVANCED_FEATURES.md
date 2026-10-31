@@ -30,13 +30,13 @@ Child devices can be installed into parent device bays (e.g., blade servers in a
 ```yaml
 # Parent chassis
 - name: "example-chassis-01"
-  device_type_slug: "example-blade-chassis"
-  rack_slug: "rack-a01"
+  device_type: "example-blade-chassis"
+  rack: "rack-a01"
   position: 20
 
 # Child blade server
 - name: "example-blade-01"
-  device_type_slug: "example-blade-server"
+  device_type: "example-blade-server"
   parent_device: "example-chassis-01"  # References parent
   device_bay: "Blade-1"                # Bay to install into
 ```
@@ -55,14 +55,14 @@ Modules are installed into module bays and automatically tagged with the GitOps 
 ```yaml
 modules:
   - name: "GPU-1"
-    module_type_slug: "ex-gpu-a100"
-    status: "active"
-    serial: "GPU-CARD-001"
+    module_type: "ex-gpu-a100"
+    serial: "GPU-CARD-001"         # status defaults to "active"
     description: "Primary GPU"
 ```
 
 **Features:**
-- Modules are automatically tagged with the managed `gitops` tag
+- Modules are automatically tagged with the managed `gitops` tag, plus any
+  `tags:` the module declares
 - Module bays are auto-created from device type templates
 - A serial is sent only when the YAML declares one. Omitting it leaves whatever
   NetBox holds — including a serial somebody read off the chassis and typed

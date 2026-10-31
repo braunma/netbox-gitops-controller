@@ -9,14 +9,18 @@
 # inventory/hardware/active/servers.yaml.
 
 defaults:
-  device_type_slug: "dell-s5248f-on"
-  role_slug: "leaf-switch"
+  device_type: "dell-s5248f-on"
+  role: "leaf-switch"
   position: 40
   # NetBox rejects a rack position without a face
   # ("Must specify rack face when defining rack position").
   face: "front"
-  status: "active"
-  tags: ["gitops", "production"]
+  tags: ["production"]
+  interfaces:
+    "Management 1/1":
+      description: "Out-of-band management"
+      ip: { status: "active", vrf: "Management" }
+      address_role: "primary"
 
 devices:
   # ========================================
@@ -24,19 +28,13 @@ devices:
   # ========================================
 
   - name: "berlin-leaf-01"
-    site_slug: "berlin-dc"
-    rack_slug: "berlin-rack-a01"
+    site: "berlin-dc"
+    rack: "berlin-rack-a01"
     serial: "LEAF01-SN-12345"
 
     interfaces:
       - name: "Management 1/1"
-        description: "Out-of-band management"
-        ip:
-          address: "10.10.10.11/24"
-          dns_name: "berlin-leaf-01-mgmt.example.com"
-          status: "active"
-          vrf: "Management"
-        address_role: "primary"
+        ip: { address: "10.10.10.11/24", dns_name: "berlin-leaf-01-mgmt.example.com" }
 
       # Server downlinks (cabled from the server side)
       - name: "Eth1/1"
@@ -62,19 +60,13 @@ devices:
         mtu: 9000
 
   - name: "berlin-leaf-02"
-    site_slug: "berlin-dc"
-    rack_slug: "berlin-rack-a02"
+    site: "berlin-dc"
+    rack: "berlin-rack-a02"
     serial: "LEAF02-SN-67890"
 
     interfaces:
       - name: "Management 1/1"
-        description: "Out-of-band management"
-        ip:
-          address: "10.10.10.12/24"
-          dns_name: "berlin-leaf-02-mgmt.example.com"
-          status: "active"
-          vrf: "Management"
-        address_role: "primary"
+        ip: { address: "10.10.10.12/24", dns_name: "berlin-leaf-02-mgmt.example.com" }
 
       - name: "Eth1/1"
         mode: "access"
@@ -86,16 +78,10 @@ devices:
   # ========================================
 
   - name: "frankfurt-leaf-01"
-    site_slug: "frankfurt-dc"
-    rack_slug: "frankfurt-rack-c01"
+    site: "frankfurt-dc"
+    rack: "frankfurt-rack-c01"
     serial: "LEAF-FFM-11111"
 
     interfaces:
       - name: "Management 1/1"
-        description: "Out-of-band management"
-        ip:
-          address: "10.20.10.11/24"
-          dns_name: "frankfurt-leaf-01-mgmt.example.com"
-          status: "active"
-          vrf: "Management"
-        address_role: "primary"
+        ip: { address: "10.20.10.11/24", dns_name: "frankfurt-leaf-01-mgmt.example.com" }

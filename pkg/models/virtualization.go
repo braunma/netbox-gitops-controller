@@ -32,6 +32,9 @@ type ClusterGroup struct {
 
 // Cluster represents a NetBox cluster of virtualization hosts. A cluster
 // requires a type and may optionally belong to a group, site and tenant.
+//
+// In YAML the references are usually written by their short names (site, type
+// and group for the *_slug keys); see YAMLAliases.
 type Cluster struct {
 	Name      string `yaml:"name" json:"name" validate:"required"`
 	TypeSlug  string `yaml:"type_slug" json:"type_slug" validate:"required"`
@@ -86,6 +89,9 @@ func (i VMInterfaceConfig) IsPrimaryIP() bool {
 // never creates them on a hypervisor. Facts discovered by `netbox-gitops
 // collect` are written back into these same YAML files and reviewed as a diff;
 // see docs/INGEST.md.
+//
+// In YAML the references are usually written by their short names (site and
+// role for site_slug and role_slug); see YAMLAliases.
 type VMConfig struct {
 	Name string `yaml:"name" json:"name" validate:"required"`
 	// RenameFrom is this object's previous name. Set it to correct a typo

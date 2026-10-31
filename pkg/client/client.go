@@ -616,7 +616,12 @@ func (c *NetBoxClient) printDiff(action string, existing Object, changes map[str
 		c.logger.Debug("    ┌─ Changes ────────────────────")
 		for key, val := range changes {
 			if key == "tags" {
-				continue // Skip tags in diff
+				// Every object gets the managed tag; only declared tags
+				// are worth a line.
+				if len(c.extractTagIDs(val)) <= 1 {
+					continue
+				}
+				val = c.extractTagIDs(val)
 			}
 			c.logger.Success("    │ + %s: %v", key, c.formatValue(val))
 		}
@@ -627,16 +632,17 @@ func (c *NetBoxClient) printDiff(action string, existing Object, changes map[str
 	if action == "UPDATE" {
 		c.logger.Debug("    ┌─ Changes ────────────────────")
 		for key, newVal := range changes {
-			if key == "tags" {
-				continue
-			}
-
 			oldVal := existing[key]
 			// Handle nested objects
 			if oldMap, ok := oldVal.(map[string]interface{}); ok {
 				if id, ok := oldMap["id"]; ok {
 					oldVal = id
 				}
+			}
+			// A changed tag set is shown as the IDs on each side, which is
+			// how both the YAML's tags and NetBox's are compared.
+			if key == "tags" {
+				oldVal, newVal = c.extractTagIDs(oldVal), c.extractTagIDs(newVal)
 			}
 
 			c.logger.Warning("    │ ~ %s:", key)

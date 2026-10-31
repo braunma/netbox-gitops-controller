@@ -46,6 +46,7 @@ func (vr *VirtualizationReconciler) ReconcileClusterTypes(types []*models.Cluste
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(ct.RenameFrom),
 			payload:     payload,
+			tags:        ct.Tags,
 			// Register so a cluster can resolve a type created in this same
 			// run, including in --dry-run where nothing is written to NetBox.
 			register: func(id int) {
@@ -79,6 +80,7 @@ func (vr *VirtualizationReconciler) ReconcileClusterGroups(groups []*models.Clus
 			renameField: "slug",
 			renameFrom:  client.SlugifiedRename(cg.RenameFrom),
 			payload:     payload,
+			tags:        cg.Tags,
 			register: func(id int) {
 				vr.client.Cache().Register("cluster_groups", id, cg.Slug, cg.Name)
 			},
@@ -152,6 +154,7 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 			renameField: "name",
 			renameFrom:  nonEmpty(cl.RenameFrom),
 			payload:     payload,
+			tags:        cl.Tags,
 			// Register so a VM can resolve a cluster created in this same run.
 			register: func(id int) {
 				vr.client.Cache().Register("clusters", id, cl.Name)
@@ -268,6 +271,7 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 			renameField: "name",
 			renameFrom:  nonEmpty(vm.RenameFrom),
 			payload:     payload,
+			tags:        vm.Tags,
 		})
 		if err != nil {
 			return err
@@ -353,6 +357,7 @@ func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *
 		if err != nil {
 			return err
 		}
+		setTags(vr.client, payload, iface.Tags, "VM interface", vm.Name+" "+iface.Name)
 		ifaceObj, err := vr.client.Apply("virtualization", "interfaces", lookup, payload)
 		if err != nil {
 			return fmt.Errorf("failed to apply VM interface %s: %w", iface.Name, err)
@@ -402,6 +407,7 @@ func (vr *VirtualizationReconciler) reconcileVMIP(vmID, ifaceID int, iface *mode
 		}
 	}
 
+	setTags(vr.client, payload, ipConfig.Tags, "IP address", ipConfig.Address)
 	ipObj, err := vr.client.Apply("ipam", "ip-addresses", lookup, payload)
 	if err != nil {
 		return fmt.Errorf("failed to apply IP address: %w", err)

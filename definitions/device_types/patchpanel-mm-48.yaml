@@ -3,7 +3,6 @@
   manufacturer: "Generic"
   u_height: 1 # 1U at this density; a lower-density 48-port panel is often 2U
   is_full_depth: false
-  tags: ["gitops"]
 
   # Front ports: the room side, where patch cables plug in
   front_ports:
