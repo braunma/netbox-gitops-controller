@@ -7,7 +7,6 @@
   site: "berlin-dc"
   rack: "rack-a01"
   position: 30
-  face: "front"
   serial: "GPU-SRV-001"
   asset_tag: "GPU-001"
   tags: ["production", "gpu"]

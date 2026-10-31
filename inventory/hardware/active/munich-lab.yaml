@@ -8,7 +8,6 @@ defaults:
   role: "server"
   device_type: "poweredge-r740"
   rack: "munich-lab-rack-01"
-  face: "front"
   tags: ["lab", "development"]
   interfaces:
     idrac:

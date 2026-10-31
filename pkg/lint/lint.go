@@ -295,13 +295,6 @@ func (c *checker) checkDeviceReferences() {
 			c.add(Warning, "unracked-device", ref,
 				"names a rack but no position, so NetBox files it as non-racked equipment in %s", d.RackSlug)
 		}
-		if d.RackSlug != "" && d.Position != 0 && d.Face == "" && d.ParentDevice == "" {
-			// NetBox answers 400 "Must specify rack face when defining rack
-			// position" — the device is never created, and every interface,
-			// IP and cable that hangs off it is lost with it.
-			c.add(Error, "position-without-face", ref,
-				"is placed at U%d but names no face; NetBox rejects a rack position without one", d.Position)
-		}
 		c.checkDeviceBay(d)
 	}
 }
@@ -447,6 +440,11 @@ func (c *checker) checkPorts() {
 		front := portTemplates(dt.FrontPorts)
 		rear := portTemplates(dt.RearPorts)
 		for _, p := range d.FrontPorts {
+			if tmpl, ok := front[p.Name]; ok && frontPortRepeatsTemplate(p, tmpl) {
+				c.add(Warning, "redundant-port", portRef(d.Name, "front port", p.Name),
+					"repeats only what the device type template defines (type, rear port, position); the entry can be deleted")
+				continue
+			}
 			c.checkPortType(d, "front port", p.Name, p.Type, front)
 			if _, inTemplate := rear[p.RearPort]; !inTemplate && !hasRearPort(d, p.RearPort) {
 				c.add(Error, "unknown-rear-port", portRef(d.Name, "front port", p.Name),
@@ -455,6 +453,11 @@ func (c *checker) checkPorts() {
 			}
 		}
 		for _, p := range d.RearPorts {
+			if tmpl, ok := rear[p.Name]; ok && rearPortRepeatsTemplate(p, tmpl) {
+				c.add(Warning, "redundant-port", portRef(d.Name, "rear port", p.Name),
+					"repeats only what the device type template defines (type, positions); the entry can be deleted")
+				continue
+			}
 			c.checkPortType(d, "rear port", p.Name, p.Type, rear)
 		}
 	}
@@ -477,6 +480,42 @@ func (c *checker) checkPortType(d *models.DeviceConfig, kind, name, declared str
 		c.add(Warning, "port-type-override", ref,
 			"declares type %q but the device type template says %q", declared, tmpl.Type)
 	}
+}
+
+// frontPortRepeatsTemplate reports a front port entry that carries nothing
+// the device type template does not already define: no label, description,
+// cable or tags, and a type, rear port and position that are empty or equal
+// to the template's. A rear port position of 1 is NetBox's default and counts
+// as unset.
+func frontPortRepeatsTemplate(p models.FrontPortConfig, tmpl models.PortTemplate) bool {
+	if p.Label != "" || p.Description != "" || p.Link != nil || len(p.Tags) > 0 {
+		return false
+	}
+	if p.Type != "" && p.Type != tmpl.Type {
+		return false
+	}
+	if p.RearPort != "" && p.RearPort != tmpl.RearPort {
+		return false
+	}
+	pos, tmplPos := p.RearPortPosition, tmpl.RearPortPosition
+	if pos == 0 {
+		pos = 1
+	}
+	if tmplPos == 0 {
+		tmplPos = 1
+	}
+	return pos == tmplPos
+}
+
+// rearPortRepeatsTemplate is frontPortRepeatsTemplate for a rear port.
+func rearPortRepeatsTemplate(p models.RearPortConfig, tmpl models.PortTemplate) bool {
+	if p.Label != "" || p.Description != "" || p.Link != nil || len(p.Tags) > 0 {
+		return false
+	}
+	if p.Type != "" && p.Type != tmpl.Type {
+		return false
+	}
+	return p.Positions == 0 || p.Positions == tmpl.Positions
 }
 
 func portRef(device, kind, name string) string {

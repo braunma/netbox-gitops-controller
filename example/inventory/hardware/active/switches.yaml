@@ -11,7 +11,6 @@
   site: "berlin-dc"
   rack: "rack-a01"
   position: 1
-  face: "front"
   tags: ["production"]
   interfaces:
     - name: "GigabitEthernet1/0/1"

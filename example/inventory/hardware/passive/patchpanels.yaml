@@ -6,7 +6,6 @@
   site: "berlin-dc"
   rack: "rack-a02"
   position: 42
-  face: "front"
   front_ports:
     - name: "Port 1"
       type: "8p8c"

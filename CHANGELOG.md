@@ -27,6 +27,9 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`redundant-port` lint warning.** A front or rear port entry that restates
+  nothing but its device type template (type, rear port, a position of 1) is
+  flagged: the template already creates the port, so the entry can go.
 - **Port checks in `yamlcheck`.** Front and rear ports get what interfaces
   already had: `untyped-port` (a port the device type has no template for and
   that declares no `type`, which NetBox rejects mid-sync), `unknown-rear-port`
@@ -62,6 +65,15 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **`face` defaults to `front` when a device has a rack position.** NetBox
+  rejects a position without a face, and nearly every device is
+  front-mounted, so the controller now sends `front` when the YAML names a
+  position but no face; `face: "rear"` stays explicit. The lint error
+  `position-without-face` is gone with the failure it predicted. This is the
+  one value the controller fills in that the YAML does not spell out; the
+  README states it under "Conventions that keep the YAML small". **Upgrade
+  note:** a device that previously had a position but no face was never
+  created (NetBox answered 400); on the next apply it is.
 - **Load problems carry the entry's line.** `servers.yaml:41: entry 2: device
   "srv-02": …` instead of `servers.yaml: entry 2: …`, so a problem in a long
   file can be jumped to.
