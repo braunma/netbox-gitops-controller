@@ -12,6 +12,21 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Known issues
+
+- **Cables the controller creates carry no `gitops` tag and are never
+  pruned.** When `--prune` deletes a device, NetBox removes the cable's
+  terminations but keeps the cable object, so an instance accumulates cables
+  with no ends (32 of them in a test instance after a day of applies). They
+  are harmless to the sync and invisible in a trace, but they are clutter and
+  they are not cleaned up. Planned: tag cables as managed and prune cables
+  without terminations.
+- **`--dry-run --detailed-exitcode` reports changes on a converged instance.**
+  Against NetBox 4.6.10 it plans updates for sites, racks, VRFs, VLAN groups,
+  VLANs and prefixes that an apply then does not make, and exits 2. The
+  controller before this release behaves the same, so it is a comparison
+  problem in the dry-run, not drift; `tests/e2e/repo-data.sh` flags it.
+
 ### Fixed
 
 - **Declared `tags:` now reach NetBox.** Every model accepted a `tags:` list,
@@ -27,6 +42,18 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **Cable paths through patch panels (`link.via`).** A strand from an
+  endpoint through the panel in its rack, the backbone, and the panel in the
+  far rack to its peer used to be three `link:`s in three files. It is now
+  one declaration on the endpoint, `via: ["pp-a01:2", "pp-b02:2"]`, from
+  which the loader derives the three cables using the panels' device types
+  for the front-to-rear mapping; each run prints every path as NetBox will
+  hold it (`Cable path: …`). A panel's `cable_defaults` (front cords, rear
+  backbones) give those cables their type and colour, so a path carries only
+  where it goes; a cable declared on its own is untouched by them. The
+  explicit form keeps working. The sample
+  inventory's two strands between rack A01 and A02 are written this way, and
+  the e2e test asks NetBox to trace them end to end.
 - **`redundant-port` lint warning.** A front or rear port entry that restates
   nothing but its device type template (type, rear port, a position of 1) is
   flagged: the template already creates the port, so the entry can go.

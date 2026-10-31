@@ -376,6 +376,76 @@ File: `inventory/hardware/active/switches.yaml`
       # tagged_vlans: ["Vlan10", "Vlan20"]
 ```
 
+### Cabling through patch panels
+
+A strand between two racks is three cables and two panel-internal bridges:
+
+```text
+srv[eth1] -- pp-a01[front 2 > rear 2] ==== pp-b02[rear 2 > front 2] -- leaf-02[Eth1/2]
+   patch cord          backbone (rear to rear)           patch cord
+```
+
+The bridges are in the panel's device type (front port 2 maps to rear port 2).
+The three cables are written once, on the endpoint, as the path they form:
+
+```yaml
+- name: "eth1"
+  link: { via: ["pp-a01:2", "pp-b02:2"], peer_device: "leaf-02", peer_port: "Eth1/2" }
+```
+
+`via` names the panels by the front port the cord lands on, in order from
+this port to the peer.
+
+The loader derives the cables from it when the data is read, and every run
+prints each path as NetBox will hold it:
+
+```text
+Cable path: srv[eth1] > pp-a01[front 2] > pp-a01[rear 2] > pp-b02[rear 2] > pp-b02[front 2] > leaf-02[Eth1/2]
+```
+
+  * **The panel says what its cables are.** `cable_defaults` on a patch panel
+    (or in its file's `defaults:`) gives the type and colour of the cords into
+    its front ports and the backbones out of its rear ports, so a path carries
+    only where it goes:
+
+    ```yaml
+    cable_defaults:
+      front: { cable_type: "smf-os2", color: "yellow" }
+      rear: { cable_type: "smf-os2", color: "purple" }
+    ```
+
+    A path overrides them where it differs. `cable_type`, `color` and
+    `length` on the link describe its **patch cords** (both ends); the
+    backbone between the panels is the panels' own and keeps their `rear`
+    defaults. A hop written as a mapping sets the cable **leaving** that
+    panel toward the peer, backbone included:
+    `{ device: "pp-a01", port: "3", color: "green" }` makes that backbone
+    green. Precedence: hop, then link (cords only), then the panel's
+    defaults. They apply only to the cables a path produces; a cable declared
+    on its own with a `link:` is exactly what it says, since it may be a
+    different cable.
+  * A path runs through one panel (cord in on the front, the rear port wired
+    on to the peer) or two. A longer run would need a front-to-front cord
+    between two panels, which the reconciler wires as a backbone, so it is
+    refused; declare such a run as separate cables on the panels' ports.
+  * Every panel on the path must be declared here with role `patch-panel`,
+    and its device type (or the panel itself) must map the named front port
+    to a rear port. Anything else is an error that quotes the path as written.
+  * A rear port the panel already declares is reused: with no link it gets the
+    backbone, with a link to the same far end and the same cable it is left
+    alone (two strands on one trunk), with a link elsewhere or a different
+    type or colour it is an error quoting both.
+  * The explicit form — one `link:` per cable, the backbone on the panel's
+    `rear_ports` — keeps working and is what `via` expands to. Mixing both for
+    the same strand is allowed only where they agree; a disagreement is an
+    error rather than one of them winning quietly.
+  * The far end should be declared in this repository. A peer that exists only
+    in NetBox is wired by its NetBox role at apply time, which `yamlcheck`
+    cannot see (`undeclared-peer-device`).
+
+`tests/e2e/repo-data.sh` asks NetBox to trace both sample strands end to end,
+so the shape above is exercised against a real NetBox on every e2e run.
+
 ### Conventions that keep the YAML small
 
   * **Ports live in the device type, not the inventory.** Define every
@@ -398,6 +468,10 @@ File: `inventory/hardware/active/switches.yaml`
     server/endpoint side owns the `link:`) — the reconciler wires both ends
     from a single declaration. Declaring the same cable from both sides works
     but means every re-patch is a two-file edit.
+  * **Write a run through patch panels as one path.** A strand from a server
+    through the panel in its rack, the backbone, and the panel in the far rack
+    to a switch is three cables; `link.via` declares it once, at the endpoint
+    (see [Cabling through patch panels](#cabling-through-patch-panels)).
   * **Group shared fields in `defaults`.** One file per rack, role or
     hardware batch with a `defaults` block keeps each device down to its name,
     position and IPs. Definitions take the same block with an `items:` list,
@@ -497,7 +571,8 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 `--strict`: `redundant-interface-type`, `redundant-port-type`, `redundant-port`
 (a port entry that restates nothing but its template) and `redundant-enabled`
 (a value the device type template or the default already supplies), `interface-type-override`, `port-type-override`,
-`interface-not-in-template`,
+`interface-not-in-template`, `cable-defaults-off-panel` (a `cable_defaults`
+block on a device that is not a patch panel, where it does nothing),
 `cable-declared-twice` (the same cable from both ends),
 `undeclared-peer-device`, `ip-outside-prefix`, `unracked-device`,
 `module-type-without-slug`.

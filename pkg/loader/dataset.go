@@ -40,6 +40,10 @@ type Dataset struct {
 	// Tags are the tag definitions, so a declared `tags:` entry can be told
 	// apart from a typo.
 	Tags []*models.Tag
+	// CablePaths lists every `link.via` path, expanded, one line per path
+	// with every port along it. The cables themselves are already on the
+	// devices; this is for the log and the checks.
+	CablePaths []string
 }
 
 // DatasetOptions carries the paths that are resolved outside the loader, and
@@ -151,5 +155,16 @@ func (dl *DataLoader) LoadDataset(opts DatasetOptions) (Dataset, error) {
 	ds.ModuleTypes = MergeModuleTypes(nativeModuleTypes, libraryModuleTypes, dl.logger)
 	ds.DeviceTypes = MergeDeviceTypes(nativeDeviceTypes, libraryDeviceTypes, dl.logger)
 	ds.Devices = devices
+
+	// Paths through patch panels become their cables here, once everything
+	// they refer to (the panels, their device types) is loaded.
+	paths, err := ExpandCablePaths(&ds)
+	if err != nil {
+		return Dataset{}, err
+	}
+	ds.CablePaths = paths
+	for _, p := range paths {
+		dl.logger.Info("Cable path: %s", p)
+	}
 	return ds, nil
 }

@@ -4,10 +4,26 @@
 # comes from the device type template (pp-12-sm-lc, pp-48-mm-lc), and so does
 # the front-to-rear mapping, so a port is listed here only for what the
 # template cannot know: its label, description or cable.
+#
+# Two strands run between rack A01 and rack A02 through pp-01 and pp-02:
+#
+#   berlin-srv-web-02[eth1] -- pp-01[front 2 > rear 2] == pp-02[rear 2 > front 2] -- berlin-leaf-02[Eth1/2]
+#   berlin-leaf-01[Eth1/49] -- pp-01[front 3 > rear 3] == pp-02[rear 3 > front 3] -- berlin-leaf-02[Eth1/49]
+#
+# Neither is declared in this file. Each strand is written once, at its
+# endpoint, as `link: { via: [...] }` (see servers.yaml and switches.yaml);
+# the loader derives the three cables from it and the panels' device type.
+# tests/e2e/repo-data.sh asks NetBox to trace both strands end to end.
 
 defaults:
   role: "patch-panel"
   position: 42
+  # What a cable on these panels is unless the cable says otherwise: single-mode
+  # patch cords into the front, purple single-mode backbones out of the rear.
+  # A path through a panel (`link.via`) names a type or colour only to differ.
+  cable_defaults:
+    front: { cable_type: "smf-os2", color: "yellow" }
+    rear: { cable_type: "smf-os2", color: "purple" }
 
 items:
   # ========================================
@@ -27,15 +43,6 @@ items:
         rear_port_position: 1
         description: "Fiber link to adjacent rack"
 
-      - name: "2"
-        label: "To Rack A02 Port 2"
-        rear_port: "2"
-        rear_port_position: 1
-
-      - name: "3"
-        label: "Reserved"
-        rear_port: "3"
-        rear_port_position: 1
 
     # Rear Ports (facing the wall/backbone)
     rear_ports:
@@ -43,11 +50,6 @@ items:
         label: "Backbone to MDF"
         description: "Connection to main distribution frame"
 
-      - name: "2"
-        label: "Backbone to MDF"
-
-      - name: "3"
-        label: "Reserved"
 
   - name: "berlin-pp-02"
     site: "berlin-dc"
@@ -59,6 +61,7 @@ items:
         label: "Cross-connect"
         rear_port: "1"
         rear_port_position: 1
+
 
     rear_ports:
       - name: "1"

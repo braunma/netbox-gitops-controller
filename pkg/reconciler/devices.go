@@ -1091,8 +1091,8 @@ func (dr *DeviceReconciler) findPort(deviceName, portName, sourceRole string) *p
 	}
 
 	// Determine port type based on device roles
-	isSourcePP := sourceRole == "patch-panel"
-	isPeerPP := peerRole == "patch-panel"
+	isSourcePP := sourceRole == models.PatchPanelRole
+	isPeerPP := peerRole == models.PatchPanelRole
 
 	// Debug logging to trace role-based port type selection
 	dr.logger.Debug("    findPort(%s, %s, sourceRole=%s): peerRole=%s, isSourcePP=%v, isPeerPP=%v",

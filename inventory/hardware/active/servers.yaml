@@ -72,7 +72,11 @@ devices:
         ip: { address: "10.10.20.102/24", dns_name: "berlin-srv-web-02.example.com" }
         link: { peer_device: "berlin-leaf-01", peer_port: "Eth1/2", cable_type: "dac-active" }
 
+      # Patched through to rack A02: pp-01 front 2, backbone, pp-02 front 2,
+      # leaf-02. Three cables from this one line; their type and colour come
+      # from the panels' cable_defaults (passive/patchpanels.yaml).
       - name: "eth1"
+        link: { via: ["berlin-pp-01:2", "berlin-pp-02:2"], peer_device: "berlin-leaf-02", peer_port: "Eth1/2" }
 
   # ========================================
   # AI/ML Server with GPU Module Bays
