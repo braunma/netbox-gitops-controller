@@ -9,9 +9,9 @@ import "strings"
 // In YAML the references are usually written by their short names (site and
 // group for site_slug and group_slug); see YAMLAliases.
 type VLAN struct {
-	Name      string `yaml:"name" json:"name" validate:"required"`
-	VID       int    `yaml:"vid" json:"vid" validate:"required,min=1,max=4094"`
-	SiteSlug  string `yaml:"site_slug" json:"site_slug" validate:"required"`
+	Name      string `yaml:"name" json:"name"`
+	VID       int    `yaml:"vid" json:"vid"`
+	SiteSlug  string `yaml:"site_slug" json:"site_slug"`
 	GroupSlug string `yaml:"group_slug,omitempty" json:"group_slug,omitempty"`
 	// RenameFrom is this object's previous VID, as a string. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
@@ -28,8 +28,8 @@ type VLAN struct {
 // In YAML the references are usually written by their short names (site for
 // site_slug); see YAMLAliases.
 type VLANGroup struct {
-	Name     string `yaml:"name" json:"name" validate:"required"`
-	Slug     string `yaml:"slug" json:"slug" validate:"required"`
+	Name     string `yaml:"name" json:"name"`
+	Slug     string `yaml:"slug" json:"slug"`
 	SiteSlug string `yaml:"site_slug,omitempty" json:"site_slug,omitempty"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
@@ -43,7 +43,7 @@ type VLANGroup struct {
 
 // VRF represents a NetBox VRF
 type VRF struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
+	Name string `yaml:"name" json:"name"`
 	RD   string `yaml:"rd,omitempty" json:"rd,omitempty"`
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
@@ -64,7 +64,7 @@ func (v *VRF) Slug() string {
 // In YAML the references are usually written by their short names (site, vrf
 // and vlan for site_slug, vrf_name and vlan_name); see YAMLAliases.
 type Prefix struct {
-	Prefix   string `yaml:"prefix" json:"prefix" validate:"required"`
+	Prefix   string `yaml:"prefix" json:"prefix"`
 	SiteSlug string `yaml:"site_slug,omitempty" json:"site_slug,omitempty"`
 	VRFName  string `yaml:"vrf_name,omitempty" json:"vrf_name,omitempty"`
 	VLANName string `yaml:"vlan_name,omitempty" json:"vlan_name,omitempty"`

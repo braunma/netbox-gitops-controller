@@ -112,6 +112,7 @@ func Check(ds Dataset, opts Options) []Finding {
 	c.checkDeviceReferences()
 	c.checkDeviceCustomFields()
 	c.checkInterfaces()
+	c.checkPorts()
 	c.checkModules()
 	c.checkRackPositions()
 	c.checkIPAddresses()
@@ -430,6 +431,73 @@ func (c *checker) checkInterfaces() {
 			}
 		}
 	}
+}
+
+// checkPorts is checkInterfaces for a device's front and rear ports. A port
+// the device type has no template for needs a type of its own or NetBox has
+// nothing to create it from (`400 {"type": ["This field may not be blank."]}`
+// mid-sync); a type that repeats the template's is noise; and a front port
+// has to map onto a rear port that exists, on the template or on the device.
+func (c *checker) checkPorts() {
+	for _, d := range c.ds.Devices {
+		dt := c.deviceTypes[d.DeviceTypeSlug]
+		if dt == nil {
+			continue
+		}
+		front := portTemplates(dt.FrontPorts)
+		rear := portTemplates(dt.RearPorts)
+		for _, p := range d.FrontPorts {
+			c.checkPortType(d, "front port", p.Name, p.Type, front)
+			if _, inTemplate := rear[p.RearPort]; !inTemplate && !hasRearPort(d, p.RearPort) {
+				c.add(Error, "unknown-rear-port", portRef(d.Name, "front port", p.Name),
+					"maps to rear port %q, which is neither a rear port template on device type %s nor declared on this device",
+					p.RearPort, d.DeviceTypeSlug)
+			}
+		}
+		for _, p := range d.RearPorts {
+			c.checkPortType(d, "rear port", p.Name, p.Type, rear)
+		}
+	}
+}
+
+// checkPortType applies the template-versus-declaration rules of an interface
+// type to one front or rear port.
+func (c *checker) checkPortType(d *models.DeviceConfig, kind, name, declared string, templates map[string]models.PortTemplate) {
+	ref := portRef(d.Name, kind, name)
+	tmpl, inTemplate := templates[name]
+	switch {
+	case !inTemplate && declared == "":
+		c.add(Error, "untyped-port", ref,
+			"is not a %s template on device type %s and declares no type, so NetBox has nothing to create it from",
+			kind, d.DeviceTypeSlug)
+	case inTemplate && declared != "" && declared == tmpl.Type:
+		c.add(Warning, "redundant-port-type", ref,
+			"repeats type %q from the device type template; it can be deleted", declared)
+	case inTemplate && declared != "" && declared != tmpl.Type:
+		c.add(Warning, "port-type-override", ref,
+			"declares type %q but the device type template says %q", declared, tmpl.Type)
+	}
+}
+
+func portRef(device, kind, name string) string {
+	return fmt.Sprintf("device %s %s %s", device, kind, name)
+}
+
+func portTemplates(list []models.PortTemplate) map[string]models.PortTemplate {
+	out := make(map[string]models.PortTemplate, len(list))
+	for _, p := range list {
+		out[p.Name] = p
+	}
+	return out
+}
+
+func hasRearPort(d *models.DeviceConfig, name string) bool {
+	for _, p := range d.RearPorts {
+		if p.Name == name {
+			return true
+		}
+	}
+	return false
 }
 
 func (c *checker) checkInterfaceVLANs(d *models.DeviceConfig, iface models.InterfaceConfig, ref string) {

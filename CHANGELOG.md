@@ -27,6 +27,16 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **Port checks in `yamlcheck`.** Front and rear ports get what interfaces
+  already had: `untyped-port` (a port the device type has no template for and
+  that declares no `type`, which NetBox rejects mid-sync), `unknown-rear-port`
+  (a front port mapped to a rear port that exists nowhere), and the warnings
+  `redundant-port-type` and `port-type-override`. The bundled patch panels no
+  longer repeat the template's port types.
+- **A misnamed list in a grouped file is named as such.** `defaults:` next to
+  `device:` used to fail as two unknown fields on a device without a name; it
+  now says the grouped form has no `items` list and which key holds the
+  objects.
 - **Short field names.** References use the name of what they point at:
   `site`, `role`, `device_type`, `rack`, `module_type`, `group`, `parent`,
   `type`, and on prefixes `vrf`/`vlan`. The previous spellings (`site_slug`,
@@ -52,6 +62,9 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **Load problems carry the entry's line.** `servers.yaml:41: entry 2: device
+  "srv-02": …` instead of `servers.yaml: entry 2: …`, so a problem in a long
+  file can be jumped to.
 - **A sync checks its data before it contacts NetBox.** The phases loaded
   their files one kind at a time, between writes, so a mistake in
   `racks.yaml` used to stop the run only after sites, roles and tags had been
@@ -67,7 +80,7 @@ are about to run before applying a sync with pruning enabled.
   so fixing a directory took one run per mistake. Now every file, entry and
   key is checked, and each problem is one line naming the file (relative to
   the working directory), the entry and the object:
-  `inventory/hardware/active/servers.yaml: entry 3: device "srv-03":
+  `inventory/hardware/active/servers.yaml:58: entry 3: device "srv-03":
   device_type is required`. The file is no longer printed twice, and a
   validation error with several missing fields is several lines, each with
   its context, instead of one line followed by bare continuations. A value

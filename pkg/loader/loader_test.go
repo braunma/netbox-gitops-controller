@@ -824,3 +824,38 @@ func TestYAMLFileValidation(t *testing.T) {
 		})
 	}
 }
+
+// TestGroupedFormListKeyTypo verifies that a file meant as the grouped form
+// but with its list under the wrong key is told so, instead of being read as
+// one object with two unknown fields and no name.
+func TestGroupedFormListKeyTypo(t *testing.T) {
+	cases := []struct{ name, content, want string }{
+		{"defaults and a misspelled list", `
+defaults:
+  site: "berlin-dc"
+device:
+  - name: "web-01"
+`, `the objects are under "device" (did you mean "items"?)`},
+		{"defaults without any list", `
+defaults:
+  site: "berlin-dc"
+`, `grouped form has "defaults" but no "items" list`},
+		{"misspelled list without defaults", `
+items_:
+  - name: "web-01"
+`, `top-level key "items_" is not a field (did you mean "items"?)`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "devices", "servers.yaml", tc.content)
+			_, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDevices("devices")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("LoadDevices() error = %v, want it to contain %q", err, tc.want)
+			}
+			if strings.Contains(err.Error(), "unknown field") {
+				t.Errorf("the typo should be reported once, not as unknown fields:\n%v", err)
+			}
+		})
+	}
+}

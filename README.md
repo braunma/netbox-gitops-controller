@@ -481,6 +481,7 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `cable-conflict` | a port claimed by two different cables (a patch panel's front port and rear port of the same name are two ports, resolved by role as the reconciler does) |
 | `unknown-peer-port` | a cable to a port its peer's device type does not have |
 | `untyped-interface` | an interface that is neither an interface template on the device type nor carries a `type`, so NetBox has nothing to create it from |
+| `untyped-port`, `unknown-rear-port` | the same for a front or rear port, and a front port mapped to a rear port that neither the device type nor the device declares |
 | `unknown-lag-member` | a LAG whose `members` name an interface the device does not have |
 | `unknown-module-bay`, `unknown-device-bay`, `missing-device-bay` | a module or child device installed into a bay the parent's device type does not have |
 | `unknown-site`, `unknown-role`, `unknown-rack`, `unknown-device-type`, `unknown-vlan`, `unknown-vrf`, `unknown-module-type`, `unknown-cluster`, `unknown-platform`, `unknown-tenant`, `unknown-parent-device` | a reference that resolves to nothing declared here (VLANs are matched within the device's site, as NetBox resolves them) |
@@ -489,9 +490,10 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `invalid-ip`, `network-address`, `broadcast-address` | an address that is not a host address (a /31 point-to-point link is not flagged) |
 
 **Warnings** — legitimate in some repositories, so they only fail under
-`--strict`: `redundant-interface-type` and `redundant-enabled` (a value the
-device type template or the default already supplies),
-`interface-type-override`, `interface-not-in-template`,
+`--strict`: `redundant-interface-type`, `redundant-port-type` and
+`redundant-enabled` (a value the device type template or the default already
+supplies), `interface-type-override`, `port-type-override`,
+`interface-not-in-template`,
 `cable-declared-twice` (the same cable from both ends),
 `undeclared-peer-device`, `ip-outside-prefix`, `unracked-device`,
 `module-type-without-slug`.
@@ -832,11 +834,12 @@ types/groups, clusters, VMs and VM interfaces:
 The first six below are found in the YAML alone. `yamlcheck` reports them, and
 so does every sync before it sends a single request: the whole data directory
 is read and checked first, and any problem stops the run with nothing written.
-Each problem is one line naming the file, the entry and the object:
+Each problem is one line naming the file and the line the entry starts on,
+the entry and the object:
 
 ```text
-✗ inventory/hardware/active/servers.yaml: entry 1: device "srv-01": interfaces[1].ip: unknown field "vfr" (did you mean "vrf"?)
-✗ inventory/hardware/active/servers.yaml: entry 3: device "srv-03": device_type is required
+✗ inventory/hardware/active/servers.yaml:21: entry 1: device "srv-01": interfaces[1].ip: unknown field "vfr" (did you mean "vrf"?)
+✗ inventory/hardware/active/servers.yaml:58: entry 3: device "srv-03": device_type is required
 ✗ 2 problem(s) in .; nothing was sent to NetBox. `yamlcheck` reports the same list.
 ```
 
@@ -856,6 +859,13 @@ Each problem is one line naming the file, the entry and the object:
     mapping. Across `defaults` and an entry they do not collide — the entry's
     value wins in either spelling.
   * **Fix:** delete one of the two lines.
+
+**`….yaml: grouped form has "defaults" but no "items" list; the objects are under "device" (did you mean "items"?)`**
+
+  * **Cause:** the list of a grouped file is under a misspelled key. The file
+    would otherwise be read as a single object with the unknown fields
+    `defaults` and `device`, which points away from the mistake.
+  * **Fix:** name the list `items:` (`devices:` is also accepted).
 
 **`….yaml: defaults.interfaces.idrca matches no interface listed in this file`**
 

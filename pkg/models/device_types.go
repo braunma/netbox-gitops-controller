@@ -4,8 +4,8 @@ package models
 
 // InterfaceTemplate represents an interface template for device types
 type InterfaceTemplate struct {
-	Name        string `yaml:"name" json:"name" validate:"required"`
-	Type        string `yaml:"type" json:"type" validate:"required"`
+	Name        string `yaml:"name" json:"name"`
+	Type        string `yaml:"type" json:"type"`
 	Label       string `yaml:"label,omitempty" json:"label,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	MgmtOnly    bool   `yaml:"mgmt_only,omitempty" json:"mgmt_only,omitempty"`
@@ -25,8 +25,8 @@ type InterfaceTemplate struct {
 // RearPortPosition to front ports (which position on the rear port it takes).
 // Both default to 1, which is the single-position patch panel case.
 type PortTemplate struct {
-	Name             string `yaml:"name" json:"name" validate:"required"`
-	Type             string `yaml:"type" json:"type" validate:"required"`
+	Name             string `yaml:"name" json:"name"`
+	Type             string `yaml:"type" json:"type"`
 	Label            string `yaml:"label,omitempty" json:"label,omitempty"`
 	Description      string `yaml:"description,omitempty" json:"description,omitempty"`
 	Color            string `yaml:"color,omitempty" json:"color,omitempty"`
@@ -38,7 +38,7 @@ type PortTemplate struct {
 // ConsolePortTemplate represents a console (server) port template. NetBox
 // allows a console port to omit its type, so Type is not required here.
 type ConsolePortTemplate struct {
-	Name        string `yaml:"name" json:"name" validate:"required"`
+	Name        string `yaml:"name" json:"name"`
 	Type        string `yaml:"type,omitempty" json:"type,omitempty"`
 	Label       string `yaml:"label,omitempty" json:"label,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
@@ -46,7 +46,7 @@ type ConsolePortTemplate struct {
 
 // PowerPortTemplate represents a power inlet on a device type.
 type PowerPortTemplate struct {
-	Name          string `yaml:"name" json:"name" validate:"required"`
+	Name          string `yaml:"name" json:"name"`
 	Type          string `yaml:"type,omitempty" json:"type,omitempty"`
 	Label         string `yaml:"label,omitempty" json:"label,omitempty"`
 	Description   string `yaml:"description,omitempty" json:"description,omitempty"`
@@ -57,7 +57,7 @@ type PowerPortTemplate struct {
 // PowerOutletTemplate represents a power outlet on a device type (e.g. on a
 // PDU). PowerPort names the power port template it is fed from.
 type PowerOutletTemplate struct {
-	Name        string `yaml:"name" json:"name" validate:"required"`
+	Name        string `yaml:"name" json:"name"`
 	Type        string `yaml:"type,omitempty" json:"type,omitempty"`
 	Label       string `yaml:"label,omitempty" json:"label,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
@@ -67,7 +67,7 @@ type PowerOutletTemplate struct {
 
 // ModuleBayTemplate represents a module bay template (e.g., for GPUs)
 type ModuleBayTemplate struct {
-	Name        string `yaml:"name" json:"name" validate:"required"`
+	Name        string `yaml:"name" json:"name"`
 	Label       string `yaml:"label,omitempty" json:"label,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 	Position    string `yaml:"position,omitempty" json:"position,omitempty"`
@@ -75,7 +75,7 @@ type ModuleBayTemplate struct {
 
 // DeviceBayTemplate represents a device bay template (e.g., for Chassis Nodes)
 type DeviceBayTemplate struct {
-	Name        string `yaml:"name" json:"name" validate:"required"`
+	Name        string `yaml:"name" json:"name"`
 	Label       string `yaml:"label,omitempty" json:"label,omitempty"`
 	Description string `yaml:"description,omitempty" json:"description,omitempty"`
 }
@@ -90,9 +90,9 @@ type DeviceBayTemplate struct {
 // same module type in two bays does not produce colliding interface names.
 // Names are therefore passed through verbatim and never slugified.
 type ModuleType struct {
-	Model        string `yaml:"model" json:"model" validate:"required"`
+	Model        string `yaml:"model" json:"model"`
 	Slug         string `yaml:"slug,omitempty" json:"slug,omitempty"`
-	Manufacturer string `yaml:"manufacturer" json:"manufacturer" validate:"required"`
+	Manufacturer string `yaml:"manufacturer" json:"manufacturer"`
 	// RenameFrom is this object's previous model. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -117,9 +117,9 @@ type ModuleType struct {
 
 // DeviceType represents a device type definition (blueprint for devices)
 type DeviceType struct {
-	Model        string `yaml:"model" json:"model" validate:"required"`
-	Slug         string `yaml:"slug" json:"slug" validate:"required"`
-	Manufacturer string `yaml:"manufacturer" json:"manufacturer" validate:"required"`
+	Model        string `yaml:"model" json:"model"`
+	Slug         string `yaml:"slug" json:"slug"`
+	Manufacturer string `yaml:"manufacturer" json:"manufacturer"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
