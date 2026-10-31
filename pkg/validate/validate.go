@@ -213,7 +213,7 @@ func (v *validator) collectValueChecks() []valueCheck {
 	for _, device := range v.ds.Devices {
 		ref := "device " + device.Name
 		add("dcim", "devices", "status", device.Status, ref)
-		add("dcim", "devices", "face", device.Face, ref)
+		add("dcim", "devices", "face", device.EffectiveFace(), ref)
 		add("dcim", "devices", "name", device.Name, ref)
 		add("dcim", "devices", "serial", device.Serial, ref)
 		add("dcim", "devices", "asset_tag", device.AssetTag, ref)

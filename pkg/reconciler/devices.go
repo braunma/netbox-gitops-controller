@@ -283,8 +283,8 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		if device.Position > 0 {
 			payload["position"] = device.Position
 		}
-		if device.Face != "" {
-			payload["face"] = device.Face
+		if face := device.EffectiveFace(); face != "" {
+			payload["face"] = face
 		}
 	}
 	// Else: No rack and no bay - position/face cannot be set

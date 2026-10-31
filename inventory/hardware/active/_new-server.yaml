@@ -19,7 +19,6 @@ defaults:
   role: "server"
   device_type: "CHANGEME-device-type"
   rack: "CHANGEME-rack"
-  face: "front"
 
   # What every server of this batch shares per interface. Merged into each
   # interface of that name a device lists; the device's own values win.
@@ -34,7 +33,7 @@ defaults:
 
 devices:
   - name: "CHANGEME-hostname"
-    position: 0 # lowest rack unit the chassis occupies
+    position: 1 # lowest rack unit the chassis occupies (front-mounted unless face: "rear")
     serial: "CHANGEME"
     asset_tag: "CHANGEME"
 

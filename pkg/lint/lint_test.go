@@ -735,52 +735,6 @@ func TestRackCollisionTreatsAnUnsetFaceAsFront(t *testing.T) {
 	assertCheck(t, Check(ds, Options{}), "rack-collision", 1)
 }
 
-// NetBox answers 400 "Must specify rack face when defining rack position", so
-// a positioned device without a face is never created at all.
-func TestPositionWithoutFace(t *testing.T) {
-	ds := baseDataset()
-	faceless := server("srv-01", 10)
-	faceless.Face = ""
-	ds.Devices = []*models.DeviceConfig{faceless}
-
-	got := assertCheck(t, Check(ds, Options{}), "position-without-face", 1)
-	if len(got) == 1 && got[0].Severity != Error {
-		t.Errorf("got severity %v, want error", got[0].Severity)
-	}
-}
-
-// A child device is installed into a bay, not placed at a rack unit, so
-// neither position nor face applies to it.
-func TestPositionWithoutFaceSkipsChildDevices(t *testing.T) {
-	ds := baseDataset()
-	ds.DeviceTypes = append(ds.DeviceTypes, &models.DeviceType{
-		Model: "Chassis", Slug: "chassis", Manufacturer: "Dell", UHeight: 4,
-		DeviceBays: []models.DeviceBayTemplate{{Name: "Node 1"}},
-	})
-	chassis := server("chassis-01", 20)
-	chassis.DeviceTypeSlug = "chassis"
-	node := server("node-01", 0)
-	node.Face = ""
-	node.RackSlug = ""
-	node.ParentDevice = "chassis-01"
-	node.DeviceBay = "Node 1"
-	ds.Devices = []*models.DeviceConfig{chassis, node}
-
-	assertCheck(t, Check(ds, Options{}), "position-without-face", 0)
-}
-
-// Position and face are only sent for a racked device, so a device with a
-// position but no rack has nothing to reject.
-func TestPositionWithoutFaceNeedsARack(t *testing.T) {
-	ds := baseDataset()
-	unracked := server("srv-01", 10)
-	unracked.Face = ""
-	unracked.RackSlug = ""
-	ds.Devices = []*models.DeviceConfig{unracked}
-
-	assertCheck(t, Check(ds, Options{}), "position-without-face", 0)
-}
-
 // Facts are written into a device's custom_fields by a machine now, so a
 // repository that never copied the hw_* definitions in produces YAML that
 // yamlcheck used to pass and the apply used to fail on — after earlier objects
@@ -913,12 +867,30 @@ func panelDataset(panel *models.DeviceConfig) Dataset {
 
 func TestPortsFromTemplateAreClean(t *testing.T) {
 	ds := panelDataset(&models.DeviceConfig{Name: "pp-01",
-		FrontPorts: []models.FrontPortConfig{{Name: "1", RearPort: "1"}},
-		RearPorts:  []models.RearPortConfig{{Name: "1"}},
+		FrontPorts: []models.FrontPortConfig{{Name: "1", RearPort: "1", Label: "to rack B"}},
+		RearPorts:  []models.RearPortConfig{{Name: "1", Description: "backbone"}},
 	})
 	if findings := Check(ds, Options{}); len(findings) != 0 {
 		t.Errorf("ports the template has should produce no findings:\n%s", render(findings))
 	}
+}
+
+// A port entry that only restates the template (its type, its rear port, a
+// position of 1) does nothing: the template already creates the port.
+func TestRedundantPort(t *testing.T) {
+	ds := panelDataset(&models.DeviceConfig{Name: "pp-01",
+		FrontPorts: []models.FrontPortConfig{{Name: "1", Type: "lc", RearPort: "1", RearPortPosition: 1}},
+		RearPorts:  []models.RearPortConfig{{Name: "1", Positions: 1}},
+	})
+	findings := Check(ds, Options{})
+	assertCheck(t, findings, "redundant-port", 2)
+	assertCheck(t, findings, "redundant-port-type", 0)
+	// Anything the template cannot know keeps the entry.
+	ds = panelDataset(&models.DeviceConfig{Name: "pp-01",
+		FrontPorts: []models.FrontPortConfig{{Name: "1", RearPort: "1", Description: "patched to srv-01"}},
+		RearPorts:  []models.RearPortConfig{{Name: "1", Link: &models.LinkConfig{PeerDevice: "pp-02", PeerPort: "1"}}},
+	})
+	assertCheck(t, Check(ds, Options{}), "redundant-port", 0)
 }
 
 func TestUntypedPort(t *testing.T) {
@@ -942,7 +914,7 @@ func TestUntypedPort(t *testing.T) {
 
 func TestRedundantAndOverriddenPortType(t *testing.T) {
 	ds := panelDataset(&models.DeviceConfig{Name: "pp-01",
-		FrontPorts: []models.FrontPortConfig{{Name: "1", Type: "lc", RearPort: "1"}},
+		FrontPorts: []models.FrontPortConfig{{Name: "1", Type: "lc", RearPort: "1", Label: "to rack B"}},
 		RearPorts:  []models.RearPortConfig{{Name: "1", Type: "sc"}},
 	})
 	findings := Check(ds, Options{})

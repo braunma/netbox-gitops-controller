@@ -411,6 +411,11 @@ File: `inventory/hardware/active/switches.yaml`
   * **Use the short field names.** `site`, `role`, `device_type`, `rack` and
     the others in [Field names](#field-names) are what the bundled files use;
     the `*_slug` spellings still load but read worse.
+  * **`face` defaults to `front`.** NetBox requires a face with every rack
+    position. A device that declares `position` but no `face` is sent as
+    front-mounted; write `face: "rear"` for the exceptions. This is the one
+    value the controller fills in that the YAML does not spell out, so it is
+    stated here and in the model (`EffectiveFace`).
   * **Leave out what is already the default.** `tags: ["gitops"]` is never
     needed — the managed tag is stamped on every object automatically — and
     `status: "active"` is what sites, racks, VLANs, prefixes, devices and
@@ -427,8 +432,8 @@ With those conventions in place, a new machine in an existing rack is its
 identity and its addresses, and nothing else:
 
 ```yaml
-# inventory/hardware/active/servers.yaml — `defaults` supplies site, role and
-# face, and `defaults.interfaces` the description, VRF and status of idrac and
+# inventory/hardware/active/servers.yaml — `defaults` supplies site and role,
+# and `defaults.interfaces` the description, VRF and status of idrac and
 # eth0 and eth0's primary-IP role
   - name: "berlin-srv-web-03"
     device_type: "poweredge-r740"
@@ -477,7 +482,6 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `duplicate-ip` | one address on two interfaces in the same VRF (the global table counts as one) |
 | `duplicate-primary-ip` | two interfaces claiming the primary IP for one address family, where NetBox keeps only the one written last |
 | `rack-collision` | two devices occupying the same rack unit, computed from each device type's `u_height` |
-| `position-without-face` | a rack position with no `face`, which NetBox rejects outright (`Must specify rack face when defining rack position`) |
 | `cable-conflict` | a port claimed by two different cables (a patch panel's front port and rear port of the same name are two ports, resolved by role as the reconciler does) |
 | `unknown-peer-port` | a cable to a port its peer's device type does not have |
 | `untyped-interface` | an interface that is neither an interface template on the device type nor carries a `type`, so NetBox has nothing to create it from |
@@ -490,9 +494,9 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 | `invalid-ip`, `network-address`, `broadcast-address` | an address that is not a host address (a /31 point-to-point link is not flagged) |
 
 **Warnings** — legitimate in some repositories, so they only fail under
-`--strict`: `redundant-interface-type`, `redundant-port-type` and
-`redundant-enabled` (a value the device type template or the default already
-supplies), `interface-type-override`, `port-type-override`,
+`--strict`: `redundant-interface-type`, `redundant-port-type`, `redundant-port`
+(a port entry that restates nothing but its template) and `redundant-enabled`
+(a value the device type template or the default already supplies), `interface-type-override`, `port-type-override`,
 `interface-not-in-template`,
 `cable-declared-twice` (the same cable from both ends),
 `undeclared-peer-device`, `ip-outside-prefix`, `unracked-device`,
@@ -873,14 +877,6 @@ the entry and the object:
     by exact name. A name nobody lists is a typo or a leftover.
   * **Fix:** correct the name, list the interface on the devices that should
     get it (`- name: "idrac"` is enough), or delete the block.
-
-**`400 Bad Request: {"face": ["Must specify rack face when defining rack position."]}`**
-
-  * **Cause:** the device declares `position` but no `face`. NetBox requires
-    both together, and rejects the device — every interface, IP and cable
-    behind it is then never created.
-  * **Fix:** add `face: "front"` (or `"rear"`). Put it in the file's `defaults`
-    block so it cannot be forgotten on the next device.
 
 **`400 Bad Request: {"type": ["This field may not be blank."]}`**
 

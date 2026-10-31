@@ -1,14 +1,13 @@
 # Patch Panel Inventory - Passive Fiber Infrastructure
 #
 # Grouped form: `defaults` carries what every panel shares. Each port's `type`
-# comes from the device type template (pp-12-sm-lc, pp-48-mm-lc), so a port is
-# listed here only for what the template cannot know: its label, description
-# and, on a front port, the rear port it maps to.
+# comes from the device type template (pp-12-sm-lc, pp-48-mm-lc), and so does
+# the front-to-rear mapping, so a port is listed here only for what the
+# template cannot know: its label, description or cable.
 
 defaults:
   role: "patch-panel"
   position: 42
-  face: "front"
 
 items:
   # ========================================
@@ -88,15 +87,9 @@ items:
   # Frankfurt DC - Patch Panel
   # ========================================
 
+  # All ports come from the template; nothing is patched yet, so nothing to
+  # say about any of them.
   - name: "frankfurt-pp-01"
     site: "frankfurt-dc"
     device_type: "pp-12-sm-lc"
     rack: "frankfurt-rack-c01"
-
-    front_ports:
-      - name: "1"
-        rear_port: "1"
-        rear_port_position: 1
-
-    rear_ports:
-      - name: "1"

@@ -23,7 +23,6 @@ defaults:
   role: "server"
   site: "berlin-dc"
   rack: "rack-a01"
-  face: "front"
   tags: ["production"]
   interfaces:
     eth1:

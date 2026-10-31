@@ -156,6 +156,18 @@ type DeviceConfig struct {
 	RearPorts    []RearPortConfig       `yaml:"rear_ports,omitempty" json:"rear_ports,omitempty"`
 }
 
+// EffectiveFace is the rack face sent to NetBox: the declared one, or "front"
+// when the device has a rack position but names no face. NetBox requires a
+// face with every position and answers 400 otherwise; nearly every device is
+// front-mounted, so the YAML only has to say so when it is not. The default
+// is documented in the README under "Conventions that keep the YAML small".
+func (d *DeviceConfig) EffectiveFace() string {
+	if d.Face == "" && d.Position > 0 {
+		return "front"
+	}
+	return d.Face
+}
+
 // Slug generates a slug from the device name
 func (d *DeviceConfig) Slug() string {
 	return slugify(d.Name)
