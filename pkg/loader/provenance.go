@@ -225,6 +225,12 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 			errs = append(errs, prefixed(entry+": "+label, err))
 			continue
 		}
+		// `Eth1/{1-48}` and the like become one entry per number, after the
+		// keys are checked (once, on the one entry) and before decoding.
+		if err := expandRanges(raw, ""); err != nil {
+			errs = append(errs, prefixed(entry+": "+label, err))
+			continue
+		}
 		merged := mergeDefaults(defaults, raw)
 		applyInterfaceDefaults(merged, ifaceDefaults, alwaysIfaces, usedIfaceDefaults)
 

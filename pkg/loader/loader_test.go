@@ -859,3 +859,58 @@ items_:
 		})
 	}
 }
+
+// A template name holding `{a-b}` is one template per number, with a ranged
+// field of the same entry (a front port's rear port) counting along.
+func TestTemplateRanges(t *testing.T) {
+	dir := t.TempDir()
+	writeFile(t, dir, "types", "sw.yaml", `
+- model: "SW"
+  slug: "sw"
+  manufacturer: "X"
+  interfaces:
+    - { name: "mgmt", type: "1000base-t", mgmt_only: true }
+    - { name: "Eth1/{1-48}", type: "25gbase-x-sfp28" }
+    - { name: "Eth1/{49-54}", type: "100gbase-x-qsfp28" }
+  front_ports:
+    - { name: "F{01-12}", type: "lc", rear_port: "R{01-12}", description: "to rack B" }
+  rear_ports:
+    - { name: "R{01-12}", type: "lc", positions: 1 }
+`)
+	types, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDeviceTypes("types")
+	if err != nil {
+		t.Fatalf("LoadDeviceTypes() error = %v", err)
+	}
+	dt := types[0]
+	if len(dt.Interfaces) != 55 {
+		t.Fatalf("got %d interfaces, want 55", len(dt.Interfaces))
+	}
+	if dt.Interfaces[1].Name != "Eth1/1" || dt.Interfaces[48].Name != "Eth1/48" || dt.Interfaces[48].Type != "25gbase-x-sfp28" ||
+		dt.Interfaces[49].Name != "Eth1/49" || dt.Interfaces[54].Name != "Eth1/54" || dt.Interfaces[54].Type != "100gbase-x-qsfp28" {
+		t.Errorf("interfaces not expanded in order: %s … %s", dt.Interfaces[1].Name, dt.Interfaces[54].Name)
+	}
+	if len(dt.FrontPorts) != 12 || dt.FrontPorts[0].Name != "F01" || dt.FrontPorts[0].RearPort != "R01" ||
+		dt.FrontPorts[11].Name != "F12" || dt.FrontPorts[11].RearPort != "R12" || dt.FrontPorts[11].Description != "to rack B" {
+		t.Errorf("front ports = %+v, want F01..F12 mapped to R01..R12 with the description on each", dt.FrontPorts)
+	}
+	if len(dt.RearPorts) != 12 || dt.RearPorts[0].Name != "R01" || dt.RearPorts[0].Positions != 1 {
+		t.Errorf("rear ports = %+v, want R01..R12", dt.RearPorts)
+	}
+
+	cases := []struct{ name, body, want string }{
+		{"lengths differ", `front_ports: [{ name: "{1-12}", type: "lc", rear_port: "{1-6}" }]`, `expands to 12 entries but rear_port "{1-6}" to 6`},
+		{"backwards", `interfaces: [{ name: "Eth{8-1}", type: "virtual" }]`, "runs backwards"},
+		{"two ranges", `interfaces: [{ name: "Eth{1-2}/{1-4}", type: "virtual" }]`, "more than one"},
+		{"range only in another field", `front_ports: [{ name: "1", type: "lc", rear_port: "{1-2}" }]`, `rear_port "{1-2}" holds a range but name "1" does not`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := t.TempDir()
+			writeFile(t, dir, "types", "x.yaml", "- model: \"X\"\n  slug: \"x\"\n  manufacturer: \"X\"\n  "+tc.body+"\n")
+			_, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDeviceTypes("types")
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("error = %v, want it to contain %q", err, tc.want)
+			}
+		})
+	}
+}

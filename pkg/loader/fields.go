@@ -6,7 +6,9 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
@@ -453,4 +455,136 @@ func deepCopy(v interface{}) interface{} {
 		return out
 	}
 	return v
+}
+
+// rangeRe matches the numeric range a template name may hold: `Eth1/{1-48}`.
+var rangeRe = regexp.MustCompile(`\{(\d+)-(\d+)\}`)
+
+// expandRanges replaces every list entry whose `name` holds a range `{a-b}`
+// by one entry per number, so a switch's 48 identical ports or a panel's 48
+// front ports are one line each:
+//
+//	interfaces:
+//	  - { name: "Eth1/{1-48}", type: "25gbase-x-sfp28" }
+//	front_ports:
+//	  - { name: "{1-48}", type: "lc", rear_port: "{1-48}" }
+//
+// Another string field of the same entry that holds a range counts along
+// with the name (the rear port above), so it must span as many numbers. A
+// leading zero in the range's start sets the width: `{01-12}` gives 01..12.
+// It walks nested mappings and lists, so it serves a device type's templates
+// and a device's own interfaces alike; an entry without a range in its name
+// is left as it is.
+func expandRanges(raw map[string]interface{}, path string) error {
+	var errs []error
+	for _, key := range sortedKeys(raw) {
+		switch v := raw[key].(type) {
+		case map[string]interface{}:
+			if err := expandRanges(v, joinPath(path, key)); err != nil {
+				errs = append(errs, err)
+			}
+		case []interface{}:
+			out := make([]interface{}, 0, len(v))
+			for i, item := range v {
+				m, ok := item.(map[string]interface{})
+				if !ok {
+					out = append(out, item)
+					continue
+				}
+				p := fmt.Sprintf("%s[%d]", joinPath(path, key), i+1)
+				if err := expandRanges(m, p); err != nil {
+					errs = append(errs, err)
+				}
+				expanded, err := expandEntry(m, p)
+				if err != nil {
+					errs = append(errs, err)
+					out = append(out, item)
+					continue
+				}
+				out = append(out, expanded...)
+			}
+			raw[key] = out
+		}
+	}
+	return errors.Join(errs...)
+}
+
+// expandEntry returns the entries one mapping stands for: itself when its
+// name holds no range, otherwise one copy per number with every ranged
+// string field counted along.
+func expandEntry(m map[string]interface{}, path string) ([]interface{}, error) {
+	name, _ := m["name"].(string)
+	span, ranged, err := parseRange(name)
+	if err != nil {
+		return nil, fmt.Errorf("%s: name %q %w", path, name, err)
+	}
+	if !ranged {
+		for _, k := range sortedKeys(m) {
+			if s, ok := m[k].(string); ok && rangeRe.MatchString(s) {
+				return nil, fmt.Errorf("%s: %s %q holds a range but name %q does not; a range counts along with the name", path, k, s, name)
+			}
+		}
+		return []interface{}{m}, nil
+	}
+	n := span.count()
+	out := make([]interface{}, 0, n)
+	for i := 0; i < n; i++ {
+		entry := make(map[string]interface{}, len(m))
+		for k, v := range m {
+			s, isString := v.(string)
+			if !isString || !rangeRe.MatchString(s) {
+				entry[k] = deepCopy(v)
+				continue
+			}
+			other, _, err := parseRange(s)
+			if err != nil {
+				return nil, fmt.Errorf("%s: %s %q %w", path, k, s, err)
+			}
+			if other.count() != n {
+				return nil, fmt.Errorf("%s: name %q expands to %d entries but %s %q to %d; a range counts along with the name, so both must span as many",
+					path, name, n, k, s, other.count())
+			}
+			entry[k] = other.at(i)
+		}
+		out = append(out, entry)
+	}
+	return out, nil
+}
+
+// numRange is a `{a-b}` range inside a string, with what surrounds it.
+type numRange struct {
+	prefix, suffix string
+	from, to       int
+	width          int // >0 when the start had a leading zero: pad to it
+}
+
+func parseRange(s string) (numRange, bool, error) {
+	locs := rangeRe.FindAllStringSubmatchIndex(s, -1)
+	if len(locs) == 0 {
+		return numRange{}, false, nil
+	}
+	if len(locs) > 1 {
+		return numRange{}, false, errors.New("holds more than one {a-b} range; a name may hold one")
+	}
+	l := locs[0]
+	start, end := s[l[2]:l[3]], s[l[4]:l[5]]
+	from, _ := strconv.Atoi(start)
+	to, _ := strconv.Atoi(end)
+	if to < from {
+		return numRange{}, false, fmt.Errorf("range {%s-%s} runs backwards", start, end)
+	}
+	r := numRange{prefix: s[:l[0]], suffix: s[l[1]:], from: from, to: to}
+	if strings.HasPrefix(start, "0") && len(start) > 1 {
+		r.width = len(start)
+	}
+	return r, true, nil
+}
+
+func (r numRange) count() int { return r.to - r.from + 1 }
+
+func (r numRange) at(i int) string {
+	if r.width > 0 {
+		return fmt.Sprintf("%s%0*d%s", r.prefix, r.width, r.from+i, r.suffix)
+	}
+	return fmt.Sprintf("%s%d%s", r.prefix, r.from+i, r.suffix)
 }

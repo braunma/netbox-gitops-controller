@@ -56,6 +56,12 @@ are about to run before applying a sync with pruning enabled.
   the most specific declared prefix it falls into is an error; an address
   with no VRF inside a prefix that has one is a warning (NetBox would file it
   in the global table, apart from its network).
+- **Ranges in template and port names.** `Eth1/{1-48}` in a device type (or
+  a device's own interfaces, modules and ports) is one entry per number, and
+  a ranged field of the same entry counts along (`rear_port: "{1-48}"`). The
+  bundled S5248F-ON goes from 116 lines to 3 interface lines, the 48-port
+  panel from 246 to 2. The loader expands the range when the file is read;
+  NetBox and every check see the individual ports.
 - **Cable paths through patch panels (`link.via`).** A strand from an
   endpoint through the panel in its rack, the backbone, and the panel in the
   far rack to its peer used to be three `link:`s in three files. It is now
