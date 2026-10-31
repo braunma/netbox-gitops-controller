@@ -5,6 +5,8 @@ package models
 import (
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
 
 func TestVRFSlug(t *testing.T) {
@@ -214,5 +216,32 @@ func TestIsPrimaryIPAcceptsBothPlacements(t *testing.T) {
 				t.Errorf("VMInterfaceConfig.IsPrimaryIP() = %v, want %v", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestViaHopShorthand covers the "device:port" shorthand of a cable path hop
+// next to the mapping form, and the error a malformed hop produces.
+func TestViaHopShorthand(t *testing.T) {
+	var link LinkConfig
+	err := yaml.Unmarshal([]byte(`
+peer_device: leaf
+peer_port: Eth1/2
+via:
+  - "pp-a:2"
+  - { device: pp-b, port: "3", color: blue }
+`), &link)
+	if err != nil {
+		t.Fatalf("Unmarshal: %v", err)
+	}
+	want := []ViaHop{{Device: "pp-a", Port: "2"}, {Device: "pp-b", Port: "3", Color: "blue"}}
+	if len(link.Via) != 2 || link.Via[0] != want[0] || link.Via[1] != want[1] {
+		t.Errorf("Via = %+v, want %+v", link.Via, want)
+	}
+	for _, bad := range []string{`via: ["pp-a"]`, `via: [":2"]`, `via: ["pp-a:"]`} {
+		var l LinkConfig
+		err := yaml.Unmarshal([]byte("peer_device: x\npeer_port: y\n"+bad), &l)
+		if err == nil || !strings.Contains(err.Error(), `must be "device:port"`) {
+			t.Errorf("%s: error = %v, want the shorthand explained", bad, err)
+		}
 	}
 }

@@ -12,6 +12,21 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Known issues
+
+- **Cables the controller creates carry no `gitops` tag and are never
+  pruned.** When `--prune` deletes a device, NetBox removes the cable's
+  terminations but keeps the cable object, so an instance accumulates cables
+  with no ends (32 of them in a test instance after a day of applies). They
+  are harmless to the sync and invisible in a trace, but they are clutter and
+  they are not cleaned up. Planned: tag cables as managed and prune cables
+  without terminations.
+- **`--dry-run --detailed-exitcode` reports changes on a converged instance.**
+  Against NetBox 4.6.10 it plans updates for sites, racks, VRFs, VLAN groups,
+  VLANs and prefixes that an apply then does not make, and exits 2. The
+  controller before this release behaves the same, so it is a comparison
+  problem in the dry-run, not drift; `tests/e2e/repo-data.sh` flags it.
+
 ### Fixed
 
 - **Declared `tags:` now reach NetBox.** Every model accepted a `tags:` list,

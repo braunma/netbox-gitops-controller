@@ -256,7 +256,7 @@ expect "switch strand traces through both panels to the other switch" \
 expect "switch strand is the same path seen from the far end" \
   "$(trace_far_end berlin-leaf-02 Eth1/49)" "berlin-leaf-01[Eth1/49]"
 # Only cables that still have ends count: deleting a device leaves its cables
-# behind as empty shells in NetBox (see "dangling cables" in CHANGELOG).
+# behind as empty shells in NetBox (CHANGELOG, "Known issues").
 expect "exactly two backbone cables between the panels' rear ports" \
   "$(api "dcim/cables/?limit=500" | python3 -c '
 import json, sys

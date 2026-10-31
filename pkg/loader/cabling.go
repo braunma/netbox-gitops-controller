@@ -10,11 +10,9 @@ import (
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 )
 
-// patchPanelRole is the role a device must have to be a hop on a cable path.
-// It is the same role the reconciler keys its front/rear port selection on,
-// so a path can only run through devices whose cables it will wire as panel
-// cables.
-const patchPanelRole = "patch-panel"
+// patchPanelRole is the role a device must have to be a hop on a cable path:
+// the one the reconciler keys its front/rear port selection on.
+const patchPanelRole = models.PatchPanelRole
 
 // ExpandCablePaths turns every `link.via` path into the cables NetBox holds
 // and attaches them to the devices of the dataset, so that the reconciler and
@@ -27,11 +25,14 @@ const patchPanelRole = "patch-panel"
 //	                                  rear port A's device type maps front 2 to
 //	B[front 2]     -- leaf[Eth1/2]    a link on B's front port 2
 //
-// The cable attributes of the link apply to every segment; a hop's own
-// attributes override them for the segment leaving that hop. A rear or front
-// port entry the panel already declares is reused: a port without a link gets
-// one, a port whose link already names the same far end is left alone, and a
-// port cabled elsewhere is a conflict.
+// The link's cable attributes describe its patch cords (the first and the
+// last segment); the backbone between two panels takes the first panel's
+// cable_defaults.rear. A hop written as a mapping overrides the segment that
+// leaves that panel, and a panel's cable_defaults fill whatever is still
+// empty. A rear or front port entry the panel already declares is reused: a
+// port without a link gets one, a port whose link already names the same far
+// end with the same attributes is left alone, and a port cabled elsewhere or
+// with other attributes is a conflict.
 //
 // It returns one line per path, every port along it, for the log: with the
 // strand written in one place, the log is where the three cables can be seen.
@@ -140,9 +141,11 @@ func expandPath(d *models.DeviceConfig, iface *models.InterfaceConfig, devices m
 				return "", err
 			}
 		case i == 0:
-			// A single panel: in on the front, straight on from the rear.
+			// A single panel: in on the front, straight on from the rear. What
+			// leaves the rear is still a patch cord to a device, so it takes
+			// the cord defaults, not the backbone's.
 			path = append(path, frontPort, rearPort)
-			cord := segmentAttrs{base: base, hop: hop.hop, panel: defaults.Rear}.link(farDevice, farPort)
+			cord := segmentAttrs{base: base, hop: hop.hop, panel: defaults.Front}.link(farDevice, farPort)
 			if err := ensureRearLink(hop.panel, hop.rear, cord); err != nil {
 				return "", err
 			}
@@ -259,15 +262,32 @@ func ensureFrontLink(panel *models.DeviceConfig, name, rear string, rearPos int,
 }
 
 // mergeLink sets a port's link, keeps one that already names the same far end
-// (two paths sharing a backbone strand), and rejects one cabled elsewhere.
+// with the same cable (two paths sharing a backbone strand, or the explicit
+// and the path form of one cable), and rejects one cabled elsewhere or
+// described differently: two declarations of one cable must agree, or the
+// one that lost would vanish without a word.
 func mergeLink(port string, existing **models.LinkConfig, link *models.LinkConfig) error {
 	if *existing == nil {
 		*existing = link
 		return nil
 	}
-	if (*existing).PeerDevice == link.PeerDevice && (*existing).PeerPort == link.PeerPort {
-		return nil
+	have := *existing
+	if have.PeerDevice != link.PeerDevice || have.PeerPort != link.PeerPort {
+		return fmt.Errorf("%s is already cabled to %s[%s]; the path needs it cabled to %s[%s]",
+			port, have.PeerDevice, have.PeerPort, link.PeerDevice, link.PeerPort)
 	}
-	return fmt.Errorf("%s is already cabled to %s[%s]; the path needs it cabled to %s[%s]",
-		port, (*existing).PeerDevice, (*existing).PeerPort, link.PeerDevice, link.PeerPort)
+	for _, f := range []struct{ name, have, want string }{
+		{"cable_type", have.CableType, link.CableType},
+		{"color", have.Color, link.Color},
+	} {
+		if f.have != "" && f.want != "" && f.have != f.want {
+			return fmt.Errorf("%s is cabled to %s[%s] with %s %q, but the path says %q; make them agree or drop one declaration",
+				port, have.PeerDevice, have.PeerPort, f.name, f.have, f.want)
+		}
+	}
+	if have.Length > 0 && link.Length > 0 && have.Length != link.Length {
+		return fmt.Errorf("%s is cabled to %s[%s] with length %g, but the path says %g; make them agree or drop one declaration",
+			port, have.PeerDevice, have.PeerPort, have.Length, link.Length)
+	}
+	return nil
 }

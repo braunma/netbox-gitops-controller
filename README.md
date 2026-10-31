@@ -432,11 +432,16 @@ Cable path: srv[eth1] > pp-a01[front 2] > pp-a01[rear 2] > pp-b02[rear 2] > pp-b
     and its device type (or the panel itself) must map the named front port
     to a rear port. Anything else is an error that quotes the path as written.
   * A rear port the panel already declares is reused: with no link it gets the
-    backbone, with a link to the same far end it is left alone (two strands on
-    one trunk), with a link elsewhere it is a `cable-conflict`-style error.
+    backbone, with a link to the same far end and the same cable it is left
+    alone (two strands on one trunk), with a link elsewhere or a different
+    type or colour it is an error quoting both.
   * The explicit form — one `link:` per cable, the backbone on the panel's
     `rear_ports` — keeps working and is what `via` expands to. Mixing both for
-    the same strand is fine as long as they agree.
+    the same strand is allowed only where they agree; a disagreement is an
+    error rather than one of them winning quietly.
+  * The far end should be declared in this repository. A peer that exists only
+    in NetBox is wired by its NetBox role at apply time, which `yamlcheck`
+    cannot see (`undeclared-peer-device`).
 
 `tests/e2e/repo-data.sh` asks NetBox to trace both sample strands end to end,
 so the shape above is exercised against a real NetBox on every e2e run.
@@ -566,7 +571,8 @@ go run ./cmd/yamlcheck --strict              # fail on warnings too
 `--strict`: `redundant-interface-type`, `redundant-port-type`, `redundant-port`
 (a port entry that restates nothing but its template) and `redundant-enabled`
 (a value the device type template or the default already supplies), `interface-type-override`, `port-type-override`,
-`interface-not-in-template`,
+`interface-not-in-template`, `cable-defaults-off-panel` (a `cable_defaults`
+block on a device that is not a patch panel, where it does nothing),
 `cable-declared-twice` (the same cable from both ends),
 `undeclared-peer-device`, `ip-outside-prefix`, `unracked-device`,
 `module-type-without-slug`.

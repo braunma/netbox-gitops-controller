@@ -9,6 +9,12 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// PatchPanelRole is the role slug that makes a device a patch panel for
+// cabling: the reconciler wires a cable into such a device onto a front port
+// (or, between two of them, rear port to rear port), the lint mirrors that,
+// and a cable path (LinkConfig.Via) may only run through devices with it.
+const PatchPanelRole = "patch-panel"
+
 // LinkConfig represents a cable connection definition.
 //
 // Without Via it is one cable: this port to peer_device/peer_port. With Via
@@ -37,10 +43,11 @@ type LinkConfig struct {
 }
 
 // ViaHop is one patch panel on a cable path: the panel and the front port the
-// cord from the previous hop lands on. The cable attributes describe the
-// cable that LEAVES this panel toward the peer (the backbone to the next
-// panel, or the last cord to the peer); where they are empty, the link's own
-// attributes apply to that segment too.
+// cord lands on. The cable attributes describe the cable that LEAVES this
+// panel toward the peer (the backbone to the next panel, or the last cord to
+// the peer). Where they are empty, a cord takes the link's attributes and
+// then the panel's cable_defaults.front; a backbone takes the panel's
+// cable_defaults.rear.
 //
 // In YAML a hop is either a mapping or the shorthand "device:port":
 //

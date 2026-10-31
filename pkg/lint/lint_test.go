@@ -939,3 +939,18 @@ func TestUnknownRearPort(t *testing.T) {
 	})
 	assertCheck(t, Check(ds, Options{}), "unknown-rear-port", 0)
 }
+
+// cable_defaults only act on paths through a patch panel; anywhere else the
+// block is dead weight and the author probably meant something that does not
+// exist, so it is pointed out.
+func TestCableDefaultsOffPanel(t *testing.T) {
+	ds := baseDataset()
+	srv := server("srv-01", 10)
+	srv.CableDefaults = &models.CableDefaults{Front: models.CableAttrs{CableType: "cat6"}}
+	ds.Devices = []*models.DeviceConfig{srv}
+	assertCheck(t, Check(ds, Options{}), "cable-defaults-off-panel", 1)
+
+	ds = panelDataset(&models.DeviceConfig{Name: "pp-01",
+		CableDefaults: &models.CableDefaults{Front: models.CableAttrs{CableType: "lc"}}})
+	assertCheck(t, Check(ds, Options{}), "cable-defaults-off-panel", 0)
+}

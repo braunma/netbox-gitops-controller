@@ -291,6 +291,11 @@ func (c *checker) checkDeviceReferences() {
 		if d.DeviceTypeSlug != "" && c.deviceTypes[d.DeviceTypeSlug] == nil {
 			c.reference(ref, "unknown-device-type", "device type", d.DeviceTypeSlug, len(c.ds.DeviceTypes))
 		}
+		if d.CableDefaults != nil && d.RoleSlug != patchPanelRole {
+			c.add(Warning, "cable-defaults-off-panel", ref,
+				"declares cable_defaults but has role %q; they only apply to paths through a device with role %q, so this block does nothing",
+				d.RoleSlug, patchPanelRole)
+		}
 		if d.RackSlug != "" && d.Position == 0 && d.ParentDevice == "" {
 			c.add(Warning, "unracked-device", ref,
 				"names a rack but no position, so NetBox files it as non-racked equipment in %s", d.RackSlug)
@@ -740,7 +745,7 @@ const (
 // patchPanelRole is the role slug the reconciler keys its front/rear port
 // selection on. A panel under any other role has its cables resolved as
 // interfaces, so the checks here mirror that rather than guess.
-const patchPanelRole = "patch-panel"
+const patchPanelRole = models.PatchPanelRole
 
 // cableEnd is one end of a declared cable. The kind is part of its identity:
 // pp-01[front 2] and pp-01[rear 2] are two ports, not one.

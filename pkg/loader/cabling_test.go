@@ -192,3 +192,36 @@ func TestExpandCablePathsPanelDefaults(t *testing.T) {
 		t.Errorf("a cable declared on its own must not inherit panel defaults, got %+v", *l)
 	}
 }
+
+// Two declarations of one cable must agree on the cable, not just on its
+// ends: an explicit backbone with another colour than the path's is refused
+// instead of one of them vanishing.
+func TestExpandCablePathsRejectsDisagreeingDuplicate(t *testing.T) {
+	ds := panelsDataset()
+	ds.Devices[1].RearPorts = []models.RearPortConfig{{Name: "2", Link: &models.LinkConfig{PeerDevice: "pp-b", PeerPort: "2", Color: "green"}}}
+	_, err := ExpandCablePaths(&ds)
+	if err == nil || !strings.Contains(err.Error(), `color "green", but the path says "purple"`) {
+		t.Fatalf("error = %v, want the colour disagreement named", err)
+	}
+	// Agreeing, or silent on the attribute, is fine.
+	ds = panelsDataset()
+	ds.Devices[1].RearPorts = []models.RearPortConfig{{Name: "2", Link: &models.LinkConfig{PeerDevice: "pp-b", PeerPort: "2", Color: "purple"}}}
+	if _, err := ExpandCablePaths(&ds); err != nil {
+		t.Errorf("agreeing duplicate: %v", err)
+	}
+}
+
+// A single panel's onward cord is a cord: it takes the panel's front (cord)
+// defaults, not the backbone's.
+func TestExpandCablePathsOnePanelUsesCordDefaults(t *testing.T) {
+	ds := panelsDataset()
+	ds.Devices[1].CableDefaults = &models.CableDefaults{
+		Front: models.CableAttrs{Color: "yellow"}, Rear: models.CableAttrs{Color: "purple"}}
+	ds.Devices[0].Interfaces[0].Link = &models.LinkConfig{PeerDevice: "leaf", PeerPort: "Eth1/2", Via: []models.ViaHop{{Device: "pp-a", Port: "2"}}}
+	if _, err := ExpandCablePaths(&ds); err != nil {
+		t.Fatal(err)
+	}
+	if l := linkOf(t, ds, "pp-a", "rear", "2"); l.Color != "yellow" {
+		t.Errorf("onward cord colour = %q, want the cord default yellow", l.Color)
+	}
+}
