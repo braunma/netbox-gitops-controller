@@ -183,12 +183,13 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 	kind := models.KindOf(reflect.New(modelType.Elem()).Interface().(models.Validator))
 	var defaults map[string]interface{}
 	var ifaceDefaults map[string]map[string]interface{}
+	var alwaysIfaces map[string]bool
 	var errs []error
 	if defaultsNode != nil {
 		if err := defaultsNode.Decode(&defaults); err != nil {
 			return nil, prefixed(file+": defaults: must be a mapping of fields", err)
 		}
-		if ifaceDefaults, err = interfaceDefaults(defaults, modelType); err != nil {
+		if ifaceDefaults, alwaysIfaces, err = interfaceDefaults(defaults, modelType); err != nil {
 			errs = append(errs, err)
 		}
 		if err := normalizeFields(defaults, modelType, "defaults"); err != nil {
@@ -213,6 +214,11 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 			continue
 		}
 		label := objectLabel(kind, raw)
+		// `interfaces:` may be a mapping keyed by name; the model wants a list.
+		if err := widenInterfaceMap(raw); err != nil {
+			errs = append(errs, prefixed(entry+": "+label, err))
+			continue
+		}
 		// Normalized before merging, so an item's short `site:` overrides a
 		// default `site_slug:` instead of the two colliding.
 		if err := normalizeFields(raw, modelType, ""); err != nil {
@@ -220,7 +226,7 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 			continue
 		}
 		merged := mergeDefaults(defaults, raw)
-		applyInterfaceDefaults(merged, ifaceDefaults, usedIfaceDefaults)
+		applyInterfaceDefaults(merged, ifaceDefaults, alwaysIfaces, usedIfaceDefaults)
 
 		object, err := decodeMerged[T](merged)
 		if err != nil {

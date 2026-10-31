@@ -97,6 +97,9 @@ type checker struct {
 	// name at another site is not a match.
 	vlansBySite map[string]map[string]bool
 	prefixes    []netip.Prefix
+	// prefixVRFs is the VRF each declared prefix is in, by prefix, so an
+	// address can be checked against the VRF of the network it falls into.
+	prefixVRFs map[netip.Prefix]string
 
 	findings []Finding
 }
@@ -191,9 +194,11 @@ func (c *checker) index() {
 		c.vlansBySite[v.SiteSlug][v.Name] = true
 	}
 	c.indexModuleTypes()
+	c.prefixVRFs = make(map[netip.Prefix]string, len(c.ds.Prefixes))
 	for _, p := range c.ds.Prefixes {
 		if parsed, err := netip.ParsePrefix(p.Prefix); err == nil {
 			c.prefixes = append(c.prefixes, parsed)
+			c.prefixVRFs[parsed] = p.VRFName
 		}
 	}
 }
@@ -691,6 +696,21 @@ func (c *checker) checkIPAddresses() {
 			c.add(Warning, "ip-outside-prefix", object,
 				"IP %s falls outside every prefix declared in definitions/prefixes", addr.Addr())
 		}
+		// The prefix an address falls into says which VRF it belongs to; an
+		// address declared in another VRF, or in none, lands somewhere else
+		// in NetBox than its network and is almost always a slip.
+		if prefix, ok := c.enclosingPrefix(addr.Addr()); ok && c.prefixVRFs[prefix] != "" {
+			switch {
+			case ip.VRF == "":
+				c.add(Warning, "ip-vrf-mismatch", object,
+					"IP %s declares no VRF, but its prefix %s is in VRF %s; NetBox files the address in the global table, apart from its network",
+					addr.Addr(), prefix, c.prefixVRFs[prefix])
+			case ip.VRF != c.prefixVRFs[prefix]:
+				c.add(Error, "ip-vrf-mismatch", object,
+					"IP %s is in VRF %s, but its prefix %s is in VRF %s",
+					addr.Addr(), ip.VRF, prefix, c.prefixVRFs[prefix])
+			}
+		}
 	}
 
 	for _, d := range c.ds.Devices {
@@ -720,6 +740,18 @@ func (c *checker) checkIPAddresses() {
 			record(fmt.Sprintf("virtual machine %s interface %s", vm.Name, iface.Name), iface.IP)
 		}
 	}
+}
+
+// enclosingPrefix returns the most specific declared prefix containing addr.
+func (c *checker) enclosingPrefix(addr netip.Addr) (netip.Prefix, bool) {
+	var best netip.Prefix
+	found := false
+	for _, p := range c.prefixes {
+		if p.Contains(addr) && (!found || p.Bits() > best.Bits()) {
+			best, found = p, true
+		}
+	}
+	return best, found
 }
 
 func (c *checker) withinDeclaredPrefix(addr netip.Addr) bool {
