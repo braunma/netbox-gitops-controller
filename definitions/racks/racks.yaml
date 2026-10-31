@@ -12,28 +12,28 @@ items:
   # Berlin DC Racks
   - name: "Rack A01"
     slug: "berlin-rack-a01"
-    site_slug: "berlin-dc"
+    site: "berlin-dc"
 
   - name: "Rack A02"
     slug: "berlin-rack-a02"
-    site_slug: "berlin-dc"
+    site: "berlin-dc"
 
   - name: "Rack B01"
     slug: "berlin-rack-b01"
-    site_slug: "berlin-dc"
+    site: "berlin-dc"
     u_height: 48
 
   # Frankfurt DC Racks
   - name: "Rack C01"
     slug: "frankfurt-rack-c01"
-    site_slug: "frankfurt-dc"
+    site: "frankfurt-dc"
 
   - name: "Rack C02"
     slug: "frankfurt-rack-c02"
-    site_slug: "frankfurt-dc"
+    site: "frankfurt-dc"
 
   # Munich Lab Racks
   - name: "Lab Rack 01"
     slug: "munich-lab-rack-01"
-    site_slug: "munich-lab"
+    site: "munich-lab"
     tags: ["lab"]

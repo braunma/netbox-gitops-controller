@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 
 	"gopkg.in/yaml.v3"
 
@@ -164,14 +165,24 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 		return nil, err
 	}
 
-	// The file's defaults, decoded once, so every item of the file merges
-	// against the same map.
+	// The file's defaults, decoded and normalized once, so every item of the
+	// file merges against the same map. Per-interface defaults are taken out
+	// first: they are keyed by interface name, not shaped like the model.
+	modelType := reflect.TypeOf((*T)(nil)).Elem()
 	var defaults map[string]interface{}
+	var ifaceDefaults map[string]map[string]interface{}
 	if defaultsNode != nil {
 		if err := defaultsNode.Decode(&defaults); err != nil {
 			return nil, fmt.Errorf("%s: failed to read the defaults block: %w", path, err)
 		}
+		if ifaceDefaults, err = interfaceDefaults(defaults, modelType); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
+		if err := normalizeFields(defaults, modelType, "defaults"); err != nil {
+			return nil, fmt.Errorf("%s: %w", path, err)
+		}
 	}
+	usedIfaceDefaults := make(map[string]bool, len(ifaceDefaults))
 
 	declared := make([]Declared[T], 0, len(itemNodes))
 	var errs []error
@@ -181,8 +192,16 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 			errs = append(errs, fmt.Errorf("%s: entry %d: expected a mapping: %w", path, i+1, err))
 			continue
 		}
+		// Normalized before merging, so an item's short `site:` overrides a
+		// default `site_slug:` instead of the two colliding.
+		if err := normalizeFields(raw, modelType, ""); err != nil {
+			errs = append(errs, fmt.Errorf("%s: entry %d: %w", path, i+1, err))
+			continue
+		}
+		merged := mergeDefaults(defaults, raw)
+		applyInterfaceDefaults(merged, ifaceDefaults, usedIfaceDefaults)
 
-		object, err := decodeMerged[T](mergeDefaults(defaults, raw))
+		object, err := decodeMerged[T](merged)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("%s: entry %d: %w", path, i+1, err))
 			continue
@@ -207,6 +226,18 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 				Parked: parked,
 			},
 		})
+	}
+
+	// A per-interface default that no listed interface picked up is a typo in
+	// its name, or a leftover: either way it does nothing, so say so. Skipped
+	// when entries failed, since the interface that would have used it may be
+	// among them.
+	if len(errs) == 0 {
+		for _, name := range sortedKeys(ifaceDefaults) {
+			if !usedIfaceDefaults[name] {
+				errs = append(errs, fmt.Errorf("%s: defaults.interfaces.%s matches no interface listed in this file", path, name))
+			}
+		}
 	}
 
 	if err := errors.Join(errs...); err != nil {

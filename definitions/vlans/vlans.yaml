@@ -4,55 +4,55 @@
 # Berlin DC VLANs
 - vid: 10
   name: "Management"
-  site_slug: "berlin-dc"
-  group_slug: "berlin-dc-vlans"
+  site: "berlin-dc"
+  group: "berlin-dc-vlans"
   description: "Management network for out-of-band access"
 
 - vid: 20
   name: "Server-Production"
-  site_slug: "berlin-dc"
-  group_slug: "berlin-dc-vlans"
+  site: "berlin-dc"
+  group: "berlin-dc-vlans"
   description: "Production server network"
   tags: ["production"]
 
 - vid: 30
   name: "Storage"
-  site_slug: "berlin-dc"
-  group_slug: "berlin-dc-vlans"
+  site: "berlin-dc"
+  group: "berlin-dc-vlans"
   description: "Storage network (iSCSI/NFS)"
 
 - vid: 40
   name: "AI-Compute"
-  site_slug: "berlin-dc"
-  group_slug: "berlin-dc-vlans"
+  site: "berlin-dc"
+  group: "berlin-dc-vlans"
   description: "AI/ML compute network"
   tags: ["ai-ml"]
 
 # Frankfurt DC VLANs
 - vid: 10
   name: "Management"
-  site_slug: "frankfurt-dc"
-  group_slug: "frankfurt-dc-vlans"
+  site: "frankfurt-dc"
+  group: "frankfurt-dc-vlans"
   description: "Management network"
 
 - vid: 20
   name: "Server-Production"
-  site_slug: "frankfurt-dc"
-  group_slug: "frankfurt-dc-vlans"
+  site: "frankfurt-dc"
+  group: "frankfurt-dc-vlans"
   description: "Production server network"
   tags: ["production"]
 
 # Munich Lab VLANs
 - vid: 100
   name: "Lab-Management"
-  site_slug: "munich-lab"
-  group_slug: "munich-lab-vlans"
+  site: "munich-lab"
+  group: "munich-lab-vlans"
   description: "Lab management network"
   tags: ["lab"]
 
 - vid: 200
   name: "Lab-Testing"
-  site_slug: "munich-lab"
-  group_slug: "munich-lab-vlans"
+  site: "munich-lab"
+  group: "munich-lab-vlans"
   description: "Lab testing network"
   tags: ["lab", "development"]

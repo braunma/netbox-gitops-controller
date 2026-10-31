@@ -126,7 +126,7 @@ absent  "the scan did not write a model"                "${SERVERS}" "PowerEdge 
 absent  "the scan did not write a manufacturer"         "${SERVERS}" "Dell Inc."
 # The file around the edit is intact.
 contains "the file's own comments survived"             "${SERVERS}" "# Example Server Inventory for Testing"
-contains "the defaults block survived"                  "${SERVERS}" 'device_type_slug: "example-server-r100"'
+contains "the defaults block survived"                  "${SERVERS}" 'device_type: "example-server-r100"'
 contains "cabling survived"                             "${SERVERS}" 'peer_port: "GigabitEthernet1/0/1"'
 # Only the edited device's block moved.
 if diff "${ORIGINAL}" "${SERVERS}" | grep -q '^< '; then

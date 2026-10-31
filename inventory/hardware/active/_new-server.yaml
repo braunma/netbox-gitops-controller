@@ -15,11 +15,22 @@
 # device type does not have — without touching NetBox.
 
 defaults:
-  site_slug: "CHANGEME-site"
-  role_slug: "server"
-  device_type_slug: "CHANGEME-device-type"
-  rack_slug: "CHANGEME-rack"
+  site: "CHANGEME-site"
+  role: "server"
+  device_type: "CHANGEME-device-type"
+  rack: "CHANGEME-rack"
   face: "front"
+
+  # What every server of this batch shares per interface. Merged into each
+  # interface of that name a device lists; the device's own values win.
+  interfaces:
+    idrac:
+      description: "Dell iDRAC interface"
+      ip: { status: "active", vrf: "Management" }
+    eth0:
+      description: "Primary production interface"
+      ip: { status: "active", vrf: "Production" }
+      address_role: "primary" # sets the device's primary IP in NetBox
 
 devices:
   - name: "CHANGEME-hostname"
@@ -32,24 +43,10 @@ devices:
       # themselves come from the device type template, so `type` and
       # `enabled: true` are never repeated here.
       - name: "idrac"
-        description: "Dell iDRAC interface"
-        ip:
-          address: "10.0.0.0/24"
-          dns_name: "CHANGEME-hostname-idrac.example.com"
-          status: "active"
-          vrf: "Management"
+        ip: { address: "10.0.0.0/24", dns_name: "CHANGEME-hostname-idrac.example.com" }
 
       - name: "eth0"
-        description: "Primary production interface"
-        ip:
-          address: "10.0.0.0/24"
-          dns_name: "CHANGEME-hostname.example.com"
-          status: "active"
-          vrf: "Production"
-        address_role: "primary" # sets the device's primary IP in NetBox
+        ip: { address: "10.0.0.0/24", dns_name: "CHANGEME-hostname.example.com" }
         # The endpoint side owns the cable: declaring it here wires both ends,
         # and nothing needs to change on the switch.
-        link:
-          peer_device: "CHANGEME-switch"
-          peer_port: "Eth1/0"
-          cable_type: "dac-active"
+        link: { peer_device: "CHANGEME-switch", peer_port: "Eth1/0", cable_type: "dac-active" }

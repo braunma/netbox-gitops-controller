@@ -2,17 +2,17 @@
 
 - name: "Management"
   vid: 100
-  site_slug: "berlin-dc"
+  site: "berlin-dc"
   description: "Management VLAN"
 
 - name: "Production Network"
   vid: 200
-  site_slug: "berlin-dc"
+  site: "berlin-dc"
   description: "Production network VLAN"
   tags: ["production"]
 
 - name: "Test Network"
   vid: 1000
-  site_slug: "test-lab"
+  site: "test-lab"
   description: "Test network VLAN"
   tags: ["development"]

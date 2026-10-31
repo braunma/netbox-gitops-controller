@@ -8,34 +8,34 @@
 # Management Network
 - prefix: "10.10.10.0/24"
   description: "Berlin DC - Management network (iDRAC, IPMI, switches)"
-  site_slug: "berlin-dc"
-  vlan_name: "Management"
-  vrf_name: "Management"
+  site: "berlin-dc"
+  vlan: "Management"
+  vrf: "Management"
   is_pool: true
 
 # Production Server Network
 - prefix: "10.10.20.0/24"
   description: "Berlin DC - Production server network"
-  site_slug: "berlin-dc"
-  vlan_name: "Server-Production"
-  vrf_name: "Production"
+  site: "berlin-dc"
+  vlan: "Server-Production"
+  vrf: "Production"
   is_pool: true
   tags: ["production"]
 
 # Storage Network
 - prefix: "10.10.30.0/24"
   description: "Berlin DC - Storage network (iSCSI/NFS)"
-  site_slug: "berlin-dc"
-  vlan_name: "Storage"
-  vrf_name: "Storage"
+  site: "berlin-dc"
+  vlan: "Storage"
+  vrf: "Storage"
   is_pool: true
 
 # AI/ML Compute Network
 - prefix: "10.10.40.0/24"
   description: "Berlin DC - AI/ML compute network"
-  site_slug: "berlin-dc"
-  vlan_name: "AI-Compute"
-  vrf_name: "Production"
+  site: "berlin-dc"
+  vlan: "AI-Compute"
+  vrf: "Production"
   is_pool: true
   tags: ["ai-ml"]
 
@@ -45,16 +45,16 @@
 
 - prefix: "10.20.10.0/24"
   description: "Frankfurt DC - Management network"
-  site_slug: "frankfurt-dc"
-  vlan_name: "Management"
-  vrf_name: "Management"
+  site: "frankfurt-dc"
+  vlan: "Management"
+  vrf: "Management"
   is_pool: true
 
 - prefix: "10.20.20.0/24"
   description: "Frankfurt DC - Production server network"
-  site_slug: "frankfurt-dc"
-  vlan_name: "Server-Production"
-  vrf_name: "Production"
+  site: "frankfurt-dc"
+  vlan: "Server-Production"
+  vrf: "Production"
   is_pool: true
   tags: ["production"]
 
@@ -64,17 +64,17 @@
 
 - prefix: "192.168.100.0/24"
   description: "Munich Lab - Management network"
-  site_slug: "munich-lab"
-  vlan_name: "Lab-Management"
-  vrf_name: "Lab"
+  site: "munich-lab"
+  vlan: "Lab-Management"
+  vrf: "Lab"
   is_pool: true
   tags: ["lab"]
 
 - prefix: "192.168.200.0/24"
   description: "Munich Lab - Testing network"
-  site_slug: "munich-lab"
-  vlan_name: "Lab-Testing"
-  vrf_name: "Lab"
+  site: "munich-lab"
+  vlan: "Lab-Testing"
+  vrf: "Lab"
   is_pool: true
   tags: ["lab", "development"]
 
@@ -84,16 +84,16 @@
 
 - prefix: "10.10.0.0/16"
   description: "Berlin DC - Overall supernet"
-  site_slug: "berlin-dc"
+  site: "berlin-dc"
   status: "container"
 
 - prefix: "10.20.0.0/16"
   description: "Frankfurt DC - Overall supernet"
-  site_slug: "frankfurt-dc"
+  site: "frankfurt-dc"
   status: "container"
 
 - prefix: "192.168.0.0/16"
   description: "Lab networks - Overall supernet"
-  site_slug: "munich-lab"
+  site: "munich-lab"
   status: "container"
   tags: ["lab"]

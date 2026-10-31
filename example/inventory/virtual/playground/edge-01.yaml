@@ -5,8 +5,8 @@
 
 - name: "edge-01"
   vmid: 201
-  site_slug: "test-lab"
-  role_slug: "vm"                  # role must have vm_role: true
+  site: "test-lab"
+  role: "vm"                  # role must have vm_role: true
   platform: "debian-12"
   status: "active"
   vcpus: 2

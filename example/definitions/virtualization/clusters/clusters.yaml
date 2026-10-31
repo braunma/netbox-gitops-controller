@@ -2,9 +2,9 @@
 # A cluster requires a type and may belong to a group, site and tenant.
 
 - name: "berlin-prod-cluster"
-  type_slug: "proxmox-ve"
-  group_slug: "production"
-  site_slug: "berlin-dc"
+  type: "proxmox-ve"
+  group: "production"
+  site: "berlin-dc"
   tenant: "platform-engineering"
   status: "active"
   description: "Primary Proxmox cluster in Berlin"

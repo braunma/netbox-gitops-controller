@@ -9,9 +9,8 @@
 # "active", and the tool stamps its own tag on everything it manages.
 
 defaults:
-  site_slug: "berlin-dc"
+  site: "berlin-dc"
   u_height: 42
-  desc_units: true
 
 items:
   - name: "Rack A-01"
@@ -22,6 +21,6 @@ items:
 
   - name: "Test Rack"
     slug: "test-rack"
-    site_slug: "test-lab"
+    site: "test-lab"
     u_height: 24
     tags: ["development"]

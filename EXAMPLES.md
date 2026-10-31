@@ -86,10 +86,10 @@ once (see `inventory/hardware/active/servers.yaml`):
 
 ```yaml
 defaults:
-  device_type_slug: "example-server-r100"
-  role_slug: "server"
-  site_slug: "berlin-dc"
-  rack_slug: "rack-a01"
+  device_type: "example-server-r100"
+  role: "server"
+  site: "berlin-dc"
+  rack: "rack-a01"
   tags: ["production"]
 
 devices:
@@ -167,7 +167,7 @@ VMs are organised one file per VM under a per-environment folder
   vm_template_id: 800              # template VMID this VM was cloned from
   node: "pve-01"                   # hypervisor node it runs on
   cluster: "berlin-prod-cluster"   # clustered VM; site inherited from cluster
-  role_slug: "vm"                  # role must have vm_role: true in NetBox
+  role: "vm"                  # role must have vm_role: true in NetBox
   platform: "ubuntu-22-04"
   vcpus: 4
   memory: 8192                     # MB

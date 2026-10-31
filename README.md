@@ -246,9 +246,10 @@ A device installs a module by naming its bay and the module type:
 ```yaml
 modules:
   - name: OCP-1                       # the module bay on the device
-    module_type_slug: dell-ocp-25g
+    module_type: dell-ocp-25g
 ```
 
+(`module_type_slug:` is accepted as well; see [Field names](#field-names).)
 The slug is a local reference key, not something NetBox stores:
 
   * A module type defined **natively** uses the `slug` you gave it.
@@ -261,7 +262,7 @@ the bare name is ambiguous and is **not** accepted; use the
 manufacturer-qualified form, which always works:
 
 ```yaml
-    module_type_slug: dell/sfp-10g-sr
+    module_type: dell/sfp-10g-sr
 ```
 
 A run that detects the ambiguity warns and lists the qualified keys to use, so
@@ -283,28 +284,28 @@ without repeating `type` or `enabled`.
 
 ```yaml
 defaults:
-  site_slug: "berlin"
-  role_slug: "server"
-  device_type_slug: "dell-r640"
-  rack_slug: "rack-a01"
+  site: "berlin"
+  role: "server"
+  device_type: "dell-r640"
+  rack: "rack-a01"
   tags: ["production"]
+  interfaces:                    # per interface name, see below
+    idrac:
+      description: "Dell iDRAC"
+      ip: { vrf: "Management" }
+    eth0:
+      ip: { vrf: "Production" }
+      address_role: "primary"    # sets the primary IP on the device
 
 devices:
   - name: "srv-web-01"
     position: 10
     interfaces:
       - name: "idrac"
-        ip: "10.0.10.50/24"   # string shorthand for `ip: { address: ... }`
-
+        ip: "10.0.10.50/24"      # string shorthand for `ip: { address: ... }`
       - name: "eth0"
-        ip:
-          address: "10.0.20.50/24"
-          vrf: "Production"
-        address_role: "primary"  # Sets the Primary IP on the Device object
-        link:
-          peer_device: "sw-leaf-01"
-          peer_port: "Eth1/1"
-          cable_type: "cat6a"    # Optional
+        ip: "10.0.20.50/24"
+        link: { peer_device: "sw-leaf-01", peer_port: "Eth1/1", cable_type: "cat6a" }
 
   - name: "srv-web-02"
     position: 12
@@ -315,6 +316,46 @@ devices:
 
 The classic form — a plain YAML list of devices — is still fully supported;
 `defaults` is just a shortcut, and every field can still be set per device.
+
+#### Interface defaults
+
+Under `defaults`, `interfaces` is a mapping from an interface **name** to the
+fields every interface of that name gets. It works in device and VM files.
+
+  * It applies only to interfaces a device **lists**; it never adds one. A
+    device that should get the defaults lists the interface, if only by name
+    (`- name: "eth1"`).
+  * The device's own values win. Nested mappings — `ip`, `link` — are merged
+    key by key, so a default `ip: { vrf: ... }` combines with the device's
+    `ip: "10.0.0.5/24"` shorthand. `tags` are combined.
+  * A name under `defaults.interfaces` that no device in the file lists is an
+    error (it is a typo or a leftover), and so is a field the interface does
+    not have.
+
+#### Field names
+
+References to other objects use the short name of the object they point at.
+The longer spelling the repository used before is still accepted; writing
+both forms of one field in the same mapping is an error.
+
+| Object | Short name | Also accepted |
+|---|---|---|
+| device | `site`, `role`, `device_type`, `rack` | `site_slug`, `role_slug`, `device_type_slug`, `rack_slug` |
+| device module | `module_type` | `module_type_slug` |
+| rack, VLAN group | `site` | `site_slug` |
+| VLAN | `site`, `group` | `site_slug`, `group_slug` |
+| prefix | `site`, `vrf`, `vlan` | `site_slug`, `vrf_name`, `vlan_name` |
+| tenant | `group` | `group_slug` |
+| tenant group | `parent` | `parent_slug` |
+| cluster | `site`, `type`, `group` | `site_slug`, `type_slug`, `group_slug` |
+| VM | `site`, `role` | `site_slug`, `role_slug` |
+
+Every key is checked against the object it belongs to, nested ones (an
+interface's `ip`, a module) included. A misspelled field — `vfr:` for `vrf:`,
+`rack_name:` for `rack:` — fails the load with the file, the entry and the
+path to the key, and a suggestion where one is obvious, instead of being
+dropped without a word as it was before. `custom_fields` is free-form and not
+checked.
 
 ### Step 3: Configure Switch Ports & VLANs
 
@@ -357,7 +398,7 @@ File: `inventory/hardware/active/switches.yaml`
   * **Group shared fields in `defaults`.** One file per rack, role or
     hardware batch with a `defaults` block keeps each device down to its name,
     position and IPs. Definitions take the same block with an `items:` list,
-    e.g. `defaults: { site_slug: "berlin-dc", u_height: 42 }` for a site's
+    e.g. `defaults: { site: "berlin-dc", u_height: 42 }` for a site's
     racks.
   * **Leave out what is already the default.** `tags: ["gitops"]` is never
     needed — the managed tag is stamped on every object automatically — and
@@ -378,8 +419,8 @@ identity and its addresses, and nothing else:
 # inventory/hardware/active/servers.yaml  (defaults supply site, role,
 # device type, rack and face)
   - name: "berlin-srv-web-03"
-    device_type_slug: "poweredge-r740"
-    rack_slug: "berlin-rack-a01"
+    device_type: "poweredge-r740"
+    rack: "berlin-rack-a01"
     position: 14
     serial: "WEB03-SN-KLMNO"
     tags: ["production"]
@@ -412,8 +453,9 @@ when the new port needs a VLAN it does not already have.
 ### Checking the YAML before it reaches NetBox
 
 `yamlcheck` reads the data directory and reports what is wrong with it without
-opening a connection: YAML syntax, then the typed model validation (required
-fields, cross-field constraints, NetBox choice values), then cross-object
+opening a connection: YAML syntax, then the typed model validation (unknown or
+misspelled keys, required fields, cross-field constraints, NetBox choice
+values), then cross-object
 checks that no single object can see on its own.
 
 ```bash
@@ -600,7 +642,7 @@ Declare where the object came from and it is renamed in place instead:
 ```yaml
 - name: Rack 01          # was "Rakc 01"
   slug: rack-01
-  site_slug: frankfurt
+  site: frankfurt
   rename_from: Rakc 01   # ← the previous identity
 ```
 
@@ -956,7 +998,7 @@ them in.
 > Likewise `--only virtualization` assumes its sites, roles, platforms, tenants
 > and VLANs already exist.
 >
-> **Note:** `--site` matches a VM only if the VM declares that `site_slug`
+> **Note:** `--site` matches a VM only if the VM declares that `site`
 > directly; a clustered VM (whose site comes from its cluster) is not matched by
 > `--site`. Use `--vm` to target such a VM by name.
 

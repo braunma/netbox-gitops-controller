@@ -2,7 +2,9 @@
 #
 # This file uses the grouped `defaults` + `devices` form: fields under
 # `defaults` are merged into every device below. Device values win over
-# defaults, and `tags` are combined instead of replaced.
+# defaults, and `tags` are combined instead of replaced. `defaults.interfaces`
+# does the same per interface name, for the interfaces a device lists; nested
+# mappings such as `link` are merged key by key.
 #
 # Conventions demonstrated here:
 #   - Interface `type` and `enabled` are NOT repeated: the ports come from
@@ -13,12 +15,16 @@
 #     The reconciler wires both ends from a single declaration.
 
 defaults:
-  device_type_slug: "example-server-r100"
-  role_slug: "server"
-  site_slug: "berlin-dc"
-  rack_slug: "rack-a01"
+  device_type: "example-server-r100"
+  role: "server"
+  site: "berlin-dc"
+  rack: "rack-a01"
   face: "front"
   tags: ["production"]
+  interfaces:
+    eth1:
+      description: "Data interface"
+      link: { cable_type: "cat6" }
 
 devices:
   - name: "example-server-01"
@@ -27,19 +33,11 @@ devices:
       - name: "eth0"
         description: "Management interface"
       - name: "eth1"
-        description: "Data interface"
-        link:
-          peer_device: "example-switch-01"
-          peer_port: "GigabitEthernet1/0/1"
-          cable_type: "cat6"
+        link: { peer_device: "example-switch-01", peer_port: "GigabitEthernet1/0/1" }
 
   - name: "example-server-02"
     position: 12
     tags: ["lab"] # merged with the default tags -> gitops, production, lab
     interfaces:
       - name: "eth1"
-        description: "Data interface"
-        link:
-          peer_device: "example-switch-01"
-          peer_port: "GigabitEthernet1/0/2"
-          cable_type: "cat6"
+        link: { peer_device: "example-switch-01", peer_port: "GigabitEthernet1/0/2" }

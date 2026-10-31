@@ -6,10 +6,10 @@
 # ========================================
 
 - name: "berlin-pp-01"
-  site_slug: "berlin-dc"
-  device_type_slug: "pp-12-sm-lc"
-  role_slug: "patch-panel"
-  rack_slug: "berlin-rack-a01"
+  site: "berlin-dc"
+  device_type: "pp-12-sm-lc"
+  role: "patch-panel"
+  rack: "berlin-rack-a01"
   position: 42
   face: "front"
 
@@ -50,10 +50,10 @@
       label: "Reserved"
 
 - name: "berlin-pp-02"
-  site_slug: "berlin-dc"
-  device_type_slug: "pp-12-sm-lc"
-  role_slug: "patch-panel"
-  rack_slug: "berlin-rack-a02"
+  site: "berlin-dc"
+  device_type: "pp-12-sm-lc"
+  role: "patch-panel"
+  rack: "berlin-rack-a02"
   position: 42
   face: "front"
 
@@ -74,10 +74,10 @@
 # ========================================
 
 - name: "berlin-pp-mm-01"
-  site_slug: "berlin-dc"
-  device_type_slug: "pp-48-mm-lc"
-  role_slug: "patch-panel"
-  rack_slug: "berlin-rack-b01"
+  site: "berlin-dc"
+  device_type: "pp-48-mm-lc"
+  role: "patch-panel"
+  rack: "berlin-rack-b01"
   position: 42
   face: "front"
 
@@ -98,10 +98,10 @@
 # ========================================
 
 - name: "frankfurt-pp-01"
-  site_slug: "frankfurt-dc"
-  device_type_slug: "pp-12-sm-lc"
-  role_slug: "patch-panel"
-  rack_slug: "frankfurt-rack-c01"
+  site: "frankfurt-dc"
+  device_type: "pp-12-sm-lc"
+  role: "patch-panel"
+  rack: "frankfurt-rack-c01"
   position: 42
   face: "front"
 

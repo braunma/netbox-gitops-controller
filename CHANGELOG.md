@@ -27,6 +27,15 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **Short field names.** References use the name of what they point at:
+  `site`, `role`, `device_type`, `rack`, `module_type`, `group`, `parent`,
+  `type`, and on prefixes `vrf`/`vlan`. The previous spellings (`site_slug`,
+  `vrf_name`, ...) keep working; a mapping that sets both forms of one field
+  is rejected. The README lists every one per object type.
+- **Per-interface defaults.** `defaults.interfaces` maps an interface name to
+  fields every listed interface of that name gets, merged key by key into
+  `ip` and `link`. A default name no device in the file lists is an error.
+
 - **`unknown-tag` lint check.** `yamlcheck` reports a `tags:` entry that no
   tag definition declares. It caught two in the bundled examples (`gpu`,
   `lab`), which are now defined.
@@ -39,6 +48,15 @@ are about to run before applying a sync with pruning enabled.
   and the example racks show the form.
 
 ### Changed
+
+- **Unknown YAML keys are now an error.** A key the model does not have used
+  to be dropped silently, so a typo (`vfr:`, `site:` before short names
+  existed) synced the object without that field. Every key is now checked,
+  nested ones included, and the error names the file, the entry and the key
+  path. **Upgrade note:** a file that carries a stray or misspelled key stops
+  loading until it is fixed — run `yamlcheck` before syncing. The bundled
+  example racks carried `desc_units`, which no model field ever read; it has
+  been removed.
 
 - **The bundled YAML no longer spells out defaults.** `tags: ["gitops"]` and
   `status: "active"` were removed from the example, definitions and inventory

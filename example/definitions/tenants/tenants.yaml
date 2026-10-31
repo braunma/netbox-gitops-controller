@@ -3,5 +3,5 @@
 
 - name: "Platform Engineering"
   slug: "platform-engineering"
-  group_slug: "internal"
+  group: "internal"
   description: "Owns the shared virtualization platform"

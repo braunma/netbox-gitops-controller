@@ -4,14 +4,14 @@
   description: "Private network space"
 
 - prefix: "10.0.100.0/24"
-  site_slug: "berlin-dc"
-  vrf_name: "Management"
-  vlan_name: "Management"
+  site: "berlin-dc"
+  vrf: "Management"
+  vlan: "Management"
   description: "Management subnet Berlin DC"
 
 - prefix: "10.0.200.0/24"
-  site_slug: "berlin-dc"
-  vrf_name: "Production"
-  vlan_name: "Production Network"
+  site: "berlin-dc"
+  vrf: "Production"
+  vlan: "Production Network"
   description: "Production subnet Berlin DC"
   tags: ["production"]
