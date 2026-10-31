@@ -161,6 +161,30 @@ Here we define the "blueprint" including all physical ports. NetBox copies these
   # front_ports/rear_ports for patch panels, module_bays, device_bays
 ```
 
+Identical ports are written once, as a range. A template name holding
+`{a-b}` stands for one template per number, and another ranged field of the
+same entry counts along with it, which is how a panel's front ports map onto
+its rear ports:
+
+```yaml
+  interfaces:
+    - { name: "Management 1/1", type: "1000base-t", mgmt_only: true }
+    - { name: "Eth1/{1-48}", type: "25gbase-x-sfp28" }
+    - { name: "Eth1/{49-54}", type: "100gbase-x-qsfp28" }
+  front_ports:
+    - { name: "{1-48}", type: "lc", rear_port: "{1-48}" }
+  rear_ports:
+    - { name: "{1-48}", type: "lc" }
+```
+
+Quote a name that starts with the range: unquoted, `{1-48}` is YAML's
+flow-mapping syntax. A leading zero sets the width (`{01-12}` gives
+`01`…`12`). Two ranges that do not span the same count, a range that runs
+backwards, or a range in `rear_port` without one in `name` are errors naming
+the entry. The expansion happens when the file is read, so every check and
+NetBox see the individual ports. The same works on a device's own
+`interfaces`, `modules` and ports.
+
 #### Reusing the community device type library
 
 You do not have to hand-write a device type that already exists. The NetBox
