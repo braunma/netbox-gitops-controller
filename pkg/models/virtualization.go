@@ -7,8 +7,8 @@ import "strings"
 // ClusterType represents a NetBox cluster type (virtualization app), e.g.
 // "VMware vSphere" or "Proxmox".
 type ClusterType struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
-	Slug string `yaml:"slug" json:"slug" validate:"required"`
+	Name string `yaml:"name" json:"name"`
+	Slug string `yaml:"slug" json:"slug"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -20,8 +20,8 @@ type ClusterType struct {
 // ClusterGroup represents a NetBox cluster group (virtualization app), an
 // organizational grouping of clusters.
 type ClusterGroup struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
-	Slug string `yaml:"slug" json:"slug" validate:"required"`
+	Name string `yaml:"name" json:"name"`
+	Slug string `yaml:"slug" json:"slug"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -36,8 +36,8 @@ type ClusterGroup struct {
 // In YAML the references are usually written by their short names (site, type
 // and group for the *_slug keys); see YAMLAliases.
 type Cluster struct {
-	Name      string `yaml:"name" json:"name" validate:"required"`
-	TypeSlug  string `yaml:"type_slug" json:"type_slug" validate:"required"`
+	Name      string `yaml:"name" json:"name"`
+	TypeSlug  string `yaml:"type_slug" json:"type_slug"`
 	GroupSlug string `yaml:"group_slug,omitempty" json:"group_slug,omitempty"`
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
@@ -54,7 +54,7 @@ type Cluster struct {
 // device InterfaceConfig (VLAN/IP semantics) but cannot be cabled, so it has
 // no Link field.
 type VMInterfaceConfig struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
+	Name string `yaml:"name" json:"name"`
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -93,7 +93,7 @@ func (i VMInterfaceConfig) IsPrimaryIP() bool {
 // In YAML the references are usually written by their short names (site and
 // role for site_slug and role_slug); see YAMLAliases.
 type VMConfig struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
+	Name string `yaml:"name" json:"name"`
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.

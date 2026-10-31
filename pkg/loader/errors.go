@@ -14,7 +14,7 @@ import (
 
 // The loader reports problems as a list, one self-contained line each:
 //
-//	inventory/hardware/active/servers.yaml: entry 2: device "srv-02": both "site" and "site_slug" are set; ...
+//	inventory/hardware/active/servers.yaml:41: entry 2: device "srv-02": both "site" and "site_slug" are set; ...
 //
 // so a reader can fix them top to bottom without wondering which file or
 // object a line is about, and so one run shows all of them.

@@ -894,3 +894,76 @@ func TestUnknownTagSilentWithoutTagDefinitions(t *testing.T) {
 	ds.Sites[0].Tags = []string{"defined-elsewhere"}
 	assertCheck(t, Check(ds, Options{}), "unknown-tag", 0)
 }
+
+// panelDataset adds a 1U patch panel type with one front and one rear port
+// template to the base dataset, and a panel of that type.
+func panelDataset(panel *models.DeviceConfig) Dataset {
+	ds := baseDataset()
+	ds.Roles = append(ds.Roles, &models.Role{Name: "Patch Panel", Slug: "patch-panel", Color: "607d8b"})
+	ds.DeviceTypes = append(ds.DeviceTypes, &models.DeviceType{
+		Model: "PP-12", Slug: "pp-12", Manufacturer: "Generic", UHeight: 1,
+		FrontPorts: []models.PortTemplate{{Name: "1", Type: "lc", RearPort: "1"}},
+		RearPorts:  []models.PortTemplate{{Name: "1", Type: "lc", Positions: 1}},
+	})
+	panel.SiteSlug, panel.RoleSlug, panel.DeviceTypeSlug = "berlin", "patch-panel", "pp-12"
+	panel.RackSlug, panel.Position, panel.Face = "rack-a02", 40, "front"
+	ds.Devices = append(ds.Devices, panel)
+	return ds
+}
+
+func TestPortsFromTemplateAreClean(t *testing.T) {
+	ds := panelDataset(&models.DeviceConfig{Name: "pp-01",
+		FrontPorts: []models.FrontPortConfig{{Name: "1", RearPort: "1"}},
+		RearPorts:  []models.RearPortConfig{{Name: "1"}},
+	})
+	if findings := Check(ds, Options{}); len(findings) != 0 {
+		t.Errorf("ports the template has should produce no findings:\n%s", render(findings))
+	}
+}
+
+func TestUntypedPort(t *testing.T) {
+	ds := panelDataset(&models.DeviceConfig{Name: "pp-01",
+		FrontPorts: []models.FrontPortConfig{{Name: "7", RearPort: "1"}},
+		RearPorts:  []models.RearPortConfig{{Name: "9"}},
+	})
+	findings := Check(ds, Options{})
+	got := assertCheck(t, findings, "untyped-port", 2)
+	for _, f := range got {
+		if f.Severity != Error {
+			t.Errorf("untyped-port should be an error, got %s", f.Severity)
+		}
+	}
+	// A type of its own makes the port creatable.
+	ds = panelDataset(&models.DeviceConfig{Name: "pp-01",
+		FrontPorts: []models.FrontPortConfig{{Name: "7", Type: "lc", RearPort: "1"}},
+	})
+	assertCheck(t, Check(ds, Options{}), "untyped-port", 0)
+}
+
+func TestRedundantAndOverriddenPortType(t *testing.T) {
+	ds := panelDataset(&models.DeviceConfig{Name: "pp-01",
+		FrontPorts: []models.FrontPortConfig{{Name: "1", Type: "lc", RearPort: "1"}},
+		RearPorts:  []models.RearPortConfig{{Name: "1", Type: "sc"}},
+	})
+	findings := Check(ds, Options{})
+	assertCheck(t, findings, "redundant-port-type", 1)
+	assertCheck(t, findings, "port-type-override", 1)
+	for _, f := range findings {
+		if f.Severity != Warning {
+			t.Errorf("%s should be a warning, got %s", f.Check, f.Severity)
+		}
+	}
+}
+
+func TestUnknownRearPort(t *testing.T) {
+	ds := panelDataset(&models.DeviceConfig{Name: "pp-01",
+		FrontPorts: []models.FrontPortConfig{{Name: "1", RearPort: "3"}},
+	})
+	assertCheck(t, Check(ds, Options{}), "unknown-rear-port", 1)
+	// A rear port declared on the device itself counts.
+	ds = panelDataset(&models.DeviceConfig{Name: "pp-01",
+		FrontPorts: []models.FrontPortConfig{{Name: "1", RearPort: "3"}},
+		RearPorts:  []models.RearPortConfig{{Name: "3", Type: "lc"}},
+	})
+	assertCheck(t, Check(ds, Options{}), "unknown-rear-port", 0)
+}

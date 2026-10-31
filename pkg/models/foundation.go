@@ -4,8 +4,8 @@ package models
 
 // Site represents a NetBox site
 type Site struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
-	Slug string `yaml:"slug" json:"slug" validate:"required"`
+	Name string `yaml:"name" json:"name"`
+	Slug string `yaml:"slug" json:"slug"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -23,9 +23,9 @@ type Site struct {
 // In YAML the references are usually written by their short names (site for
 // site_slug); see YAMLAliases.
 type Rack struct {
-	Name     string `yaml:"name" json:"name" validate:"required"`
+	Name     string `yaml:"name" json:"name"`
 	Slug     string `yaml:"slug" json:"slug"`
-	SiteSlug string `yaml:"site_slug" json:"site_slug" validate:"required"`
+	SiteSlug string `yaml:"site_slug" json:"site_slug"`
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -39,9 +39,9 @@ type Rack struct {
 
 // Role represents a device role
 type Role struct {
-	Name  string `yaml:"name" json:"name" validate:"required"`
-	Slug  string `yaml:"slug" json:"slug" validate:"required"`
-	Color string `yaml:"color" json:"color" validate:"required"`
+	Name  string `yaml:"name" json:"name"`
+	Slug  string `yaml:"slug" json:"slug"`
+	Color string `yaml:"color" json:"color"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -52,9 +52,9 @@ type Role struct {
 
 // Tag represents a NetBox tag
 type Tag struct {
-	Name  string `yaml:"name" json:"name" validate:"required"`
-	Slug  string `yaml:"slug" json:"slug" validate:"required"`
-	Color string `yaml:"color" json:"color" validate:"required"`
+	Name  string `yaml:"name" json:"name"`
+	Slug  string `yaml:"slug" json:"slug"`
+	Color string `yaml:"color" json:"color"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -65,8 +65,8 @@ type Tag struct {
 // Platform represents a NetBox platform (e.g. an OS or firmware family that a
 // device or virtual machine runs). Referenced by slug from VMs and devices.
 type Platform struct {
-	Name         string `yaml:"name" json:"name" validate:"required"`
-	Slug         string `yaml:"slug" json:"slug" validate:"required"`
+	Name         string `yaml:"name" json:"name"`
+	Slug         string `yaml:"slug" json:"slug"`
 	Manufacturer string `yaml:"manufacturer,omitempty" json:"manufacturer,omitempty"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
@@ -81,8 +81,8 @@ type Platform struct {
 // In YAML the references are usually written by their short names (parent for
 // parent_slug); see YAMLAliases.
 type TenantGroup struct {
-	Name       string `yaml:"name" json:"name" validate:"required"`
-	Slug       string `yaml:"slug" json:"slug" validate:"required"`
+	Name       string `yaml:"name" json:"name"`
+	Slug       string `yaml:"slug" json:"slug"`
 	ParentSlug string `yaml:"parent_slug,omitempty" json:"parent_slug,omitempty"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
@@ -100,9 +100,9 @@ type TenantGroup struct {
 // NetBox 4.x names the applicable content types `object_types` (older
 // releases used `content_types`). This model targets the current name.
 type CustomField struct {
-	Name        string   `yaml:"name" json:"name" validate:"required"`
-	Type        string   `yaml:"type" json:"type" validate:"required"`
-	ObjectTypes []string `yaml:"object_types" json:"object_types" validate:"required"`
+	Name        string   `yaml:"name" json:"name"`
+	Type        string   `yaml:"type" json:"type"`
+	ObjectTypes []string `yaml:"object_types" json:"object_types"`
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
@@ -118,8 +118,8 @@ type CustomField struct {
 // In YAML the references are usually written by their short names (group for
 // group_slug); see YAMLAliases.
 type Tenant struct {
-	Name      string `yaml:"name" json:"name" validate:"required"`
-	Slug      string `yaml:"slug" json:"slug" validate:"required"`
+	Name      string `yaml:"name" json:"name"`
+	Slug      string `yaml:"slug" json:"slug"`
 	GroupSlug string `yaml:"group_slug,omitempty" json:"group_slug,omitempty"`
 	// RenameFrom is this object's previous slug. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being

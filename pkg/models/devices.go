@@ -10,8 +10,8 @@ import (
 
 // LinkConfig represents a cable connection definition
 type LinkConfig struct {
-	PeerDevice string  `yaml:"peer_device" json:"peer_device" validate:"required"`
-	PeerPort   string  `yaml:"peer_port" json:"peer_port" validate:"required"`
+	PeerDevice string  `yaml:"peer_device" json:"peer_device"`
+	PeerPort   string  `yaml:"peer_port" json:"peer_port"`
 	CableType  string  `yaml:"cable_type,omitempty" json:"cable_type,omitempty"`
 	Color      string  `yaml:"color,omitempty" json:"color,omitempty"`
 	Length     float64 `yaml:"length,omitempty" json:"length,omitempty"`
@@ -20,7 +20,7 @@ type LinkConfig struct {
 
 // IPConfig represents IP address configuration
 type IPConfig struct {
-	Address     string   `yaml:"address" json:"address" validate:"required"`
+	Address     string   `yaml:"address" json:"address"`
 	DNSName     string   `yaml:"dns_name,omitempty" json:"dns_name,omitempty"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Status      string   `yaml:"status,omitempty" json:"status,omitempty"`
@@ -53,7 +53,7 @@ func (ip *IPConfig) UnmarshalYAML(value *yaml.Node) error {
 
 // InterfaceConfig represents an interface configuration (for concrete devices)
 type InterfaceConfig struct {
-	Name string `yaml:"name" json:"name" validate:"required"`
+	Name string `yaml:"name" json:"name"`
 	Type string `yaml:"type,omitempty" json:"type,omitempty"`
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
@@ -85,7 +85,7 @@ func (i InterfaceConfig) IsPrimaryIP() bool {
 
 // RearPortConfig represents a rear port configuration (Backbone)
 type RearPortConfig struct {
-	Name        string      `yaml:"name" json:"name" validate:"required"`
+	Name        string      `yaml:"name" json:"name"`
 	Type        string      `yaml:"type,omitempty" json:"type,omitempty"`
 	Label       string      `yaml:"label,omitempty" json:"label,omitempty"`
 	Positions   int         `yaml:"positions,omitempty" json:"positions,omitempty"`
@@ -96,12 +96,12 @@ type RearPortConfig struct {
 
 // FrontPortConfig represents a front port configuration (Patch)
 type FrontPortConfig struct {
-	Name             string      `yaml:"name" json:"name" validate:"required"`
-	Type             string      `yaml:"type" json:"type" validate:"required"`
+	Name             string      `yaml:"name" json:"name"`
+	Type             string      `yaml:"type" json:"type"`
 	Label            string      `yaml:"label,omitempty" json:"label,omitempty"`
 	Description      string      `yaml:"description,omitempty" json:"description,omitempty"`
 	Tags             []string    `yaml:"tags,omitempty" json:"tags,omitempty"`
-	RearPort         string      `yaml:"rear_port" json:"rear_port" validate:"required"`
+	RearPort         string      `yaml:"rear_port" json:"rear_port"`
 	RearPortPosition int         `yaml:"rear_port_position,omitempty" json:"rear_port_position,omitempty"`
 	Link             *LinkConfig `yaml:"link,omitempty" json:"link,omitempty"`
 }
@@ -111,8 +111,8 @@ type FrontPortConfig struct {
 // In YAML the references are usually written by their short names (module_type
 // for module_type_slug); see YAMLAliases.
 type ModuleConfig struct {
-	Name           string   `yaml:"name" json:"name" validate:"required"`
-	ModuleTypeSlug string   `yaml:"module_type_slug" json:"module_type_slug" validate:"required"`
+	Name           string   `yaml:"name" json:"name"`
+	ModuleTypeSlug string   `yaml:"module_type_slug" json:"module_type_slug"`
 	Status         string   `yaml:"status,omitempty" json:"status,omitempty"`
 	Serial         string   `yaml:"serial,omitempty" json:"serial,omitempty"`
 	AssetTag       string   `yaml:"asset_tag,omitempty" json:"asset_tag,omitempty"`
@@ -125,14 +125,14 @@ type ModuleConfig struct {
 // In YAML the references are usually written by their short names (site, role,
 // device_type and rack for the *_slug keys); see YAMLAliases.
 type DeviceConfig struct {
-	Name     string `yaml:"name" json:"name" validate:"required"`
-	SiteSlug string `yaml:"site_slug" json:"site_slug" validate:"required"`
+	Name     string `yaml:"name" json:"name"`
+	SiteSlug string `yaml:"site_slug" json:"site_slug"`
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
 	RenameFrom     string `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
-	DeviceTypeSlug string `yaml:"device_type_slug" json:"device_type_slug" validate:"required"`
-	RoleSlug       string `yaml:"role_slug" json:"role_slug" validate:"required"`
+	DeviceTypeSlug string `yaml:"device_type_slug" json:"device_type_slug"`
+	RoleSlug       string `yaml:"role_slug" json:"role_slug"`
 	RackSlug       string `yaml:"rack_slug,omitempty" json:"rack_slug,omitempty"`
 	Position       int    `yaml:"position,omitempty" json:"position,omitempty"`
 	Face           string `yaml:"face,omitempty" json:"face,omitempty"`

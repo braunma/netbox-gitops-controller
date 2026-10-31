@@ -204,10 +204,12 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 
 	declared := make([]Declared[T], 0, len(itemNodes))
 	for i, node := range itemNodes {
-		entry := fmt.Sprintf("%s: entry %d", file, i+1)
+		// The line is the entry's own, so a problem in a long file can be
+		// jumped to; the entry number stays for files where it is spoken of.
+		entry := fmt.Sprintf("%s:%d: entry %d", file, node.Line, i+1)
 		var raw map[string]interface{}
 		if err := node.Decode(&raw); err != nil {
-			errs = append(errs, fmt.Errorf("%s: must be a mapping of fields (line %d)", entry, node.Line))
+			errs = append(errs, fmt.Errorf("%s: must be a mapping of fields", entry))
 			continue
 		}
 		label := objectLabel(kind, raw)
@@ -372,6 +374,9 @@ func ItemNodes(path string, root *yaml.Node) ([]*yaml.Node, *yaml.Node, error) {
 			listKey = key
 		}
 		if listKey == "" {
+			if err := notGroupedForm(path, root); err != nil {
+				return nil, nil, err
+			}
 			// A single object per file.
 			return []*yaml.Node{root}, nil, nil
 		}
@@ -402,6 +407,35 @@ func ItemNodes(path string, root *yaml.Node) ([]*yaml.Node, *yaml.Node, error) {
 // groupedListKeys are the keys that hold a grouped form's objects. `items` is
 // the general name; `devices` is kept so existing inventory files still load.
 var groupedListKeys = []string{"items", "devices"}
+
+// notGroupedForm reports a mapping that was meant as the grouped form but
+// names its list wrong. Without this, `defaults:` next to `device:` is read
+// as one object and fails as `unknown field "defaults"` and `unknown field
+// "device"` on a device with no name, which points away from the mistake.
+func notGroupedForm(path string, root *yaml.Node) error {
+	hasDefaults := mappingValue(root, "defaults") != nil
+	nearList := ""
+	for i := 0; i+1 < len(root.Content); i += 2 {
+		key, value := root.Content[i].Value, root.Content[i+1]
+		if key == "defaults" || value.Kind != yaml.SequenceNode {
+			continue
+		}
+		for _, want := range groupedListKeys {
+			if editDistance(key, want) <= 2 {
+				nearList = key
+			}
+		}
+	}
+	switch {
+	case hasDefaults && nearList != "":
+		return fmt.Errorf("%s: grouped form has \"defaults\" but no \"items\" list; the objects are under %q (did you mean \"items\"?)", path, nearList)
+	case hasDefaults:
+		return fmt.Errorf("%s: grouped form has \"defaults\" but no \"items\" list; put the objects under \"items:\" (\"devices:\" is also accepted)", path)
+	case nearList != "":
+		return fmt.Errorf("%s: top-level key %q is not a field (did you mean \"items\"?); a file of several objects lists them under \"items:\", with shared fields under \"defaults:\"", path, nearList)
+	}
+	return nil
+}
 
 // mappingValue returns the value node for a key of a mapping node, or nil.
 func mappingValue(mapping *yaml.Node, key string) *yaml.Node {

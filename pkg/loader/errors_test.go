@@ -4,6 +4,7 @@ package loader
 
 import (
 	"reflect"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -54,7 +55,7 @@ func TestEveryProblemIsReportedOnItsOwnLine(t *testing.T) {
 			if strings.Contains(line, "\n") {
 				t.Errorf("problem spans several lines: %q", line)
 			}
-			if strings.Contains(line, w.file+": "+w.entry+": "+w.object+": ") && strings.Contains(line, w.text) {
+			if entryLine(w.file, w.entry, w.object).MatchString(line) && strings.Contains(line, w.text) {
 				found = true
 			}
 		}
@@ -96,7 +97,7 @@ func TestDecoderTypeErrorsAreOnePerLine(t *testing.T) {
 		if strings.Contains(line, "\n") {
 			t.Errorf("problem spans several lines: %q", line)
 		}
-		if !strings.Contains(line, `a.yaml: entry 1: device "srv-01": `) {
+		if !entryLine("a.yaml", "entry 1", `device "srv-01"`).MatchString(line) {
 			t.Errorf("problem lacks its file, entry and object: %q", line)
 		}
 	}
@@ -154,4 +155,10 @@ func TestLoadDatasetPhases(t *testing.T) {
 	if _, err := dl.LoadDataset(DatasetOptions{}); err == nil || !strings.Contains(err.Error(), `unknown field "sight"`) {
 		t.Errorf("LoadDataset() with every phase = %v, want the inventory's problem", err)
 	}
+}
+
+// entryLine matches the prefix every problem of an entry carries: the file,
+// the line the entry starts on, the entry number and the object.
+func entryLine(file, entry, object string) *regexp.Regexp {
+	return regexp.MustCompile(regexp.QuoteMeta(file) + `:\d+: ` + regexp.QuoteMeta(entry+": "+object+": "))
 }
