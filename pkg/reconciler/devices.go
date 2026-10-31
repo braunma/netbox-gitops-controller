@@ -19,6 +19,94 @@ type DeviceReconciler struct {
 	cableReconciler *CableReconciler
 	// Track all device interfaces/ports for cable reconciliation at the end
 	pendingCables []pendingCable
+	// deviceTypes, by slug, are the templates the devices were built from.
+	// They say which ports are the hardware's own, so those are never pruned
+	// even when the YAML stops mentioning them, and they supply a port's type
+	// when a declared port of a template leaves it out.
+	deviceTypes map[string]*models.DeviceType
+}
+
+// SetDeviceTypes hands the reconciler the device types of the run.
+func (dr *DeviceReconciler) SetDeviceTypes(types []*models.DeviceType) {
+	dr.deviceTypes = make(map[string]*models.DeviceType, len(types))
+	for _, dt := range types {
+		dr.deviceTypes[dt.Slug] = dt
+	}
+}
+
+// templateType returns the type a device type's template gives a port of
+// this kind and name, or "".
+func (dr *DeviceReconciler) templateType(device *models.DeviceConfig, kind, name string) string {
+	dt := dr.deviceTypes[device.DeviceTypeSlug]
+	if dt == nil {
+		return ""
+	}
+	switch kind {
+	case "interfaces":
+		for _, t := range dt.Interfaces {
+			if t.Name == name {
+				return t.Type
+			}
+		}
+	case "front-ports":
+		for _, t := range dt.FrontPorts {
+			if t.Name == name {
+				return t.Type
+			}
+		}
+	case "rear-ports":
+		for _, t := range dt.RearPorts {
+			if t.Name == name {
+				return t.Type
+			}
+		}
+	}
+	return ""
+}
+
+// protectTemplatePorts marks every port of the device that its device type
+// template defines as seen, so prune never deletes the hardware's own ports.
+// A template port the YAML once listed carries the managed tag from that
+// apply; without this, dropping it from the YAML again would delete a
+// physical port from NetBox and, with it, the cable in it.
+func (dr *DeviceReconciler) protectTemplatePorts(deviceID int, device *models.DeviceConfig) {
+	dt := dr.deviceTypes[device.DeviceTypeSlug]
+	if dt == nil {
+		return
+	}
+	protect := func(endpoint string, names map[string]bool) {
+		if len(names) == 0 {
+			return
+		}
+		ports, err := dr.client.Filter("dcim", endpoint, map[string]interface{}{"device_id": deviceID})
+		if err != nil {
+			// Without the list we cannot tell template ports apart, and prune
+			// must not guess: mark the endpoint incomplete so it is skipped.
+			dr.logger.Warning("Could not list %s of %s to protect its template ports: %v", endpoint, device.Name, err)
+			dr.client.MarkReconcileIncomplete("dcim", endpoint)
+			return
+		}
+		for _, p := range ports {
+			if name, _ := p["name"].(string); names[name] {
+				dr.client.MarkSeen("dcim", endpoint, utils.GetIDFromObject(p))
+			}
+		}
+	}
+	ifaces := make(map[string]bool, len(dt.Interfaces))
+	for _, t := range dt.Interfaces {
+		ifaces[t.Name] = true
+	}
+	fronts := make(map[string]bool, len(dt.FrontPorts))
+	for _, t := range dt.FrontPorts {
+		fronts[t.Name] = true
+	}
+	rears := make(map[string]bool, len(dt.RearPorts))
+	for _, t := range dt.RearPorts {
+		rears[t.Name] = true
+	}
+	protect("interfaces", ifaces)
+	protect("front-ports", fronts)
+	protect("rear-ports", rears)
 }
 
 // pendingCable tracks a cable that needs to be created after all devices are processed
@@ -352,6 +440,9 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 	if err := dr.reconcileFrontPorts(deviceID, device); err != nil {
 		return fmt.Errorf("failed to reconcile front ports: %w", err)
 	}
+
+	// The hardware's own ports are not the YAML's to delete.
+	dr.protectTemplatePorts(deviceID, device)
 
 	// Self-healing: Create missing device bays from device type templates
 	dr.logger.Debug("  Reconciling device bays for %s...", device.Name)
@@ -885,9 +976,13 @@ func (dr *DeviceReconciler) reconcileFrontPorts(deviceID int, device *models.Dev
 		}
 		setFrontPortTermination(dr.client, payload, rearPortID, defaultPosition(port.RearPortPosition))
 
-		// Only include type if not empty (NetBox rejects empty string)
+		// Only include type if not empty (NetBox rejects empty string). A
+		// template port leaves it out; the template supplies it, so the port
+		// can be created again should it ever be missing.
 		if port.Type != "" {
 			payload["type"] = port.Type
+		} else if t := dr.templateType(device, "front-ports", port.Name); t != "" {
+			payload["type"] = t
 		}
 		if port.Label != "" {
 			payload["label"] = port.Label
@@ -939,9 +1034,12 @@ func (dr *DeviceReconciler) reconcileRearPorts(deviceID int, device *models.Devi
 			"name":   port.Name,
 		}
 
-		// Only include type if not empty (NetBox rejects empty string)
+		// Only include type if not empty (NetBox rejects empty string); a
+		// template port's type comes from the template.
 		if port.Type != "" {
 			payload["type"] = port.Type
+		} else if t := dr.templateType(device, "rear-ports", port.Name); t != "" {
+			payload["type"] = t
 		}
 
 		if port.Positions > 0 {
@@ -1017,6 +1115,7 @@ func (dr *DeviceReconciler) reconcilePendingCables() error {
 
 		if !sourceOK {
 			dr.logger.Warning("Source port not found: %s", sourceKey)
+			dr.client.MarkReconcileIncomplete("dcim", "cables")
 			continue
 		}
 
@@ -1027,6 +1126,9 @@ func (dr *DeviceReconciler) reconcilePendingCables() error {
 		if peerInfo == nil {
 			dr.logger.Warning("Peer port not found: %s::%s (from %s, role=%s)",
 				pc.link.PeerDevice, pc.link.PeerPort, sourceKey, pc.sourceRole)
+			// A declared cable that was not wired must not look like an
+			// orphan to prune: the one it would have claimed may be it.
+			dr.client.MarkReconcileIncomplete("dcim", "cables")
 			continue
 		}
 

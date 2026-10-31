@@ -66,6 +66,7 @@ func TestReconcileCableCreatesNewCable(t *testing.T) {
 func TestReconcileCableIdempotentWhenCableExists(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	f.seed("dcim", "cables", client.Object{
+		"tags":               managedTags(c),
 		"id":                 5,
 		"termination_a_type": "dcim.interface",
 		"termination_a_id":   10,
@@ -92,6 +93,7 @@ func TestReconcileCableIdempotentWhenCableExists(t *testing.T) {
 func TestReconcileCableUpdatesMismatchedConfig(t *testing.T) {
 	f, c := newFakeNetBox(t)
 	f.seed("dcim", "cables", client.Object{
+		"tags":               managedTags(c),
 		"id":                 5,
 		"termination_a_type": "dcim.interface",
 		"termination_a_id":   10,
@@ -128,6 +130,7 @@ func TestReconcileCableDeletesWrongCableOnLocalPort(t *testing.T) {
 	f.seed("dcim", "interfaces", client.Object{"id": 20, "name": "eth0"})
 	f.seed("dcim", "interfaces", client.Object{"id": 30, "name": "eth0"})
 	f.seed("dcim", "cables", client.Object{
+		"tags":           managedTags(c),
 		"id":             5,
 		"a_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 10}},
 		"b_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 30}},
@@ -165,6 +168,7 @@ func TestReconcileCableSkipsWhenLocalPortHasCorrectCable(t *testing.T) {
 	f.seed("dcim", "interfaces", client.Object{"id": 10, "name": "eth0", "cable": map[string]interface{}{"id": 5}})
 	f.seed("dcim", "interfaces", client.Object{"id": 20, "name": "eth0"})
 	f.seed("dcim", "cables", client.Object{
+		"tags":           managedTags(c),
 		"id":             5,
 		"a_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 10}},
 		"b_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 20}},
@@ -183,6 +187,7 @@ func TestReconcileCableSkipsWhenPeerPortHasCorrectCable(t *testing.T) {
 	f.seed("dcim", "interfaces", client.Object{"id": 10, "name": "eth0"})
 	f.seed("dcim", "interfaces", client.Object{"id": 20, "name": "eth0", "cable": map[string]interface{}{"id": 6}})
 	f.seed("dcim", "cables", client.Object{
+		"tags":           managedTags(c),
 		"id":             6,
 		"a_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 20}},
 		"b_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 10}},
@@ -202,6 +207,7 @@ func TestReconcileCableDeletesBlockingCableOnPeerPort(t *testing.T) {
 	f.seed("dcim", "interfaces", client.Object{"id": 10, "name": "eth0"})
 	f.seed("dcim", "interfaces", client.Object{"id": 20, "name": "eth0", "cable": map[string]interface{}{"id": 7}})
 	f.seed("dcim", "cables", client.Object{
+		"tags":           managedTags(c),
 		"id":             7,
 		"a_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 20}},
 		"b_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 30}},
@@ -228,6 +234,7 @@ func TestReconcileCableDryRunNeverMutates(t *testing.T) {
 	f.seed("dcim", "interfaces", client.Object{"id": 10, "name": "eth0", "cable": map[string]interface{}{"id": 5}})
 	f.seed("dcim", "interfaces", client.Object{"id": 20, "name": "eth0"})
 	f.seed("dcim", "cables", client.Object{
+		"tags":           managedTags(c),
 		"id":             5,
 		"a_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 10}},
 		"b_terminations": []interface{}{map[string]interface{}{"object_type": "dcim.interface", "object_id": 30}},
@@ -253,5 +260,46 @@ func TestReconcileCableNilEndpoints(t *testing.T) {
 	}
 	if err := cr.ReconcileCable(ifaceEndpoint("sw-01", "eth0", 10), nil, nil); err == nil {
 		t.Error("ReconcileCable(a, nil) expected error, got nil")
+	}
+}
+
+// A cable that exists exactly as declared but carries no managed tag (made
+// before cables were tagged, or patched by hand) is adopted: the tag is
+// added, nothing else changes, and prune will count it as the run's.
+func TestReconcileCableAdoptsUntaggedExistingCable(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	f.seed("dcim", "cables", client.Object{
+		"id":                 5,
+		"termination_a_type": "dcim.interface",
+		"termination_a_id":   10,
+		"termination_b_type": "dcim.interface",
+		"termination_b_id":   20,
+		"tags":               []interface{}{},
+	})
+	if err := NewCableReconciler(c).ReconcileCable(ifaceEndpoint("sw-01", "eth0", 10), ifaceEndpoint("sw-02", "eth0", 20), nil); err != nil {
+		t.Fatalf("ReconcileCable() error = %v", err)
+	}
+	muts := f.requireMutationCount(t, 1)
+	if muts[0].method != "PATCH" || muts[0].path != "/api/dcim/cables/5/" {
+		t.Fatalf("expected PATCH /api/dcim/cables/5/, got %s %s", muts[0].method, muts[0].path)
+	}
+	tags, _ := muts[0].body["tags"].([]interface{})
+	if len(tags) != 1 || int(tags[0].(float64)) != c.ManagedTagID() {
+		t.Errorf("adoption PATCH tags = %v, want just the managed tag %d", muts[0].body["tags"], c.ManagedTagID())
+	}
+}
+
+// A created cable carries the managed tag from the start.
+func TestReconcileCableCreatesManagedCable(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	f.seed("dcim", "interfaces", client.Object{"id": 10, "name": "eth0", "device": "sw-01"})
+	f.seed("dcim", "interfaces", client.Object{"id": 20, "name": "eth0", "device": "sw-02"})
+	if err := NewCableReconciler(c).ReconcileCable(ifaceEndpoint("sw-01", "eth0", 10), ifaceEndpoint("sw-02", "eth0", 20), nil); err != nil {
+		t.Fatalf("ReconcileCable() error = %v", err)
+	}
+	muts := f.requireMutationCount(t, 1)
+	tags, _ := muts[0].body["tags"].([]interface{})
+	if len(tags) != 1 || int(tags[0].(float64)) != c.ManagedTagID() {
+		t.Errorf("created cable tags = %v, want the managed tag %d", muts[0].body["tags"], c.ManagedTagID())
 	}
 }

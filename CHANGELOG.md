@@ -14,13 +14,6 @@ are about to run before applying a sync with pruning enabled.
 
 ### Known issues
 
-- **Cables the controller creates carry no `gitops` tag and are never
-  pruned.** When `--prune` deletes a device, NetBox removes the cable's
-  terminations but keeps the cable object, so an instance accumulates cables
-  with no ends (32 of them in a test instance after a day of applies). They
-  are harmless to the sync and invisible in a trace, but they are clutter and
-  they are not cleaned up. Planned: tag cables as managed and prune cables
-  without terminations.
 - **`--dry-run --detailed-exitcode` reports changes on a converged instance.**
   Against NetBox 4.6.10 it plans updates for sites, racks, VRFs, VLAN groups,
   VLANs and prefixes that an apply then does not make, and exits 2. The
@@ -42,6 +35,19 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **Cables are managed objects.** Every cable the controller creates carries
+  the `gitops` tag; a cable it finds already wired as declared is adopted
+  (the tag is added) on the next run. `--prune` deletes a managed cable that
+  is no longer declared, before the ports it joined, and sweeps cables with
+  no terminations left — the shells NetBox keeps when a port or device is
+  deleted — at the end of the run, whether or not they carry the tag, since
+  nothing can reach them again. A declared cable that could not be wired
+  (peer port not found) makes the cable set incomplete, so prune leaves
+  cables alone in that run. **Upgrade note:** the first apply after this
+  release tags every existing declared cable; the first `--prune` removes
+  the accumulated shells. Ports defined by a device type template are never
+  pruned (dropping one from the YAML no longer deletes it and its cable), and
+  a declared template port without a `type` gets the template's.
 - **JSON Schemas for every data file, for the editor.** `schema/*.json`,
   generated from the models (`make schema`, checked by `make lint`), describe
   each kind of file with all its shapes, short names, shorthands and choice

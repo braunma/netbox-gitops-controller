@@ -562,6 +562,7 @@ func runDevices(c *client.NetBoxClient, ds loader.Dataset, logger *utils.Logger)
 	}
 
 	deviceReconciler := reconciler.NewDeviceReconciler(c)
+	deviceReconciler.SetDeviceTypes(ds.DeviceTypes)
 	if err := deviceReconciler.ReconcileDevices(allDevices); err != nil {
 		logger.Error("Failed to reconcile devices", err)
 		return err
@@ -696,11 +697,16 @@ func parseOnly(values []string) (map[string]bool, error) {
 // violate NetBox foreign-key constraints. Only endpoints belonging to a phase
 // that actually ran are included, so --only keeps prune in scope.
 //
-// Cables are intentionally excluded: the tool does not tag them, so the
-// managed-tag query would never return them, and NetBox already
-// cascade-deletes a port's cables when the port or device is removed.
+// Cables come first in the devices phase: a managed cable the run did not
+// claim is an orphan like any other object. They come once more at the very
+// end, for what the run's own deletions leave behind: NetBox removes a
+// deleted port's terminations but keeps the cable object, with no ends, and
+// such a cable can never be reached again, so it is swept whether or not it
+// carries the tag.
 func pruneTargets(phases map[string]bool) []client.PruneTarget {
 	var targets []client.PruneTarget
+	unterminated := map[string]interface{}{"unterminated": "true"}
+	const shell = "has no terminations left (its port or device was deleted)"
 
 	// IP addresses reference both device interfaces and VM interfaces, so they
 	// are pruned once up front (before any interface is removed) whenever
@@ -710,11 +716,12 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 	}
 
 	if phases["devices"] {
-		// Device children first (reverse dependency: front ports reference rear
-		// ports, all components reference the device), then the devices
-		// themselves. Deleting an orphaned device cascades any remaining
-		// managed children in NetBox.
+		// Cables before the ports they join; then device children (reverse
+		// dependency: front ports reference rear ports, all components
+		// reference the device), then the devices themselves. Deleting an
+		// orphaned device cascades any remaining managed children in NetBox.
 		targets = append(targets,
+			client.PruneTarget{App: "dcim", Endpoint: "cables", Also: unterminated, AlsoReason: shell},
 			client.PruneTarget{App: "dcim", Endpoint: "front-ports"},
 			client.PruneTarget{App: "dcim", Endpoint: "interfaces"},
 			client.PruneTarget{App: "dcim", Endpoint: "rear-ports"},
@@ -762,6 +769,12 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 			// The managed tag carries its own slug; never prune it.
 			client.PruneTarget{App: "extras", Endpoint: "tags", KeepSlugs: []string{constants.ManagedTagSlug}},
 		)
+	}
+
+	if phases["devices"] {
+		// The deletions above leave cable shells; sweep them in the same run.
+		targets = append(targets,
+			client.PruneTarget{App: "dcim", Endpoint: "cables", Also: unterminated, AlsoReason: shell, OnlyAlso: true})
 	}
 
 	return targets

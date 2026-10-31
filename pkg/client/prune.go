@@ -5,6 +5,7 @@ package client
 import (
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -20,6 +21,17 @@ type PruneTarget struct {
 	// KeepSlugs lists object slugs that must never be pruned even when they
 	// look orphaned, e.g. the managed gitops tag itself.
 	KeepSlugs []string
+	// Also is a NetBox filter whose matches are pruned whether or not they
+	// carry the managed tag, with AlsoReason saying why in the log. It is for
+	// objects that cannot be anyone's: a cable with no terminations is what
+	// NetBox leaves behind when a port or device is deleted, and nothing can
+	// ever reach it again.
+	Also       map[string]interface{}
+	AlsoReason string
+	// OnlyAlso skips the tag-based pass: the target exists for the Also
+	// filter alone (a sweep at the end of a run for what the run's own
+	// deletions left behind).
+	OnlyAlso bool
 }
 
 // Prune deletes every gitops-tagged object at the given endpoints that was
@@ -68,19 +80,43 @@ func (c *NetBoxClient) Prune(targets []PruneTarget) error {
 // pruneTarget deletes the orphaned objects for a single endpoint and returns
 // the number deleted (or, in dry-run, the number that would be deleted).
 func (c *NetBoxClient) pruneTarget(t PruneTarget) (int, error) {
-	// If reconciliation skipped a declared object at this endpoint, we cannot
-	// safely tell orphans from declared-but-unreconciled objects, so skip it.
-	if c.reconcileIncomplete(t.App, t.Endpoint) {
-		c.logger.Warning("  ⚠ Skipping prune for %s/%s: reconciliation was incomplete; not deleting to avoid removing a declared object",
-			t.App, t.Endpoint)
-		return 0, nil
+	var objects []Object
+	if !t.OnlyAlso {
+		// If reconciliation skipped a declared object at this endpoint, we
+		// cannot safely tell orphans from declared-but-unreconciled objects,
+		// so skip them. What the Also filter names is never declared, so that
+		// pass still runs.
+		if c.reconcileIncomplete(t.App, t.Endpoint) {
+			c.logger.Warning("  ⚠ Skipping prune for %s/%s: reconciliation was incomplete; not deleting to avoid removing a declared object",
+				t.App, t.Endpoint)
+		} else {
+			managed, err := c.Filter(t.App, t.Endpoint, map[string]interface{}{
+				"tag": constants.ManagedTagSlug,
+			})
+			if err != nil {
+				return 0, err
+			}
+			objects = managed
+		}
 	}
-
-	objects, err := c.Filter(t.App, t.Endpoint, map[string]interface{}{
-		"tag": constants.ManagedTagSlug,
-	})
-	if err != nil {
-		return 0, err
+	reasons := map[int]string{}
+	if len(t.Also) > 0 {
+		extra, err := c.Filter(t.App, t.Endpoint, t.Also)
+		if err != nil {
+			return 0, err
+		}
+		have := make(map[int]bool, len(objects))
+		for _, obj := range objects {
+			have[utils.GetIDFromObject(obj)] = true
+		}
+		for _, obj := range extra {
+			id := utils.GetIDFromObject(obj)
+			if id == 0 || have[id] {
+				continue
+			}
+			objects = append(objects, obj)
+			reasons[id] = t.AlsoReason
+		}
 	}
 
 	keep := make(map[string]bool, len(t.KeepSlugs))
@@ -115,7 +151,11 @@ func (c *NetBoxClient) pruneTarget(t PruneTarget) (int, error) {
 		if c.dryRun {
 			verb = "Would prune"
 		}
-		c.logger.Warning("  ✗ %s orphaned %s: %s (ID: %d)", verb, t.Endpoint, label, id)
+		if reason := reasons[id]; reason != "" {
+			c.logger.Warning("  ✗ %s %s: %s (ID: %d): %s", verb, t.Endpoint, label, id, reason)
+		} else {
+			c.logger.Warning("  ✗ %s orphaned %s: %s (ID: %d)", verb, t.Endpoint, label, id)
+		}
 
 		path := fmt.Sprintf("/api/%s/%s/%d/", t.App, t.Endpoint, id)
 		if _, err := c.Request("DELETE", path, nil); err != nil {
@@ -134,9 +174,43 @@ func (c *NetBoxClient) pruneTarget(t PruneTarget) (int, error) {
 	return deleted, errors.Join(errs...)
 }
 
+// cableLabel renders a cable as its two ends, "sw-01[Eth1/1] <-> pp-01[1]",
+// from the terminations NetBox returns; empty when it has none left.
+func cableLabel(cable Object) string {
+	end := func(key string) string {
+		list, _ := cable[key].([]interface{})
+		var parts []string
+		for _, t := range list {
+			term, _ := t.(map[string]interface{})
+			obj, _ := term["object"].(map[string]interface{})
+			if obj == nil {
+				continue
+			}
+			device := ""
+			if d, ok := obj["device"].(map[string]interface{}); ok {
+				device, _ = d["name"].(string)
+			}
+			name, _ := obj["name"].(string)
+			parts = append(parts, device+"["+name+"]")
+		}
+		return strings.Join(parts, "+")
+	}
+	a, b := end("a_terminations"), end("b_terminations")
+	if a == "" && b == "" {
+		return ""
+	}
+	return a + " <-> " + b
+}
+
 // pruneLabel derives a human-readable identifier from a fetched object for
 // logging and the change plan.
 func pruneLabel(obj Object) string {
+	// A cable has no name and its display is just "#12"; say what it joins.
+	if _, isCable := obj["a_terminations"]; isCable {
+		if label := cableLabel(obj); label != "" {
+			return label
+		}
+	}
 	for _, key := range []string{"name", "model", "slug", "prefix", "address", "display"} {
 		if v, ok := obj[key].(string); ok && v != "" {
 			return key + "=" + v

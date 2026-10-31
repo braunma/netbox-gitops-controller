@@ -1040,6 +1040,12 @@ func (c *NetBoxClient) Recorder() *ChangeRecorder {
 	return c.recorder
 }
 
+// MarkSeen records an object the run reconciled by a path other than Apply
+// (a cable found or created by the cable reconciler), so Prune leaves it.
+func (c *NetBoxClient) MarkSeen(app, endpoint string, id int) {
+	c.markSeen(app, endpoint, id)
+}
+
 // markSeen records that the object with the given ID at app/endpoint was
 // reconciled during this run, so Prune will not delete it as an orphan.
 // Zero IDs (e.g. dry-run creates) are ignored.

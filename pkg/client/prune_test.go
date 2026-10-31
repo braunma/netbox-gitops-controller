@@ -50,11 +50,16 @@ func (p *pruneTestServer) handle(w http.ResponseWriter, r *http.Request) {
 		// Only objects carrying the requested tag slug are returned, mirroring
 		// NetBox's ?tag= filter.
 		wantTag := r.URL.Query().Get("tag")
+		unterminated := r.URL.Query().Get("unterminated") == "true"
 		results := []Object{}
 		for _, obj := range p.store[key] {
-			if wantTag == "" || objectHasTag(obj, wantTag) {
-				results = append(results, obj)
+			if wantTag != "" && !objectHasTag(obj, wantTag) {
+				continue
 			}
+			if unterminated && (len(terminations(obj, "a_terminations")) > 0 || len(terminations(obj, "b_terminations")) > 0) {
+				continue
+			}
+			results = append(results, obj)
 		}
 		json.NewEncoder(w).Encode(map[string]interface{}{"results": results, "next": nil})
 
@@ -73,6 +78,11 @@ func (p *pruneTestServer) handle(w http.ResponseWriter, r *http.Request) {
 	default:
 		http.Error(w, `{"detail":"method not allowed"}`, http.StatusMethodNotAllowed)
 	}
+}
+
+func terminations(obj Object, key string) []interface{} {
+	list, _ := obj[key].([]interface{})
+	return list
 }
 
 // objectHasTag reports whether obj carries a tag with the given slug.
@@ -264,5 +274,50 @@ func TestPruneDryRunRecordsWithoutDeleting(t *testing.T) {
 	}
 	if changes[0].Object != "prefix=10.0.0.0/24" {
 		t.Errorf("recorded label = %q, expected prefix=10.0.0.0/24", changes[0].Object)
+	}
+}
+
+// A target's Also filter prunes what it matches whether or not the object is
+// managed, and the tag-based pass still runs beside it: a cable with no ends
+// is swept untagged, a managed cable the run did not claim is an orphan, and
+// an untagged cable with ends (somebody's hand-patched one) is left alone.
+func TestPruneAlsoFilterIgnoresTag(t *testing.T) {
+	p, c := newPruneTestServer(t, false)
+	ends := []interface{}{map[string]interface{}{"object_id": float64(1)}}
+	p.store["dcim/cables"] = []Object{
+		{"id": float64(1), "display": "#1: shell", "a_terminations": []interface{}{}, "b_terminations": []interface{}{}},
+		managedObj(2, map[string]interface{}{"display": "#2: orphan", "a_terminations": ends, "b_terminations": ends}),
+		managedObj(3, map[string]interface{}{"display": "#3: claimed", "a_terminations": ends, "b_terminations": ends}),
+		{"id": float64(4), "display": "#4: by hand", "a_terminations": ends, "b_terminations": ends},
+	}
+	c.MarkSeen("dcim", "cables", 3)
+
+	err := c.Prune([]PruneTarget{{App: "dcim", Endpoint: "cables",
+		Also: map[string]interface{}{"unterminated": "true"}, AlsoReason: "has no terminations"}})
+	if err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	want := []string{"/api/dcim/cables/2/", "/api/dcim/cables/1/"}
+	if len(p.deletes) != 2 || p.deletes[0] != want[0] || p.deletes[1] != want[1] {
+		t.Errorf("deletes = %v, want %v (orphan, then shell; claimed and hand-made kept)", p.deletes, want)
+	}
+}
+
+// OnlyAlso skips the tag-based pass and ignores an incomplete reconciliation:
+// the sweep at the end of a run is for what the run's deletions left behind.
+func TestPruneOnlyAlsoSweepsDespiteIncompleteRun(t *testing.T) {
+	p, c := newPruneTestServer(t, false)
+	ends := []interface{}{map[string]interface{}{"object_id": float64(1)}}
+	p.store["dcim/cables"] = []Object{
+		{"id": float64(1), "display": "#1: shell", "a_terminations": []interface{}{}, "b_terminations": []interface{}{}},
+		managedObj(2, map[string]interface{}{"display": "#2: unclaimed but run incomplete", "a_terminations": ends, "b_terminations": ends}),
+	}
+	c.MarkReconcileIncomplete("dcim", "cables")
+	if err := c.Prune([]PruneTarget{{App: "dcim", Endpoint: "cables",
+		Also: map[string]interface{}{"unterminated": "true"}, AlsoReason: "has no terminations", OnlyAlso: true}}); err != nil {
+		t.Fatalf("Prune: %v", err)
+	}
+	if len(p.deletes) != 1 || p.deletes[0] != "/api/dcim/cables/1/" {
+		t.Errorf("deletes = %v, want only the shell", p.deletes)
 	}
 }

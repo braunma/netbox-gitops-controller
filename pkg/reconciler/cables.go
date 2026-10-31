@@ -101,6 +101,7 @@ func (cr *CableReconciler) ReconcileCable(aEnd, bEnd *CableEndpoint, link *model
 
 	if existing != nil {
 		cr.logger.Debug("│ Status: Cable exists (ID: %v)", existing["id"])
+		cr.claim(existing)
 
 		// Verify the cable is correct
 		if cr.verifyCable(existing, aEnd, bEnd, link) {
@@ -311,14 +312,70 @@ func (cr *CableReconciler) createCable(aEnd, bEnd *CableEndpoint, link *models.L
 		}
 	}
 
+	// A cable the controller creates is managed like everything else it
+	// creates: it carries the gitops tag, so prune can tell it from a cable
+	// somebody patched by hand.
+	payload = cr.client.Tags().InjectTag(payload, cr.client.ManagedTagID())
+
 	if cr.client.IsDryRun() {
 		cr.logger.DryRun("CREATE", "Cable: %s[%s] <-> %s[%s]",
 			aEnd.DeviceName, aEnd.PortName, bEnd.DeviceName, bEnd.PortName)
 		return nil
 	}
 
-	_, err := cr.client.Create("dcim", "cables", payload)
-	return err
+	created, err := cr.client.Create("dcim", "cables", payload)
+	if err != nil {
+		return err
+	}
+	cr.client.MarkSeen("dcim", "cables", utils.GetIDFromObject(created))
+	return nil
+}
+
+// claim records an existing cable as this run's: it is marked seen, so prune
+// keeps it, and if it lacks the managed tag (created before cables were
+// tagged, or patched by hand to exactly what the YAML declares) the tag is
+// added, so from now on it is managed like the ports it joins.
+func (cr *CableReconciler) claim(cable client.Object) {
+	id := utils.GetIDFromObject(cable)
+	if id == 0 {
+		return
+	}
+	cr.client.MarkSeen("dcim", "cables", id)
+	managed := cr.client.ManagedTagID()
+	if managed == 0 || cableHasTag(cable, managed) {
+		return
+	}
+	cr.logger.Info("│ Adopting cable ID %d: adding the managed tag", id)
+	if cr.client.IsDryRun() {
+		cr.logger.DryRun("UPDATE", "Cable ID %d: add managed tag", id)
+		return
+	}
+	update := cr.client.Tags().InjectTag(map[string]interface{}{"tags": cable["tags"]}, managed)
+	if err := cr.client.Update("dcim", "cables", id, update); err != nil {
+		cr.logger.Warning("│ Could not tag cable ID %d: %v", id, err)
+	}
+}
+
+// cableHasTag reports whether a fetched cable carries the tag with this ID.
+func cableHasTag(cable client.Object, tagID int) bool {
+	tags, _ := cable["tags"].([]interface{})
+	for _, t := range tags {
+		switch v := t.(type) {
+		case map[string]interface{}:
+			if utils.GetIDFromObject(v) == tagID {
+				return true
+			}
+		case float64:
+			if int(v) == tagID {
+				return true
+			}
+		case int:
+			if v == tagID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // updateCable updates an existing cable
@@ -422,6 +479,7 @@ func (cr *CableReconciler) checkAndCleanLocalPort(aEnd, bEnd *CableEndpoint) (bo
 	if cr.cableConnectsTo(existingCable, bEnd.ObjectID) {
 		cr.logger.Info("│ Local port already has correct cable (ID: %d)", cableID)
 		cr.logger.Info("│ Action: No changes needed (idempotent)")
+		cr.claim(existingCable)
 		return true, nil
 	}
 
@@ -508,6 +566,7 @@ func (cr *CableReconciler) checkAndCleanPeerPort(aEnd, bEnd *CableEndpoint, link
 		cr.logger.Info("│ Peer port already has correct cable (ID: %d)", cableID)
 		cr.logger.Info("│ Action: No changes needed (idempotent)")
 		// This is OK - the cable already exists correctly, skip creation
+		cr.claim(existingCable)
 		return true, nil
 	}
 

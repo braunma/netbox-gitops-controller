@@ -1244,9 +1244,15 @@ dependency order (device/VM children first, then sites/platforms/tenants/tags
 last) to respect NetBox foreign-key constraints. It is scoped to the phases that
 run via `--only`, and cannot be combined with `--site`/`--device`/`--vm` (a
 filtered run would delete the out-of-scope objects the filter excluded). Device children
-(interfaces, IP addresses, front/rear ports, modules) are pruned too; cables
-are not (they are untagged and NetBox removes them when their port or device is
-deleted).
+(interfaces, IP addresses, front/rear ports, modules) are pruned too, and so
+are cables: every cable the controller creates carries the managed tag, a
+cable it finds already wired as declared is adopted (tagged) on the next run,
+and a managed cable no longer declared is pruned like any other object. One
+exception to "only managed objects are deleted": a cable with no terminations
+left — what NetBox keeps when a port or device is deleted — is swept whether
+or not it carries the tag, because nothing can ever reach it again. The
+ports a device type template defines are never pruned, even when the YAML
+once listed one of them and stops doing so: they are the hardware's own.
 
 ## 📚 Example Files
 

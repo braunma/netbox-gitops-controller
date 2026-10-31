@@ -198,6 +198,9 @@ if echo "${s}" | grep -qE ', 0 deleted'; then
 else
   fail "prune deletes nothing" "${s:-no summary}"
 fi
+# Deleting a device leaves its cables as shells with no terminations; the
+# wipe at the start did exactly that, and prune must have swept them.
+expect "no cable shells left after prune" "$(count dcim/cables "unterminated=true")" "0"
 
 # ---------------------------------------------------------------------------
 # The conventions the sample data is written in, asserted on the live objects.
@@ -255,8 +258,10 @@ expect "switch strand traces through both panels to the other switch" \
   "$(trace_far_end berlin-leaf-01 Eth1/49)" "berlin-leaf-02[Eth1/49]"
 expect "switch strand is the same path seen from the far end" \
   "$(trace_far_end berlin-leaf-02 Eth1/49)" "berlin-leaf-01[Eth1/49]"
-# Only cables that still have ends count: deleting a device leaves its cables
-# behind as empty shells in NetBox (CHANGELOG, "Known issues").
+# Every cable the controller created carries the managed tag, like every
+# other object it creates, so prune can tell it from a hand-patched one.
+expect "every cable is managed" \
+  "$(count dcim/cables "tag=gitops")" "$(count dcim/cables "")"
 expect "exactly two backbone cables between the panels' rear ports" \
   "$(api "dcim/cables/?limit=500" | python3 -c '
 import json, sys

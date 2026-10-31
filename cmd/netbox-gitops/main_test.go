@@ -110,21 +110,40 @@ func TestPruneTargetsReverseDependencyOrder(t *testing.T) {
 
 // TestPruneTargetsExcludesCables guards the deliberate decision not to prune
 // cables (they are never tagged, and NetBox cascade-deletes them).
-func TestPruneTargetsExcludesCables(t *testing.T) {
-	if indexOf(keys(allPhases()), "dcim", "cables") != -1 {
-		t.Error("cables must not be a prune target")
+// Cables are pruned before the ports they join, and swept once more at the
+// very end for the shells the run's own deletions leave behind.
+func TestPruneTargetsCablesFirstAndSweptLast(t *testing.T) {
+	targets := pruneTargets(allPhases())
+	first := targets[0]
+	if first.Endpoint == "ip-addresses" {
+		first = targets[1]
 	}
-	// Manufacturers are shared/auto-created and likewise excluded.
+	if first.Endpoint != "cables" || first.OnlyAlso || first.Also["unterminated"] != "true" {
+		t.Errorf("first device-phase target = %+v, want the managed-cable pass with the unterminated filter", first)
+	}
+	last := targets[len(targets)-1]
+	if last.Endpoint != "cables" || !last.OnlyAlso {
+		t.Errorf("last target = %+v, want the OnlyAlso cable sweep", last)
+	}
+	if indexOf(keys(allPhases()), "dcim", "cables") >= indexOf(keys(allPhases()), "dcim", "front-ports") {
+		t.Error("cables must be pruned before front ports")
+	}
+	// Manufacturers are shared/auto-created and excluded.
 	if indexOf(keys(allPhases()), "dcim", "manufacturers") != -1 {
 		t.Error("manufacturers must not be a prune target")
 	}
 }
 
-// TestPruneTargetsNoDuplicates ensures each endpoint appears at most once, so
-// the same object is never visited (and deleted) twice.
+// TestPruneTargetsNoDuplicates ensures each endpoint's tag-based pass appears
+// at most once, so the same object is never visited (and deleted) twice. The
+// final cable sweep is OnlyAlso and does not count.
 func TestPruneTargetsNoDuplicates(t *testing.T) {
 	seen := map[pruneTargetKey]bool{}
-	for _, k := range keys(allPhases()) {
+	for _, tg := range pruneTargets(allPhases()) {
+		if tg.OnlyAlso {
+			continue
+		}
+		k := pruneTargetKey{tg.App, tg.Endpoint}
 		if seen[k] {
 			t.Errorf("duplicate prune target %s/%s", k.app, k.endpoint)
 		}
