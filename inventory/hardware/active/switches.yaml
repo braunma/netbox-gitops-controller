@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device.json
 # Switch Inventory - Active Network Equipment
 #
 # Ports come from the dell-s5248f-on device type template, so a port is listed

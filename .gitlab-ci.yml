@@ -356,8 +356,14 @@ yaml_check:
   stage: test
   script:
     - echo "📝 Checking YAML syntax..."
-    # Check YAML files in example directory (used by CI) and any custom definitions
-    - go run ./cmd/yamlcheck
+    # Every problem and finding also goes into a Code Quality report, so the
+    # merge request shows it on the changed line instead of in this log.
+    - go run ./cmd/yamlcheck --codequality gl-code-quality-report.json
+  artifacts:
+    when: always
+    reports:
+      codequality: gl-code-quality-report.json
+    expire_in: 1 week
   rules:
     - if: $RUN_QUALITY_CHECKS == "false"
       when: never

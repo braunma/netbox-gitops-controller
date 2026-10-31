@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device.json
 # Server Inventory - Munich Lab
 #
 # A second file for a second site: one `defaults` block per site, rack or

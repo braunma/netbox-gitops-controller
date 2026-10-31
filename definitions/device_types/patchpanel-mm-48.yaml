@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/device-type.json
 # 48-port multi-mode LC fiber panel. Front port n (the room side, where patch
 # cables plug in) is bridged to rear port n (the backbone side).
 - model: "Fiber Panel 48-Port MM (LC)"

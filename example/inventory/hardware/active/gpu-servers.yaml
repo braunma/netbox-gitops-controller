@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/device.json
 # Example GPU Server Inventory
 # This demonstrates module installation with managed tags
 

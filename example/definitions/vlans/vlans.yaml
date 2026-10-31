@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/vlan.json
 # Example VLANs for Testing
 
 - name: "Management"

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device.json
 # Patch Panel Inventory - Passive Fiber Infrastructure
 #
 # Grouped form: `defaults` carries what every panel shares. Each port's `type`

@@ -1,0 +1,174 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/tenant.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of tenants.",
+      "items": {
+        "$ref": "#/definitions/Tenant"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/TenantDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/TenantEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/TenantEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/Tenant"
+    }
+  ],
+  "definitions": {
+    "Tenant": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "group",
+              "group_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "description": "Short for group_slug.",
+          "type": "string"
+        },
+        "group_slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "slug"
+      ],
+      "type": "object"
+    },
+    "TenantDefaults": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "group",
+              "group_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "description": "Short for group_slug.",
+          "type": "string"
+        },
+        "group_slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "TenantEntry": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "group",
+              "group_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "description": "Short for group_slug.",
+          "type": "string"
+        },
+        "group_slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/tenants. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "tenant file"
+}

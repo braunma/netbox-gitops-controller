@@ -489,6 +489,35 @@ Cable path: srv[eth1] > pp-a01[front 2] > pp-a01[rear 2] > pp-b02[rear 2] > pp-b
 `tests/e2e/repo-data.sh` asks NetBox to trace both sample strands end to end,
 so the shape above is exercised against a real NetBox on every e2e run.
 
+### Editing with a schema
+
+Every kind of data file has a JSON Schema in `schema/`, generated from the Go
+models the loader decodes into (`make schema`), so an editor knows the fields,
+the short names, the allowed values of `status`, `face` and the like, and
+every shape a file may take (list, grouped `defaults:` + `items:`, single
+object, `interfaces:` as a mapping, the `ip:` and `via:` shorthands). The
+first line of each data file points at it:
+
+```yaml
+# yaml-language-server: $schema=../../../schema/device.json
+```
+
+VS Code with the YAML extension (and any editor with a YAML language server)
+then completes field names, underlines an unknown key and offers the choice
+values while typing — the same judgement the loader makes, before the file is
+saved. `go run ./cmd/schemagen --headers <data-dir>` adds or refreshes the
+line in every file of a data directory; `make lint` fails when `schema/` is
+behind the models.
+
+### Merge request feedback
+
+Problems and findings reach the merge request instead of staying in a job
+log: `yaml_check` writes a GitLab Code Quality report
+(`yamlcheck --codequality`), the merge request widget lists every load
+problem and lint finding, and the diff view pins each to the file and line of
+the object it is about. The dry-run plan stays where it was, in the `go_plan`
+job log and its `plan-output.txt` artifact.
+
 ### Conventions that keep the YAML small
 
   * **Ports live in the device type, not the inventory.** Define every

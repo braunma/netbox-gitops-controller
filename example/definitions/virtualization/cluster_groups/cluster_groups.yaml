@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/cluster-group.json
 # Example Cluster Groups (virtualization app)
 # A cluster group is an organizational grouping of clusters.
 

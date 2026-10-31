@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/role.json
 # Example Device Roles for Testing
 # These classify devices by their function
 

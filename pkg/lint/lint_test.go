@@ -981,3 +981,29 @@ func TestIPVRFMismatch(t *testing.T) {
 	ds.Devices[0].Interfaces[0].IP.Address = "10.0.5.9/24"
 	assertCheck(t, Check(ds, Options{}), "ip-vrf-mismatch", 0)
 }
+
+// A finding points at the file and line of the object it is about when the
+// dataset knows where that object was declared.
+func TestFindingsCarryOrigins(t *testing.T) {
+	ds := baseDataset()
+	a, b := server("srv-01", 10), server("srv-02", 10) // same rack unit
+	ds.Devices = []*models.DeviceConfig{a, b}
+	ds.Origins = map[any]Origin{
+		a: {File: "inventory/hardware/active/a.yaml", Line: 12},
+		b: {File: "inventory/hardware/active/b.yaml", Line: 30},
+	}
+	got := assertCheck(t, Check(ds, Options{}), "rack-collision", 1)
+	if len(got) == 1 && (got[0].File != "inventory/hardware/active/b.yaml" || got[0].Line != 30) {
+		t.Errorf("rack-collision located at %s:%d, want b.yaml:30 (the colliding device)", got[0].File, got[0].Line)
+	}
+	// "device srv-1" must not claim "device srv-10".
+	c := server("srv-1", 20)
+	d := server("srv-10", 22)
+	d.Interfaces = []models.InterfaceConfig{{Name: "eth0", Type: "25gbase-x-sfp28"}}
+	ds.Devices = []*models.DeviceConfig{c, d}
+	ds.Origins = map[any]Origin{c: {File: "c.yaml", Line: 1}, d: {File: "d.yaml", Line: 2}}
+	got = assertCheck(t, Check(ds, Options{}), "redundant-interface-type", 1)
+	if len(got) == 1 && got[0].File != "d.yaml" {
+		t.Errorf("finding on srv-10 located in %s, want d.yaml", got[0].File)
+	}
+}

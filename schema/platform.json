@@ -1,0 +1,132 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/platform.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of platforms.",
+      "items": {
+        "$ref": "#/definitions/Platform"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PlatformDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/PlatformEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/PlatformEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/Platform"
+    }
+  ],
+  "definitions": {
+    "Platform": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "slug"
+      ],
+      "type": "object"
+    },
+    "PlatformDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "PlatformEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/platforms. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "platform file"
+}

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/site.json
 # Site Definitions - Data Center Locations
 # These represent physical locations where equipment is installed
 

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device-type.json
 # Example Patch Panel Device Type
 # Front/rear ports are defined per instance in
 # inventory/hardware/passive/patchpanels.yaml

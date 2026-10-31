@@ -1,0 +1,131 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/vrf.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of vrfs.",
+      "items": {
+        "$ref": "#/definitions/VRF"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/VRFDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/VRFEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/VRFEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/VRF"
+    }
+  ],
+  "definitions": {
+    "VRF": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "enforce_unique": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rd": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "VRFDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "enforce_unique": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rd": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "VRFEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "enforce_unique": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rd": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/vrfs. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "vrf file"
+}

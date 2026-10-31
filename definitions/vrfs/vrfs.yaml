@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/vrf.json
 # VRF (Virtual Routing and Forwarding) Definitions
 # Separate routing tables for network isolation
 

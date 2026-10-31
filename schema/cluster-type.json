@@ -1,0 +1,123 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/cluster-type.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of cluster-types.",
+      "items": {
+        "$ref": "#/definitions/ClusterType"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/ClusterTypeDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/ClusterTypeEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/ClusterTypeEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/ClusterType"
+    }
+  ],
+  "definitions": {
+    "ClusterType": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "slug"
+      ],
+      "type": "object"
+    },
+    "ClusterTypeDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ClusterTypeEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/virtualization/cluster_types. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "cluster-type file"
+}

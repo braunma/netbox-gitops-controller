@@ -44,6 +44,16 @@ type Dataset struct {
 	// with every port along it. The cables themselves are already on the
 	// devices; this is for the log and the checks.
 	CablePaths []string
+	// Origins says, for every loaded object (by its pointer), which file and
+	// line declared it, so a check can point at the place to fix.
+	Origins map[any]Origin
+}
+
+// Origin is where an object was declared: the file (as the loader saw it)
+// and the line its entry starts on.
+type Origin struct {
+	File string
+	Line int
 }
 
 // DatasetOptions carries the paths that are resolved outside the loader, and
@@ -155,6 +165,7 @@ func (dl *DataLoader) LoadDataset(opts DatasetOptions) (Dataset, error) {
 	ds.ModuleTypes = MergeModuleTypes(nativeModuleTypes, libraryModuleTypes, dl.logger)
 	ds.DeviceTypes = MergeDeviceTypes(nativeDeviceTypes, libraryDeviceTypes, dl.logger)
 	ds.Devices = devices
+	ds.Origins = dl.origins
 
 	// Paths through patch panels become their cables here, once everything
 	// they refer to (the panels, their device types) is loaded.

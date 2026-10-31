@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/device.json
 # Example Switch Inventory for Testing
 #
 # The classic list form is still supported (and fine for single devices).

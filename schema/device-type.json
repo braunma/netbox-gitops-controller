@@ -1,0 +1,861 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/device-type.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of device-types.",
+      "items": {
+        "$ref": "#/definitions/DeviceType"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DeviceTypeDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/DeviceTypeEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/DeviceTypeEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/DeviceType"
+    }
+  ],
+  "definitions": {
+    "ConsolePortTemplate": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ConsolePortTemplateEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DeviceBayTemplate": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "DeviceBayTemplateEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DeviceType": {
+      "additionalProperties": false,
+      "properties": {
+        "airflow": {
+          "enum": [
+            "front-to-rear",
+            "rear-to-front",
+            "left-to-right",
+            "right-to-left",
+            "side-to-rear",
+            "rear-to-side",
+            "bottom-to-top",
+            "top-to-bottom",
+            "passive",
+            "mixed"
+          ],
+          "type": "string"
+        },
+        "comments": {
+          "type": "string"
+        },
+        "console_ports": {
+          "items": {
+            "$ref": "#/definitions/ConsolePortTemplate"
+          },
+          "type": "array"
+        },
+        "console_server_ports": {
+          "items": {
+            "$ref": "#/definitions/ConsolePortTemplate"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "device_bays": {
+          "items": {
+            "$ref": "#/definitions/DeviceBayTemplate"
+          },
+          "type": "array"
+        },
+        "front_ports": {
+          "items": {
+            "$ref": "#/definitions/PortTemplate"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/InterfaceTemplate"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "description": "The interface's address, e.g. 10.0.0.1/24.",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/InterfaceTemplateEntry"
+                  }
+                ]
+              },
+              "description": "Interfaces keyed by name: an address alone, a mapping of fields, or nothing (listed for its defaults).",
+              "type": "object"
+            }
+          ]
+        },
+        "is_full_depth": {
+          "type": "boolean"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "module_bays": {
+          "items": {
+            "$ref": "#/definitions/ModuleBayTemplate"
+          },
+          "type": "array"
+        },
+        "part_number": {
+          "type": "string"
+        },
+        "power_outlets": {
+          "items": {
+            "$ref": "#/definitions/PowerOutletTemplate"
+          },
+          "type": "array"
+        },
+        "power_ports": {
+          "items": {
+            "$ref": "#/definitions/PowerPortTemplate"
+          },
+          "type": "array"
+        },
+        "rear_ports": {
+          "items": {
+            "$ref": "#/definitions/PortTemplate"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "subdevice_role": {
+          "enum": [
+            "parent",
+            "child"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "u_height": {
+          "type": "number"
+        },
+        "weight": {
+          "type": "number"
+        },
+        "weight_unit": {
+          "enum": [
+            "kg",
+            "g",
+            "lb",
+            "oz"
+          ],
+          "type": "string"
+        }
+      },
+      "required": [
+        "manufacturer",
+        "model",
+        "slug"
+      ],
+      "type": "object"
+    },
+    "DeviceTypeDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "airflow": {
+          "enum": [
+            "front-to-rear",
+            "rear-to-front",
+            "left-to-right",
+            "right-to-left",
+            "side-to-rear",
+            "rear-to-side",
+            "bottom-to-top",
+            "top-to-bottom",
+            "passive",
+            "mixed"
+          ],
+          "type": "string"
+        },
+        "comments": {
+          "type": "string"
+        },
+        "console_ports": {
+          "items": {
+            "$ref": "#/definitions/ConsolePortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "console_server_ports": {
+          "items": {
+            "$ref": "#/definitions/ConsolePortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "device_bays": {
+          "items": {
+            "$ref": "#/definitions/DeviceBayTemplateEntry"
+          },
+          "type": "array"
+        },
+        "front_ports": {
+          "items": {
+            "$ref": "#/definitions/PortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "additionalProperties": {
+            "$ref": "#/definitions/InterfaceTemplatePerNameDefaults"
+          },
+          "description": "Per-interface defaults, keyed by interface name. They apply to the interfaces an entry lists; with always: true the interface is added to every entry.",
+          "type": "object"
+        },
+        "is_full_depth": {
+          "type": "boolean"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "module_bays": {
+          "items": {
+            "$ref": "#/definitions/ModuleBayTemplateEntry"
+          },
+          "type": "array"
+        },
+        "part_number": {
+          "type": "string"
+        },
+        "power_outlets": {
+          "items": {
+            "$ref": "#/definitions/PowerOutletTemplateEntry"
+          },
+          "type": "array"
+        },
+        "power_ports": {
+          "items": {
+            "$ref": "#/definitions/PowerPortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "rear_ports": {
+          "items": {
+            "$ref": "#/definitions/PortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "subdevice_role": {
+          "enum": [
+            "parent",
+            "child"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "u_height": {
+          "type": "number"
+        },
+        "weight": {
+          "type": "number"
+        },
+        "weight_unit": {
+          "enum": [
+            "kg",
+            "g",
+            "lb",
+            "oz"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "DeviceTypeEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "airflow": {
+          "enum": [
+            "front-to-rear",
+            "rear-to-front",
+            "left-to-right",
+            "right-to-left",
+            "side-to-rear",
+            "rear-to-side",
+            "bottom-to-top",
+            "top-to-bottom",
+            "passive",
+            "mixed"
+          ],
+          "type": "string"
+        },
+        "comments": {
+          "type": "string"
+        },
+        "console_ports": {
+          "items": {
+            "$ref": "#/definitions/ConsolePortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "console_server_ports": {
+          "items": {
+            "$ref": "#/definitions/ConsolePortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "description": {
+          "type": "string"
+        },
+        "device_bays": {
+          "items": {
+            "$ref": "#/definitions/DeviceBayTemplateEntry"
+          },
+          "type": "array"
+        },
+        "front_ports": {
+          "items": {
+            "$ref": "#/definitions/PortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/InterfaceTemplateEntry"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "description": "The interface's address, e.g. 10.0.0.1/24.",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/InterfaceTemplateEntry"
+                  }
+                ]
+              },
+              "description": "Interfaces keyed by name: an address alone, a mapping of fields, or nothing (listed for its defaults).",
+              "type": "object"
+            }
+          ]
+        },
+        "is_full_depth": {
+          "type": "boolean"
+        },
+        "manufacturer": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "module_bays": {
+          "items": {
+            "$ref": "#/definitions/ModuleBayTemplateEntry"
+          },
+          "type": "array"
+        },
+        "part_number": {
+          "type": "string"
+        },
+        "power_outlets": {
+          "items": {
+            "$ref": "#/definitions/PowerOutletTemplateEntry"
+          },
+          "type": "array"
+        },
+        "power_ports": {
+          "items": {
+            "$ref": "#/definitions/PowerPortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "rear_ports": {
+          "items": {
+            "$ref": "#/definitions/PortTemplateEntry"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "subdevice_role": {
+          "enum": [
+            "parent",
+            "child"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "u_height": {
+          "type": "number"
+        },
+        "weight": {
+          "type": "number"
+        },
+        "weight_unit": {
+          "enum": [
+            "kg",
+            "g",
+            "lb",
+            "oz"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InterfaceTemplate": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mgmt_only": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "poe_mode": {
+          "type": "string"
+        },
+        "poe_type": {
+          "type": "string"
+        },
+        "rf_role": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "InterfaceTemplateEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mgmt_only": {
+          "type": "boolean"
+        },
+        "name": {
+          "type": "string"
+        },
+        "poe_mode": {
+          "type": "string"
+        },
+        "poe_type": {
+          "type": "string"
+        },
+        "rf_role": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InterfaceTemplatePerNameDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "always": {
+          "description": "Add this interface to every entry of the file that does not list it.",
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "label": {
+          "type": "string"
+        },
+        "mgmt_only": {
+          "type": "boolean"
+        },
+        "poe_mode": {
+          "type": "string"
+        },
+        "poe_type": {
+          "type": "string"
+        },
+        "rf_role": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ModuleBayTemplate": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ModuleBayTemplateEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "position": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PortTemplate": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "positions": {
+          "type": "integer"
+        },
+        "rear_port": {
+          "description": "Front port only: the rear port it is bridged to. A range counts along with a range in name.",
+          "type": "string"
+        },
+        "rear_port_position": {
+          "type": "integer"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "type"
+      ],
+      "type": "object"
+    },
+    "PortTemplateEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "positions": {
+          "type": "integer"
+        },
+        "rear_port": {
+          "description": "Front port only: the rear port it is bridged to. A range counts along with a range in name.",
+          "type": "string"
+        },
+        "rear_port_position": {
+          "type": "integer"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PowerOutletTemplate": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "feed_leg": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "power_port": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "PowerOutletTemplateEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "feed_leg": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "power_port": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PowerPortTemplate": {
+      "additionalProperties": false,
+      "properties": {
+        "allocated_draw": {
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "maximum_draw": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "PowerPortTemplateEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "allocated_draw": {
+          "type": "integer"
+        },
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "maximum_draw": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/device_types. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "device-type file"
+}

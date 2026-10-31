@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device.json
 # Server Inventory - Berlin DC
 #
 # Grouped form: everything under `defaults` is merged into every device below,

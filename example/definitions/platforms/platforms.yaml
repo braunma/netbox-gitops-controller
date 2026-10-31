@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/platform.json
 # Example Platforms (OS / firmware families)
 # Platforms are referenced by slug from virtual machines (and devices).
 

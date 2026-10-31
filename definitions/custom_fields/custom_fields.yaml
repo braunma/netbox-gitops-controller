@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/custom-field.json
 # Custom field definitions (extras app).
 #
 # The `vmid` field stores each VM's Proxmox VMID. NetBox's virtual-machine

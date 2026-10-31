@@ -1,0 +1,1373 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/device.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of devices.",
+      "items": {
+        "$ref": "#/definitions/DeviceConfig"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/DeviceConfigDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/DeviceConfigEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/DeviceConfigEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/DeviceConfig"
+    }
+  ],
+  "definitions": {
+    "CableAttrs": {
+      "additionalProperties": false,
+      "properties": {
+        "cable_type": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "length": {
+          "type": "number"
+        },
+        "length_unit": {
+          "enum": [
+            "km",
+            "m",
+            "cm",
+            "mi",
+            "ft",
+            "in"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CableAttrsEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "cable_type": {
+          "type": "string"
+        },
+        "color": {
+          "type": "string"
+        },
+        "length": {
+          "type": "number"
+        },
+        "length_unit": {
+          "enum": [
+            "km",
+            "m",
+            "cm",
+            "mi",
+            "ft",
+            "in"
+          ],
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CableDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "front": {
+          "$ref": "#/definitions/CableAttrs"
+        },
+        "rear": {
+          "$ref": "#/definitions/CableAttrs"
+        }
+      },
+      "type": "object"
+    },
+    "CableDefaultsEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "front": {
+          "$ref": "#/definitions/CableAttrsEntry"
+        },
+        "rear": {
+          "$ref": "#/definitions/CableAttrsEntry"
+        }
+      },
+      "type": "object"
+    },
+    "DeviceConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "site_slug"
+              ]
+            },
+            {
+              "required": [
+                "site"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "required": [
+                "device_type_slug"
+              ]
+            },
+            {
+              "required": [
+                "device_type"
+              ]
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "required": [
+                "role_slug"
+              ]
+            },
+            {
+              "required": [
+                "role"
+              ]
+            }
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "device_type",
+              "device_type_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "rack",
+              "rack_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "role",
+              "role_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "asset_tag": {
+          "type": "string"
+        },
+        "cable_defaults": {
+          "$ref": "#/definitions/CableDefaults",
+          "description": "On a patch panel: type and colour of the cables a path (link.via) gets at this panel. front: patch cords into the front ports, rear: backbones out of the rear ports."
+        },
+        "custom_fields": {
+          "description": "Values for NetBox custom fields, by field name. Only the fields named here are written.",
+          "type": "object"
+        },
+        "device_bay": {
+          "type": "string"
+        },
+        "device_type": {
+          "description": "Short for device_type_slug.",
+          "type": "string"
+        },
+        "device_type_slug": {
+          "type": "string"
+        },
+        "face": {
+          "description": "Rack face. Implied as front when a position is given and no face.",
+          "enum": [
+            "front",
+            "rear"
+          ],
+          "type": "string"
+        },
+        "front_ports": {
+          "items": {
+            "$ref": "#/definitions/FrontPortConfig"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/InterfaceConfig"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "description": "The interface's address, e.g. 10.0.0.1/24.",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/InterfaceConfigEntry"
+                  }
+                ]
+              },
+              "description": "Interfaces keyed by name: an address alone, a mapping of fields, or nothing (listed for its defaults).",
+              "type": "object"
+            }
+          ]
+        },
+        "modules": {
+          "items": {
+            "$ref": "#/definitions/ModuleConfig"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent_device": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer"
+        },
+        "rack": {
+          "description": "Short for rack_slug.",
+          "type": "string"
+        },
+        "rack_slug": {
+          "type": "string"
+        },
+        "rear_ports": {
+          "items": {
+            "$ref": "#/definitions/RearPortConfig"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "description": "The object's previous name. Set it to correct a typo so the existing object is renamed instead of a second one being created; remove it once the sync has run.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Short for role_slug.",
+          "type": "string"
+        },
+        "role_slug": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "inventory",
+            "decommissioning"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "DeviceConfigDefaults": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "device_type",
+              "device_type_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "rack",
+              "rack_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "role",
+              "role_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "asset_tag": {
+          "type": "string"
+        },
+        "cable_defaults": {
+          "$ref": "#/definitions/CableDefaultsEntry",
+          "description": "On a patch panel: type and colour of the cables a path (link.via) gets at this panel. front: patch cords into the front ports, rear: backbones out of the rear ports."
+        },
+        "custom_fields": {
+          "description": "Values for NetBox custom fields, by field name. Only the fields named here are written.",
+          "type": "object"
+        },
+        "device_bay": {
+          "type": "string"
+        },
+        "device_type": {
+          "description": "Short for device_type_slug.",
+          "type": "string"
+        },
+        "device_type_slug": {
+          "type": "string"
+        },
+        "face": {
+          "description": "Rack face. Implied as front when a position is given and no face.",
+          "enum": [
+            "front",
+            "rear"
+          ],
+          "type": "string"
+        },
+        "front_ports": {
+          "items": {
+            "$ref": "#/definitions/FrontPortConfigEntry"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "additionalProperties": {
+            "$ref": "#/definitions/InterfaceConfigPerNameDefaults"
+          },
+          "description": "Per-interface defaults, keyed by interface name. They apply to the interfaces an entry lists; with always: true the interface is added to every entry.",
+          "type": "object"
+        },
+        "modules": {
+          "items": {
+            "$ref": "#/definitions/ModuleConfigEntry"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent_device": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer"
+        },
+        "rack": {
+          "description": "Short for rack_slug.",
+          "type": "string"
+        },
+        "rack_slug": {
+          "type": "string"
+        },
+        "rear_ports": {
+          "items": {
+            "$ref": "#/definitions/RearPortConfigEntry"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "description": "The object's previous name. Set it to correct a typo so the existing object is renamed instead of a second one being created; remove it once the sync has run.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Short for role_slug.",
+          "type": "string"
+        },
+        "role_slug": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "inventory",
+            "decommissioning"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "DeviceConfigEntry": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "device_type",
+              "device_type_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "rack",
+              "rack_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "role",
+              "role_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "asset_tag": {
+          "type": "string"
+        },
+        "cable_defaults": {
+          "$ref": "#/definitions/CableDefaultsEntry",
+          "description": "On a patch panel: type and colour of the cables a path (link.via) gets at this panel. front: patch cords into the front ports, rear: backbones out of the rear ports."
+        },
+        "custom_fields": {
+          "description": "Values for NetBox custom fields, by field name. Only the fields named here are written.",
+          "type": "object"
+        },
+        "device_bay": {
+          "type": "string"
+        },
+        "device_type": {
+          "description": "Short for device_type_slug.",
+          "type": "string"
+        },
+        "device_type_slug": {
+          "type": "string"
+        },
+        "face": {
+          "description": "Rack face. Implied as front when a position is given and no face.",
+          "enum": [
+            "front",
+            "rear"
+          ],
+          "type": "string"
+        },
+        "front_ports": {
+          "items": {
+            "$ref": "#/definitions/FrontPortConfigEntry"
+          },
+          "type": "array"
+        },
+        "interfaces": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/InterfaceConfigEntry"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "description": "The interface's address, e.g. 10.0.0.1/24.",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/InterfaceConfigEntry"
+                  }
+                ]
+              },
+              "description": "Interfaces keyed by name: an address alone, a mapping of fields, or nothing (listed for its defaults).",
+              "type": "object"
+            }
+          ]
+        },
+        "modules": {
+          "items": {
+            "$ref": "#/definitions/ModuleConfigEntry"
+          },
+          "type": "array"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent_device": {
+          "type": "string"
+        },
+        "position": {
+          "type": "integer"
+        },
+        "rack": {
+          "description": "Short for rack_slug.",
+          "type": "string"
+        },
+        "rack_slug": {
+          "type": "string"
+        },
+        "rear_ports": {
+          "items": {
+            "$ref": "#/definitions/RearPortConfigEntry"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "description": "The object's previous name. Set it to correct a typo so the existing object is renamed instead of a second one being created; remove it once the sync has run.",
+          "type": "string"
+        },
+        "role": {
+          "description": "Short for role_slug.",
+          "type": "string"
+        },
+        "role_slug": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "inventory",
+            "decommissioning"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "FrontPortConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/definitions/LinkConfig"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rear_port": {
+          "description": "The rear port this front port is bridged to; only needed when the device type does not define it.",
+          "type": "string"
+        },
+        "rear_port_position": {
+          "type": "integer"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "rear_port",
+        "type"
+      ],
+      "type": "object"
+    },
+    "FrontPortConfigEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/definitions/LinkConfigEntry"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rear_port": {
+          "description": "The rear port this front port is bridged to; only needed when the device type does not define it.",
+          "type": "string"
+        },
+        "rear_port_position": {
+          "type": "integer"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "IPConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "address_role": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dns_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vrf": {
+          "description": "VRF name. The lint checks it against the VRF of the prefix the address falls into.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "type": "object"
+    },
+    "IPConfigEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "address_role": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dns_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vrf": {
+          "description": "VRF name. The lint checks it against the VRF of the prefix the address falls into.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InterfaceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "address_role": {
+          "description": "\"primary\" makes this interface's address the device's primary IP (one per address family).",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "description": "The address with prefix length, e.g. 10.0.0.1/24.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/IPConfig"
+            }
+          ],
+          "description": "The address: a string \"10.0.0.1/24\" or a mapping with address, vrf, dns_name, status, tags."
+        },
+        "label": {
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/definitions/LinkConfig",
+          "description": "The cable from this interface: peer_device and peer_port, or with via: the whole path through patch panels."
+        },
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "mtu": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tagged_vlans": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "description": "Only for an interface the device type has no template for (virtual, lag, ...). A template port's type is not repeated.",
+          "type": "string"
+        },
+        "untagged_vlan": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "InterfaceConfigEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "address_role": {
+          "description": "\"primary\" makes this interface's address the device's primary IP (one per address family).",
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "description": "The address with prefix length, e.g. 10.0.0.1/24.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/IPConfigEntry"
+            }
+          ],
+          "description": "The address: a string \"10.0.0.1/24\" or a mapping with address, vrf, dns_name, status, tags."
+        },
+        "label": {
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/definitions/LinkConfigEntry",
+          "description": "The cable from this interface: peer_device and peer_port, or with via: the whole path through patch panels."
+        },
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "mtu": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tagged_vlans": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "description": "Only for an interface the device type has no template for (virtual, lag, ...). A template port's type is not repeated.",
+          "type": "string"
+        },
+        "untagged_vlan": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "InterfaceConfigPerNameDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "address_role": {
+          "description": "\"primary\" makes this interface's address the device's primary IP (one per address family).",
+          "type": "string"
+        },
+        "always": {
+          "description": "Add this interface to every entry of the file that does not list it.",
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "description": "The address with prefix length, e.g. 10.0.0.1/24.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/IPConfigEntry"
+            }
+          ],
+          "description": "The address: a string \"10.0.0.1/24\" or a mapping with address, vrf, dns_name, status, tags."
+        },
+        "label": {
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/definitions/LinkConfigEntry",
+          "description": "The cable from this interface: peer_device and peer_port, or with via: the whole path through patch panels."
+        },
+        "members": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "mtu": {
+          "type": "integer"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tagged_vlans": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "description": "Only for an interface the device type has no template for (virtual, lag, ...). A template port's type is not repeated.",
+          "type": "string"
+        },
+        "untagged_vlan": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "LinkConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "cable_type": {
+          "type": "string"
+        },
+        "color": {
+          "description": "Colour name (yellow, purple, blue, ...) or hex without #.",
+          "type": "string"
+        },
+        "length": {
+          "type": "number"
+        },
+        "length_unit": {
+          "enum": [
+            "km",
+            "m",
+            "cm",
+            "mi",
+            "ft",
+            "in"
+          ],
+          "type": "string"
+        },
+        "peer_device": {
+          "type": "string"
+        },
+        "peer_port": {
+          "type": "string"
+        },
+        "via": {
+          "description": "Patch panels the cable runs through, in order, each as the front port the cord lands on: \"pp-a01:2\" or { device, port, color }. One or two panels.",
+          "items": {
+            "anyOf": [
+              {
+                "description": "device:port",
+                "pattern": "^[^:]+:.+$",
+                "type": "string"
+              },
+              {
+                "$ref": "#/definitions/ViaHop"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "peer_device",
+        "peer_port"
+      ],
+      "type": "object"
+    },
+    "LinkConfigEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "cable_type": {
+          "type": "string"
+        },
+        "color": {
+          "description": "Colour name (yellow, purple, blue, ...) or hex without #.",
+          "type": "string"
+        },
+        "length": {
+          "type": "number"
+        },
+        "length_unit": {
+          "enum": [
+            "km",
+            "m",
+            "cm",
+            "mi",
+            "ft",
+            "in"
+          ],
+          "type": "string"
+        },
+        "peer_device": {
+          "type": "string"
+        },
+        "peer_port": {
+          "type": "string"
+        },
+        "via": {
+          "description": "Patch panels the cable runs through, in order, each as the front port the cord lands on: \"pp-a01:2\" or { device, port, color }. One or two panels.",
+          "items": {
+            "anyOf": [
+              {
+                "description": "device:port",
+                "pattern": "^[^:]+:.+$",
+                "type": "string"
+              },
+              {
+                "$ref": "#/definitions/ViaHopEntry"
+              }
+            ]
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "ModuleConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "module_type_slug"
+              ]
+            },
+            {
+              "required": [
+                "module_type"
+              ]
+            }
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "module_type",
+              "module_type_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "asset_tag": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "module_type": {
+          "description": "Short for module_type_slug.",
+          "type": "string"
+        },
+        "module_type_slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "inventory",
+            "decommissioning"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "ModuleConfigEntry": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "module_type",
+              "module_type_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "asset_tag": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "module_type": {
+          "description": "Short for module_type_slug.",
+          "type": "string"
+        },
+        "module_type_slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "serial": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "inventory",
+            "decommissioning"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "RearPortConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/definitions/LinkConfig"
+        },
+        "name": {
+          "type": "string"
+        },
+        "positions": {
+          "type": "integer"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "RearPortConfigEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "link": {
+          "$ref": "#/definitions/LinkConfigEntry"
+        },
+        "name": {
+          "type": "string"
+        },
+        "positions": {
+          "type": "integer"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "ViaHop": {
+      "additionalProperties": false,
+      "properties": {
+        "cable_type": {
+          "type": "string"
+        },
+        "color": {
+          "description": "Colour of the cable leaving this panel toward the peer.",
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "length": {
+          "type": "number"
+        },
+        "length_unit": {
+          "enum": [
+            "km",
+            "m",
+            "cm",
+            "mi",
+            "ft",
+            "in"
+          ],
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "device",
+        "port"
+      ],
+      "type": "object"
+    },
+    "ViaHopEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "cable_type": {
+          "type": "string"
+        },
+        "color": {
+          "description": "Colour of the cable leaving this panel toward the peer.",
+          "type": "string"
+        },
+        "device": {
+          "type": "string"
+        },
+        "length": {
+          "type": "number"
+        },
+        "length_unit": {
+          "enum": [
+            "km",
+            "m",
+            "cm",
+            "mi",
+            "ft",
+            "in"
+          ],
+          "type": "string"
+        },
+        "port": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under inventory/hardware or inventory/discovered/hardware. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "device file"
+}

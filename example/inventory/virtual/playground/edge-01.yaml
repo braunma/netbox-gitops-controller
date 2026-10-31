@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/virtual-machine.json
 # A site-only VM: it belongs to no cluster, so it carries `site` instead.
 # Lives in the playground environment folder; it is documented in NetBox like
 # every other VM, because the controller scans inventory/virtual/ recursively

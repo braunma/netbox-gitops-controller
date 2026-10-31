@@ -1,0 +1,192 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/vlan-group.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of vlan-groups.",
+      "items": {
+        "$ref": "#/definitions/VLANGroup"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/VLANGroupDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/VLANGroupEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/VLANGroupEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/VLANGroup"
+    }
+  ],
+  "definitions": {
+    "VLANGroup": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "max_vid": {
+          "type": "integer"
+        },
+        "min_vid": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "required": [
+        "name",
+        "slug"
+      ],
+      "type": "object"
+    },
+    "VLANGroupDefaults": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "max_vid": {
+          "type": "integer"
+        },
+        "min_vid": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    "VLANGroupEntry": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "max_vid": {
+          "type": "integer"
+        },
+        "min_vid": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/vlan_groups. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "vlan-group file"
+}

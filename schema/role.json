@@ -1,0 +1,124 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/role.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of roles.",
+      "items": {
+        "$ref": "#/definitions/Role"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/RoleDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/RoleEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/RoleEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/Role"
+    }
+  ],
+  "definitions": {
+    "Role": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "vm_role": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "color",
+        "name",
+        "slug"
+      ],
+      "type": "object"
+    },
+    "RoleDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "vm_role": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    },
+    "RoleEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "color": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "slug": {
+          "type": "string"
+        },
+        "vm_role": {
+          "type": "boolean"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/roles. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "role file"
+}

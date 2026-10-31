@@ -69,6 +69,7 @@ lint: ## Format check, vet, and SPDX headers
 	 missing=$$(grep -L 'SPDX-License-Identifier' $$files); \
 	 test -z "$$missing" || { echo "missing SPDX header:"; echo "$$missing"; exit 1; }
 	$(GO) vet ./...
+	$(GO) run ./cmd/schemagen --check
 
 check: lint test e2e-ingest ## Everything that does not need a NetBox
 	$(GO) run ./cmd/yamlcheck
@@ -92,6 +93,9 @@ e2e-repo: ## Apply this repository's own data (needs NETBOX_URL and NETBOX_TOKEN
 
 e2e-local: ## Provision a throwaway NetBox from source, then run e2e
 	./tests/e2e/provision-local.sh
+
+schema: ## Regenerate the editor JSON Schemas in schema/ from the models
+	$(GO) run ./cmd/schemagen
 
 clean: ## Remove build output
 	rm -f $(BINARY) coverage.out

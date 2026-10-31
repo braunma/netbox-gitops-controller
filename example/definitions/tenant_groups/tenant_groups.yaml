@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/tenant-group.json
 # Example Tenant Groups (tenancy app)
 # Tenant groups organize tenants; the optional `parent` nests them.
 

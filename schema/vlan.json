@@ -1,0 +1,266 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/vlan.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of vlans.",
+      "items": {
+        "$ref": "#/definitions/VLAN"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/VLANDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/VLANEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/VLANEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/VLAN"
+    }
+  ],
+  "definitions": {
+    "VLAN": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "required": [
+                "site_slug"
+              ]
+            },
+            {
+              "required": [
+                "site"
+              ]
+            }
+          ]
+        },
+        {
+          "not": {
+            "required": [
+              "group",
+              "group_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "description": "Short for group_slug.",
+          "type": "string"
+        },
+        "group_slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "reserved",
+            "deprecated"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vid": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name",
+        "vid"
+      ],
+      "type": "object"
+    },
+    "VLANDefaults": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "group",
+              "group_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "description": "Short for group_slug.",
+          "type": "string"
+        },
+        "group_slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "reserved",
+            "deprecated"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vid": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "VLANEntry": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "group",
+              "group_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "group": {
+          "description": "Short for group_slug.",
+          "type": "string"
+        },
+        "group_slug": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "reserved",
+            "deprecated"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vid": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/vlans. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "vlan file"
+}

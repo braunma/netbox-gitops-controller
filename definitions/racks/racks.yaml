@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/rack.json
 # Rack Definitions
 # Physical racks within data centers
 #

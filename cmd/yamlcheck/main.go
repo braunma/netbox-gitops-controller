@@ -9,11 +9,15 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -33,6 +37,7 @@ func main() {
 		allowRefs    bool
 		skipLint     bool
 		showWarnings bool
+		codequality  string
 	)
 	flag.BoolVar(&strict, "strict", false,
 		"treat warnings as failures (for a repository that declares everything it references)")
@@ -41,6 +46,8 @@ func main() {
 	flag.BoolVar(&skipLint, "no-lint", false,
 		"run syntax and model validation only, skipping the cross-object checks")
 	flag.BoolVar(&showWarnings, "warnings", true, "print warnings (errors are always printed)")
+	flag.StringVar(&codequality, "codequality", "",
+		"also write every problem and finding to this file in GitLab Code Quality format, so a merge request shows them on the changed lines")
 	flag.Usage = func() {
 		fmt.Fprintf(flag.CommandLine.Output(),
 			"Usage: yamlcheck [flags] [dir ...]\n\n"+
@@ -94,6 +101,7 @@ func main() {
 	// directory is checked before exiting, so one bad file does not hide the
 	// findings in the next.
 	fatal := false
+	var issues []codeQualityIssue
 	for _, base := range dataDirs(dirs) {
 		dataset, err := collect(base)
 		if err != nil {
@@ -102,6 +110,7 @@ func main() {
 			list := loader.Problems(err)
 			for _, problem := range list {
 				fmt.Fprintf(os.Stderr, "❌ %v\n", problem)
+				issues = append(issues, problemIssue(base, problem))
 			}
 			fmt.Fprintf(os.Stderr, "%d problem(s) in %s; fix them to run the cross-object checks\n", len(list), base)
 			fatal = true
@@ -112,7 +121,16 @@ func main() {
 		}
 		findings := lint.Check(dataset, lint.Options{AllowUndeclaredRefs: allowRefs})
 		report(base, findings, showWarnings)
+		for _, f := range findings {
+			issues = append(issues, findingIssue(base, f))
+		}
 		if lint.HasErrors(findings, strict) {
+			fatal = true
+		}
+	}
+	if codequality != "" {
+		if err := writeCodeQuality(codequality, issues); err != nil {
+			fmt.Fprintf(os.Stderr, "❌ %v\n", err)
 			fatal = true
 		}
 	}
@@ -235,4 +253,89 @@ func resolveLibrary(envVar, base, folder string) string {
 		return env
 	}
 	return filepath.Join(base, "definitions", folder)
+}
+
+// GitLab's Code Quality report format: the merge request widget lists the
+// issues, and the diff view pins each one to its line. Every loader problem
+// and lint finding becomes one issue; the fingerprint is stable across runs
+// (no line number in it), so GitLab can tell a new issue from one that moved.
+type codeQualityIssue struct {
+	Description string           `json:"description"`
+	CheckName   string           `json:"check_name"`
+	Fingerprint string           `json:"fingerprint"`
+	Severity    string           `json:"severity"`
+	Location    codeQualityWhere `json:"location"`
+}
+
+type codeQualityWhere struct {
+	Path  string `json:"path"`
+	Lines struct {
+		Begin int `json:"begin"`
+	} `json:"lines"`
+}
+
+// problemLine matches the prefix every loader problem carries: the file, and
+// the line when the loader knows it.
+var problemLine = regexp.MustCompile(`^([^:\s]+?)(?::(\d+))?: `)
+
+func problemIssue(base string, problem error) codeQualityIssue {
+	text := problem.Error()
+	issue := codeQualityIssue{Description: text, CheckName: "yaml-load", Severity: "major"}
+	issue.Location.Path = base
+	issue.Location.Lines.Begin = 1
+	if m := problemLine.FindStringSubmatch(text); m != nil {
+		issue.Location.Path = m[1]
+		if m[2] != "" {
+			fmt.Sscanf(m[2], "%d", &issue.Location.Lines.Begin)
+		}
+	}
+	issue.Fingerprint = fingerprint("load", issue.Location.Path, stripLine(text))
+	return issue
+}
+
+func findingIssue(base string, f lint.Finding) codeQualityIssue {
+	issue := codeQualityIssue{
+		Description: f.Object + ": " + f.Message,
+		CheckName:   f.Check,
+		Severity:    "minor",
+	}
+	if f.Severity == lint.Error {
+		issue.Severity = "major"
+	}
+	issue.Location.Path, issue.Location.Lines.Begin = base, 1
+	if f.File != "" {
+		issue.Location.Path, issue.Location.Lines.Begin = f.File, f.Line
+	}
+	issue.Fingerprint = fingerprint(f.Check, f.Object, f.Message)
+	return issue
+}
+
+// stripLine removes the ":<line>" of a problem's prefix, so a problem keeps
+// its fingerprint when lines above it are added or removed.
+func stripLine(text string) string {
+	return problemLine.ReplaceAllString(text, "$1: ")
+}
+
+func fingerprint(parts ...string) string {
+	h := sha256.New()
+	for _, p := range parts {
+		h.Write([]byte(p))
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))[:32]
+}
+
+func writeCodeQuality(path string, issues []codeQualityIssue) error {
+	if issues == nil {
+		issues = []codeQualityIssue{} // an empty list, not null: GitLab wants an array
+	}
+	data, err := json.MarshalIndent(issues, "", "  ")
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(path, append(data, '\n'), 0o644); err != nil { // #nosec G306 -- a report meant to be read
+		return fmt.Errorf("writing the code quality report: %w", err)
+	}
+	fmt.Printf("Wrote %d issue(s) to %s (GitLab Code Quality format)\n", len(issues), path)
+	return nil
 }

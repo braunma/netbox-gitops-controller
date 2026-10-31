@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/vrf.json
 # Example VRF (Virtual Routing and Forwarding) Definitions for Testing
 
 - name: "Management"

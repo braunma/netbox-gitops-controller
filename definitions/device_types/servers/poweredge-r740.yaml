@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device-type.json
 - model: "PowerEdge R740"
   slug: "poweredge-r740"
   manufacturer: "Dell" # created in NetBox automatically if it does not exist yet

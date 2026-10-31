@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/prefix.json
 # Example IP Prefixes for Testing
 
 - prefix: "10.0.0.0/8"

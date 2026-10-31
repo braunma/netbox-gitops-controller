@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device-type.json
 # Example Blade Server Device Type
 # This is a child device that goes into a chassis device bay
 manufacturer: "Example Vendor"

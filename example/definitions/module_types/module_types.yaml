@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/module-type.json
 # Example Module Types for Testing
 
 - manufacturer: "Example Vendor"

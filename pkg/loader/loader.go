@@ -37,6 +37,10 @@ type DataLoader struct {
 	// today; the mutex keeps that an implementation detail.
 	ignoredMu sync.Mutex
 	ignored   []string
+
+	// origins records, for every object loadKind returned, the file and line
+	// it came from (see Dataset.Origins).
+	origins map[any]Origin
 }
 
 // NewDataLoader creates a new data loader applying DefaultIgnorePatterns.
@@ -339,6 +343,10 @@ func loadKind[T models.Validator](dl *DataLoader, folder string) ([]T, error) {
 		}
 		for _, d := range declared {
 			objects = append(objects, d.Object)
+			if dl.origins == nil {
+				dl.origins = make(map[any]Origin)
+			}
+			dl.origins[any(d.Object)] = Origin{File: displayPath(d.Prov.File), Line: d.Prov.Node.Line}
 		}
 	}
 	if err := errors.Join(errs...); err != nil {

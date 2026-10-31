@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/device.json
 # Example Chassis and Blade Server Inventory
 # This demonstrates parent device and device bay installation
 

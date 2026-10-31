@@ -1,0 +1,142 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/custom-field.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of custom-fields.",
+      "items": {
+        "$ref": "#/definitions/CustomField"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/CustomFieldDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/CustomFieldEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/CustomFieldEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/CustomField"
+    }
+  ],
+  "definitions": {
+    "CustomField": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "object_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name",
+        "object_types",
+        "type"
+      ],
+      "type": "object"
+    },
+    "CustomFieldDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "object_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "CustomFieldEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "label": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "object_types": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "required": {
+          "type": "boolean"
+        },
+        "type": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/custom_fields. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "custom-field file"
+}

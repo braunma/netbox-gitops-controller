@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/cluster.json
 # Example Clusters (virtualization app)
 # A cluster requires a type and may belong to a group, site and tenant.
 

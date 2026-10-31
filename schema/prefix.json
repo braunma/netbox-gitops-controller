@@ -1,0 +1,299 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/prefix.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of prefixs.",
+      "items": {
+        "$ref": "#/definitions/Prefix"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/PrefixDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/PrefixEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/PrefixEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/Prefix"
+    }
+  ],
+  "definitions": {
+    "Prefix": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "vlan",
+              "vlan_name"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "vrf",
+              "vrf_name"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "is_pool": {
+          "type": "boolean"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "container",
+            "active",
+            "reserved",
+            "deprecated"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vlan": {
+          "description": "Short for vlan_name.",
+          "type": "string"
+        },
+        "vlan_name": {
+          "type": "string"
+        },
+        "vrf": {
+          "description": "Short for vrf_name.",
+          "type": "string"
+        },
+        "vrf_name": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "prefix"
+      ],
+      "type": "object"
+    },
+    "PrefixDefaults": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "vlan",
+              "vlan_name"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "vrf",
+              "vrf_name"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "is_pool": {
+          "type": "boolean"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "container",
+            "active",
+            "reserved",
+            "deprecated"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vlan": {
+          "description": "Short for vlan_name.",
+          "type": "string"
+        },
+        "vlan_name": {
+          "type": "string"
+        },
+        "vrf": {
+          "description": "Short for vrf_name.",
+          "type": "string"
+        },
+        "vrf_name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "PrefixEntry": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "vlan",
+              "vlan_name"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "vrf",
+              "vrf_name"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "description": {
+          "type": "string"
+        },
+        "is_pool": {
+          "type": "boolean"
+        },
+        "prefix": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "container",
+            "active",
+            "reserved",
+            "deprecated"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vlan": {
+          "description": "Short for vlan_name.",
+          "type": "string"
+        },
+        "vlan_name": {
+          "type": "string"
+        },
+        "vrf": {
+          "description": "Short for vrf_name.",
+          "type": "string"
+        },
+        "vrf_name": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under definitions/prefixes. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "prefix file"
+}

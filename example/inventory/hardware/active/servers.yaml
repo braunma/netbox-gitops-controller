@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/device.json
 # Example Server Inventory for Testing
 #
 # This file uses the grouped `defaults` + `devices` form: fields under

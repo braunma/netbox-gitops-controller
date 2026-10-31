@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/role.json
 # Device Role Definitions
 # Roles classify devices by their function in the infrastructure
 

@@ -1,0 +1,632 @@
+{
+  "$id": "https://github.com/braunma/netbox-gitops-controller/schema/virtual-machine.json",
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "anyOf": [
+    {
+      "description": "A list of virtual-machines.",
+      "items": {
+        "$ref": "#/definitions/VMConfig"
+      },
+      "type": "array"
+    },
+    {
+      "additionalProperties": false,
+      "description": "Grouped form: shared fields under defaults, the objects under items (or devices).",
+      "properties": {
+        "defaults": {
+          "allOf": [
+            {
+              "$ref": "#/definitions/VMConfigDefaults"
+            }
+          ],
+          "description": "Fields merged into every entry below. Entry values win; tags are combined."
+        },
+        "devices": {
+          "items": {
+            "$ref": "#/definitions/VMConfigEntry"
+          },
+          "type": "array"
+        },
+        "items": {
+          "items": {
+            "$ref": "#/definitions/VMConfigEntry"
+          },
+          "type": "array"
+        }
+      },
+      "type": "object"
+    },
+    {
+      "$ref": "#/definitions/VMConfig"
+    }
+  ],
+  "definitions": {
+    "IPConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "address_role": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dns_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vrf": {
+          "description": "VRF name. The lint checks it against the VRF of the prefix the address falls into.",
+          "type": "string"
+        }
+      },
+      "required": [
+        "address"
+      ],
+      "type": "object"
+    },
+    "IPConfigEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "address": {
+          "type": "string"
+        },
+        "address_role": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "dns_name": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "vrf": {
+          "description": "VRF name. The lint checks it against the VRF of the prefix the address falls into.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "VMConfig": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "role",
+              "role_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "cluster": {
+          "type": "string"
+        },
+        "disk": {
+          "type": "integer"
+        },
+        "interfaces": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/VMInterfaceConfig"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "description": "The interface's address, e.g. 10.0.0.1/24.",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/VMInterfaceConfigEntry"
+                  }
+                ]
+              },
+              "description": "Interfaces keyed by name: an address alone, a mapping of fields, or nothing (listed for its defaults).",
+              "type": "object"
+            }
+          ]
+        },
+        "memory": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "provision": {
+          "type": "boolean"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "description": "Short for role_slug.",
+          "type": "string"
+        },
+        "role_slug": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "decommissioning"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tenant": {
+          "type": "string"
+        },
+        "vcpus": {
+          "type": "integer"
+        },
+        "vm_template_id": {
+          "type": "integer"
+        },
+        "vmid": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "VMConfigDefaults": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "role",
+              "role_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "cluster": {
+          "type": "string"
+        },
+        "disk": {
+          "type": "integer"
+        },
+        "interfaces": {
+          "additionalProperties": {
+            "$ref": "#/definitions/VMInterfaceConfigPerNameDefaults"
+          },
+          "description": "Per-interface defaults, keyed by interface name. They apply to the interfaces an entry lists; with always: true the interface is added to every entry.",
+          "type": "object"
+        },
+        "memory": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "provision": {
+          "type": "boolean"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "description": "Short for role_slug.",
+          "type": "string"
+        },
+        "role_slug": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "decommissioning"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tenant": {
+          "type": "string"
+        },
+        "vcpus": {
+          "type": "integer"
+        },
+        "vm_template_id": {
+          "type": "integer"
+        },
+        "vmid": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "VMConfigEntry": {
+      "additionalProperties": false,
+      "allOf": [
+        {
+          "not": {
+            "required": [
+              "role",
+              "role_slug"
+            ]
+          }
+        },
+        {
+          "not": {
+            "required": [
+              "site",
+              "site_slug"
+            ]
+          }
+        }
+      ],
+      "properties": {
+        "cluster": {
+          "type": "string"
+        },
+        "disk": {
+          "type": "integer"
+        },
+        "interfaces": {
+          "anyOf": [
+            {
+              "items": {
+                "$ref": "#/definitions/VMInterfaceConfigEntry"
+              },
+              "type": "array"
+            },
+            {
+              "additionalProperties": {
+                "anyOf": [
+                  {
+                    "description": "The interface's address, e.g. 10.0.0.1/24.",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/definitions/VMInterfaceConfigEntry"
+                  }
+                ]
+              },
+              "description": "Interfaces keyed by name: an address alone, a mapping of fields, or nothing (listed for its defaults).",
+              "type": "object"
+            }
+          ]
+        },
+        "memory": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "node": {
+          "type": "string"
+        },
+        "platform": {
+          "type": "string"
+        },
+        "provision": {
+          "type": "boolean"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "role": {
+          "description": "Short for role_slug.",
+          "type": "string"
+        },
+        "role_slug": {
+          "type": "string"
+        },
+        "site": {
+          "description": "Short for site_slug.",
+          "type": "string"
+        },
+        "site_slug": {
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "offline",
+            "active",
+            "planned",
+            "staged",
+            "failed",
+            "decommissioning"
+          ],
+          "type": "string"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tenant": {
+          "type": "string"
+        },
+        "vcpus": {
+          "type": "integer"
+        },
+        "vm_template_id": {
+          "type": "integer"
+        },
+        "vmid": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "VMInterfaceConfig": {
+      "additionalProperties": false,
+      "properties": {
+        "address_role": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "description": "The address with prefix length, e.g. 10.0.0.1/24.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/IPConfig"
+            }
+          ]
+        },
+        "mac_address": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "mtu": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tagged_vlans": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "untagged_vlan": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "type": "object"
+    },
+    "VMInterfaceConfigEntry": {
+      "additionalProperties": false,
+      "properties": {
+        "address_role": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "description": "The address with prefix length, e.g. 10.0.0.1/24.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/IPConfigEntry"
+            }
+          ]
+        },
+        "mac_address": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "mtu": {
+          "type": "integer"
+        },
+        "name": {
+          "type": "string"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tagged_vlans": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "untagged_vlan": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "VMInterfaceConfigPerNameDefaults": {
+      "additionalProperties": false,
+      "properties": {
+        "address_role": {
+          "type": "string"
+        },
+        "always": {
+          "description": "Add this interface to every entry of the file that does not list it.",
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "ip": {
+          "anyOf": [
+            {
+              "description": "The address with prefix length, e.g. 10.0.0.1/24.",
+              "type": "string"
+            },
+            {
+              "$ref": "#/definitions/IPConfigEntry"
+            }
+          ]
+        },
+        "mac_address": {
+          "type": "string"
+        },
+        "mode": {
+          "type": "string"
+        },
+        "mtu": {
+          "type": "integer"
+        },
+        "parent": {
+          "type": "string"
+        },
+        "rename_from": {
+          "type": "string"
+        },
+        "tagged_vlans": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "tags": {
+          "items": {
+            "type": "string"
+          },
+          "type": "array"
+        },
+        "untagged_vlan": {
+          "type": "string"
+        }
+      },
+      "type": "object"
+    }
+  },
+  "description": "netbox-gitops: a file under inventory/virtual or inventory/discovered/virtual. Generated from the Go models by `go run ./cmd/schemagen`; do not edit.",
+  "title": "virtual-machine file"
+}

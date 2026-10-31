@@ -42,6 +42,16 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **JSON Schemas for every data file, for the editor.** `schema/*.json`,
+  generated from the models (`make schema`, checked by `make lint`), describe
+  each kind of file with all its shapes, short names, shorthands and choice
+  values. A `# yaml-language-server: $schema=…` header on each data file
+  (`go run ./cmd/schemagen --headers <dir>`) gives VS Code and other editors
+  completion and validation while typing.
+- **Code Quality report from `yamlcheck`.** `--codequality FILE` writes every
+  load problem and lint finding in GitLab's format; the `yaml_check` job
+  uploads it, so a merge request shows them on the changed lines. Lint
+  findings now carry the file and line of the object they are about.
 - **`always: true` on a per-interface default.** Under `defaults.interfaces`,
   an entry so marked is added to every device of the file that does not list
   the interface, so a port whose whole configuration is shared (PXE and its

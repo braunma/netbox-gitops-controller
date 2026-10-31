@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/rack.json
 # Example Racks for Testing
 #
 # Grouped form: every field under `defaults` is merged into each rack in

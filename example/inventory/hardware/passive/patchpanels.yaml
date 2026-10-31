@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/device.json
 # Example Patch Panel Inventory for Testing
 
 - name: "example-patchpanel-01"

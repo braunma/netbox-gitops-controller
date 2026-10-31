@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/vlan-group.json
 # VLAN Group Definitions
 # Groups organize VLANs and can enforce VLAN ID uniqueness within a scope
 

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device.json
 # Starting point for a new server — NOT APPLIED.
 #
 # Filenames beginning with an underscore are parked: the loader skips them and

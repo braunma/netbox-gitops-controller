@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/virtual-machine.json
 # A hand-written production VM, one file per VM. The controller documents it in
 # NetBox and never creates it on a hypervisor. When a Proxmox collector run
 # finds this VM, it writes the facts it observed (vcpus, memory, disk, status,

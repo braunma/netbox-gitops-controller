@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device-type.json
 # Example Chassis Device Type with Device Bays
 # This demonstrates the self-healing device bays feature
 manufacturer: "Example Vendor"

@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device-type.json
 # Example Switch Device Type
 #
 # Port templates are defined once here; concrete switches in the inventory

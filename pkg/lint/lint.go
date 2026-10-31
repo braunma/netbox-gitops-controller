@@ -52,6 +52,10 @@ type Finding struct {
 	Check   string
 	Object  string
 	Message string
+	// File and Line say where the object the finding is about was declared,
+	// when the dataset knows (Dataset.Origins); empty otherwise.
+	File string
+	Line int
 }
 
 func (f Finding) String() string {
@@ -62,6 +66,9 @@ func (f Finding) String() string {
 // data is loaded once and checked by whoever cares — this package from the
 // repository alone, pkg/validate against a live NetBox.
 type Dataset = loader.Dataset
+
+// Origin is where an object was declared, as the loader recorded it.
+type Origin = loader.Origin
 
 // Options tunes how strictly references are judged.
 type Options struct {
@@ -122,6 +129,8 @@ func Check(ds Dataset, opts Options) []Finding {
 	c.checkCables()
 	c.checkVMs()
 	c.checkTags()
+
+	c.locate()
 
 	sort.SliceStable(c.findings, func(i, j int) bool {
 		a, b := c.findings[i], c.findings[j]
@@ -222,6 +231,88 @@ func (c *checker) indexModuleTypes() {
 		if len(owners[mt.Slug]) < 2 {
 			c.moduleTypes[mt.Slug] = true
 			c.moduleTypes[mt.Model] = true
+		}
+	}
+}
+
+// locate fills File and Line of every finding from the dataset's origins, by
+// the object the finding names: the labels the checks use all start with the
+// kind and the name ("device srv-01 interface eth0", "port srv-01[eth0]",
+// "cable srv-01[eth0] <-> ..."), so the longest label that is a prefix of the
+// finding's object names the declaration.
+func (c *checker) locate() {
+	if len(c.ds.Origins) == 0 {
+		return
+	}
+	labels := map[string]any{}
+	for _, d := range c.ds.Devices {
+		labels[deviceRef(d.Name)] = d
+		labels["port "+d.Name+"["] = d
+		labels["cable "+d.Name+"["] = d
+	}
+	for _, vm := range c.ds.VMs {
+		labels["virtual machine "+vm.Name] = vm
+	}
+	for _, s := range c.ds.Sites {
+		labels["site "+s.Slug] = s
+	}
+	for _, r := range c.ds.Racks {
+		labels["rack "+r.Name] = r
+	}
+	for _, v := range c.ds.VRFs {
+		labels["VRF "+v.Name] = v
+	}
+	for _, g := range c.ds.VLANGroups {
+		labels["VLAN group "+g.Slug] = g
+	}
+	for _, v := range c.ds.VLANs {
+		labels[fmt.Sprintf("VLAN %s (%d)", v.Name, v.VID)] = v
+	}
+	for _, p := range c.ds.Prefixes {
+		labels["prefix "+p.Prefix] = p
+	}
+	for _, dt := range c.ds.DeviceTypes {
+		labels["device type "+dt.Slug] = dt
+	}
+	for _, mt := range c.ds.ModuleTypes {
+		labels["module type "+mt.Model] = mt
+	}
+	for _, p := range c.ds.Platforms {
+		labels["platform "+p.Slug] = p
+	}
+	for _, g := range c.ds.TenantGroups {
+		labels["tenant group "+g.Slug] = g
+	}
+	for _, t := range c.ds.Tenants {
+		labels["tenant "+t.Slug] = t
+	}
+	for _, ct := range c.ds.ClusterTypes {
+		labels["cluster type "+ct.Slug] = ct
+	}
+	for _, cg := range c.ds.ClusterGroups {
+		labels["cluster group "+cg.Slug] = cg
+	}
+	for _, cl := range c.ds.Clusters {
+		labels["cluster "+cl.Name] = cl
+	}
+	for i := range c.findings {
+		f := &c.findings[i]
+		best := ""
+		var obj any
+		for label, o := range labels {
+			if len(label) <= len(best) || !strings.HasPrefix(f.Object, label) {
+				continue
+			}
+			rest := f.Object[len(label):]
+			// The label must end the object or be followed by a word break,
+			// so "device srv-1" does not claim "device srv-10".
+			if rest != "" && rest[0] != ' ' && !strings.HasSuffix(label, "[") {
+				continue
+			}
+			best, obj = label, o
+		}
+		if origin, ok := c.ds.Origins[obj]; ok && best != "" {
+			f.File, f.Line = origin.File, origin.Line
 		}
 	}
 }

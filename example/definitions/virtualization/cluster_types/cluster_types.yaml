@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../../schema/cluster-type.json
 # Example Cluster Types (virtualization app)
 # A cluster type describes the virtualization platform (e.g. the hypervisor).
 

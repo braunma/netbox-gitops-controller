@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device-type.json
 # Dell PowerSwitch S5248F-ON: 48x 25G SFP28 plus 6x 100G QSFP28 and an
 # out-of-band management port.
 #

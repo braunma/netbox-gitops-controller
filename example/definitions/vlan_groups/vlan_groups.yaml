@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/vlan-group.json
 # Example VLAN Groups for Testing
 
 - name: "Berlin DC VLANs"

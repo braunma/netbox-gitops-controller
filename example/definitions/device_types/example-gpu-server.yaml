@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../../schema/device-type.json
 # Example GPU Server Device Type with Module Bays
 # This demonstrates module bay templates for GPUs
 manufacturer: "Example Vendor"

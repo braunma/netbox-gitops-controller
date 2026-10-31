@@ -1,3 +1,4 @@
+# yaml-language-server: $schema=../../schema/prefix.json
 # IP Prefix Definitions
 # IP subnets and address allocations
 
