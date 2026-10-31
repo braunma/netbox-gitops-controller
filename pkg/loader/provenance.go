@@ -134,33 +134,42 @@ func loadDeclared[T models.Validator](dl *DataLoader, folder string) ([]Declared
 	}
 
 	var declared []Declared[T]
+	var errs []error
 	for _, file := range files {
 		items, err := declaredFromFile[T](file, dl.isIgnored(file))
 		if err != nil {
-			return nil, err
+			errs = append(errs, err)
+			continue
 		}
 		declared = append(declared, items...)
+	}
+	if err := errors.Join(errs...); err != nil {
+		return nil, err
 	}
 	return declared, nil
 }
 
-// declaredFromFile parses one file into typed objects plus their nodes.
+// declaredFromFile parses one file into typed objects plus their nodes. Every
+// problem in the file is reported, each on its own line prefixed with the file,
+// the entry and the object (see errors.go).
 func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[T], error) {
+	file := displayPath(path)
+
 	content, err := os.ReadFile(path) // #nosec G304 -- inventory path from the data directory
 	if err != nil {
-		return nil, fmt.Errorf("failed to read %s: %w", path, err)
+		return nil, fmt.Errorf("%s: cannot be read: %w", file, err)
 	}
 
 	var doc yaml.Node
 	if err := yaml.Unmarshal(content, &doc); err != nil {
-		return nil, fmt.Errorf("failed to parse %s: %w", path, err)
+		return nil, fmt.Errorf("%s: is not valid YAML: %w", file, err)
 	}
 	if len(doc.Content) == 0 {
 		// A file of nothing but comments. Not an error; it declares nothing.
 		return nil, nil
 	}
 
-	itemNodes, defaultsNode, err := ItemNodes(path, doc.Content[0])
+	itemNodes, defaultsNode, err := ItemNodes(file, doc.Content[0])
 	if err != nil {
 		return nil, err
 	}
@@ -169,33 +178,41 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 	// file merges against the same map. Per-interface defaults are taken out
 	// first: they are keyed by interface name, not shaped like the model.
 	modelType := reflect.TypeOf((*T)(nil)).Elem()
+	kind := models.KindOf(reflect.New(modelType.Elem()).Interface().(models.Validator))
 	var defaults map[string]interface{}
 	var ifaceDefaults map[string]map[string]interface{}
+	var errs []error
 	if defaultsNode != nil {
 		if err := defaultsNode.Decode(&defaults); err != nil {
-			return nil, fmt.Errorf("%s: failed to read the defaults block: %w", path, err)
+			return nil, fmt.Errorf("%s: defaults: must be a mapping of fields: %w", file, err)
 		}
 		if ifaceDefaults, err = interfaceDefaults(defaults, modelType); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
+			errs = append(errs, err)
 		}
 		if err := normalizeFields(defaults, modelType, "defaults"); err != nil {
-			return nil, fmt.Errorf("%s: %w", path, err)
+			errs = append(errs, err)
 		}
+	}
+	// A broken defaults block would turn into a problem on every entry, so it
+	// is reported on its own and the entries are not looked at.
+	if len(errs) > 0 {
+		return nil, prefixed(file, errors.Join(errs...))
 	}
 	usedIfaceDefaults := make(map[string]bool, len(ifaceDefaults))
 
 	declared := make([]Declared[T], 0, len(itemNodes))
-	var errs []error
 	for i, node := range itemNodes {
+		entry := fmt.Sprintf("%s: entry %d", file, i+1)
 		var raw map[string]interface{}
 		if err := node.Decode(&raw); err != nil {
-			errs = append(errs, fmt.Errorf("%s: entry %d: expected a mapping: %w", path, i+1, err))
+			errs = append(errs, fmt.Errorf("%s: must be a mapping of fields (line %d)", entry, node.Line))
 			continue
 		}
+		label := objectLabel(kind, raw)
 		// Normalized before merging, so an item's short `site:` overrides a
 		// default `site_slug:` instead of the two colliding.
 		if err := normalizeFields(raw, modelType, ""); err != nil {
-			errs = append(errs, fmt.Errorf("%s: entry %d: %w", path, i+1, err))
+			errs = append(errs, prefixed(entry+": "+label, err))
 			continue
 		}
 		merged := mergeDefaults(defaults, raw)
@@ -203,7 +220,7 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 
 		object, err := decodeMerged[T](merged)
 		if err != nil {
-			errs = append(errs, fmt.Errorf("%s: entry %d: %w", path, i+1, err))
+			errs = append(errs, prefixed(entry+": "+label, err))
 			continue
 		}
 
@@ -211,7 +228,7 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 		// would reject the very skeletons this exists to keep track of.
 		if !parked {
 			if err := object.Validate(); err != nil {
-				errs = append(errs, fmt.Errorf("%s: entry %d: %w", path, i+1, err))
+				errs = append(errs, prefixed(entry, err))
 				continue
 			}
 		}
@@ -235,7 +252,7 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 	if len(errs) == 0 {
 		for _, name := range sortedKeys(ifaceDefaults) {
 			if !usedIfaceDefaults[name] {
-				errs = append(errs, fmt.Errorf("%s: defaults.interfaces.%s matches no interface listed in this file", path, name))
+				errs = append(errs, fmt.Errorf("%s: defaults.interfaces.%s matches no interface listed in this file", file, name))
 			}
 		}
 	}

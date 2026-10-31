@@ -3,6 +3,8 @@
 package loader
 
 import (
+	"errors"
+
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 )
 
@@ -55,10 +57,12 @@ type DatasetOptions struct {
 func (dl *DataLoader) LoadDataset(opts DatasetOptions) (Dataset, error) {
 	var ds Dataset
 
-	var err error
+	// Every kind is loaded even after one fails, so a single run reports the
+	// problems of all of them.
+	var errs []error
 	load := func(fn func() error) {
-		if err == nil {
-			err = fn()
+		if e := fn(); e != nil {
+			errs = append(errs, e)
 		}
 	}
 
@@ -104,7 +108,7 @@ func (dl *DataLoader) LoadDataset(opts DatasetOptions) (Dataset, error) {
 		})
 	}
 
-	if err != nil {
+	if err := errors.Join(errs...); err != nil {
 		return Dataset{}, err
 	}
 

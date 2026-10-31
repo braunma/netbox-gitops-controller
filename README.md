@@ -455,7 +455,7 @@ when the new port needs a VLAN it does not already have.
 ### Checking the YAML before it reaches NetBox
 
 `yamlcheck` reads the data directory and reports what is wrong with it without
-opening a connection: YAML syntax, then the typed model validation (unknown or
+opening a connection — every problem in every file at once, one line each: YAML syntax, then the typed model validation (unknown or
 misspelled keys, required fields, cross-field constraints, NetBox choice
 values), then cross-object
 checks that no single object can see on its own.
@@ -826,10 +826,18 @@ types/groups, clusters, VMs and VM interfaces:
 
 ### Common Errors
 
-Run `go run ./cmd/yamlcheck` first — the first six below are reported by name
-before a single request is made.
+The first six below are found in the YAML alone. `yamlcheck` reports them, and
+so does every sync before it sends a single request: the whole data directory
+is read and checked first, and any problem stops the run with nothing written.
+Each problem is one line naming the file, the entry and the object:
 
-**`entry 1: interfaces[1].ip: unknown field "vfr" (did you mean "vrf"?)`**
+```text
+✗ inventory/hardware/active/servers.yaml: entry 1: device "srv-01": interfaces[1].ip: unknown field "vfr" (did you mean "vrf"?)
+✗ inventory/hardware/active/servers.yaml: entry 3: device "srv-03": device_type is required
+✗ 2 problem(s) in .; nothing was sent to NetBox. `yamlcheck` reports the same list.
+```
+
+**`… device "srv-01": interfaces[1].ip: unknown field "vfr" (did you mean "vrf"?)`**
 
   * **Cause:** a key the object does not have — usually a typo, sometimes a
     field from another object type. The path after the entry number says
@@ -839,14 +847,14 @@ before a single request is made.
   * **Fix:** correct the key. [Field names](#field-names) lists the reference
     keys per object type.
 
-**`entry 1: both "site" and "site_slug" are set; they are the same field, keep one`**
+**`… device "srv-02": both "site" and "site_slug" are set; they are the same field, keep one`**
 
   * **Cause:** the short and the long spelling of one field in the same
     mapping. Across `defaults` and an entry they do not collide — the entry's
     value wins in either spelling.
   * **Fix:** delete one of the two lines.
 
-**`defaults.interfaces.idrca matches no interface listed in this file`**
+**`….yaml: defaults.interfaces.idrca matches no interface listed in this file`**
 
   * **Cause:** per-interface defaults apply only to interfaces a device lists,
     by exact name. A name nobody lists is a typo or a leftover.

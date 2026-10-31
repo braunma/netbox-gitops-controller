@@ -3,6 +3,7 @@
 package loader
 
 import (
+	"errors"
 	"fmt"
 	"reflect"
 	"sort"
@@ -13,7 +14,9 @@ import (
 
 // normalizeFields rewrites short field names (see models.FieldAliases) to
 // their canonical keys and rejects every key the model does not have, walking
-// nested mappings and lists of mappings. It edits raw in place.
+// nested mappings and lists of mappings. It edits raw in place, and reports
+// every problem it finds rather than stopping at the first, so one run of
+// yamlcheck lists all of them.
 //
 // The YAML decoder ignores an unknown key, so before this a misspelled field —
 // `site:` where `site_slug:` was meant, `vfr:` for `vrf:` — was dropped without
@@ -35,32 +38,35 @@ func normalizeFields(raw map[string]interface{}, t reflect.Type, path string) er
 		prefix = path + ": "
 	}
 
+	var errs []error
 	aliases := modelAliases(t)
-	if len(aliases) > 0 {
-		for _, short := range sortedKeys(aliases) {
-			value, present := raw[short]
-			if !present {
-				continue
-			}
-			canonical := aliases[short]
-			if _, both := raw[canonical]; both {
-				return fmt.Errorf("%sboth %q and %q are set; they are the same field, keep one", prefix, short, canonical)
-			}
-			delete(raw, short)
-			raw[canonical] = value
+	for _, short := range sortedKeys(aliases) {
+		value, present := raw[short]
+		if !present {
+			continue
 		}
+		canonical := aliases[short]
+		if _, both := raw[canonical]; both {
+			errs = append(errs, fmt.Errorf("%sboth %q and %q are set; they are the same field, keep one", prefix, short, canonical))
+			// Dropped so it is not reported a second time as unknown.
+			delete(raw, short)
+			continue
+		}
+		delete(raw, short)
+		raw[canonical] = value
 	}
 
 	for _, key := range sortedKeys(raw) {
 		field, known := fields[key]
 		if !known {
-			return fmt.Errorf("%sunknown field %q%s", prefix, key, suggestField(key, t, fields, aliases))
+			errs = append(errs, fmt.Errorf("%sunknown field %q%s", prefix, key, suggestField(key, t, fields, aliases)))
+			continue
 		}
 		if err := normalizeValue(raw[key], field, joinPath(path, key)); err != nil {
-			return err
+			errs = append(errs, err)
 		}
 	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // normalizeValue descends into a field's value when it is a mapping or a list
@@ -79,13 +85,15 @@ func normalizeValue(value interface{}, t reflect.Type, path string) error {
 		if t.Kind() != reflect.Slice || structType(t.Elem()) == nil {
 			return nil
 		}
+		var errs []error
 		for i, item := range v {
 			if m, ok := item.(map[string]interface{}); ok {
 				if err := normalizeFields(m, t.Elem(), fmt.Sprintf("%s[%d]", path, i+1)); err != nil {
-					return err
+					errs = append(errs, err)
 				}
 			}
 		}
+		return errors.Join(errs...)
 	}
 	return nil
 }
@@ -239,20 +247,23 @@ func interfaceDefaults(defaults map[string]interface{}, t reflect.Type) (map[str
 	}
 
 	out := make(map[string]map[string]interface{}, len(byName))
+	var errs []error
 	for _, name := range sortedKeys(byName) {
 		entry, ok := byName[name].(map[string]interface{})
 		if !ok {
-			return nil, fmt.Errorf("defaults.interfaces.%s must be a mapping of interface fields", name)
+			errs = append(errs, fmt.Errorf("defaults.interfaces.%s must be a mapping of interface fields", name))
+			continue
 		}
 		if _, set := entry["name"]; set {
-			return nil, fmt.Errorf("defaults.interfaces.%s: `name` comes from the key and cannot be set here", name)
+			errs = append(errs, fmt.Errorf("defaults.interfaces.%s: `name` comes from the key and cannot be set here", name))
+			delete(entry, "name")
 		}
 		if err := normalizeFields(entry, elem, "defaults.interfaces."+name); err != nil {
-			return nil, err
+			errs = append(errs, err)
 		}
 		out[name] = entry
 	}
-	return out, nil
+	return out, errors.Join(errs...)
 }
 
 // applyInterfaceDefaults merges the per-interface defaults into every listed

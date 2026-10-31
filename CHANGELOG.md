@@ -49,6 +49,22 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **A sync checks the whole data directory before it contacts NetBox.** The
+  phases load their files one kind at a time, between writes, so a mistake in
+  `racks.yaml` used to stop the run only after sites, roles and tags had been
+  applied. Every definition and inventory folder is now loaded and validated
+  first, with the same ignore patterns and libraries; any problem stops the
+  run with nothing sent. `validate` and `ingest` report load problems the
+  same way.
+- **Load problems are listed, all of them, one line each.** A load used to
+  stop at the first bad file, and within an entry at the first unknown key,
+  so fixing a directory took one run per mistake. Now every file, entry and
+  key is checked, and each problem is one line naming the file (relative to
+  the working directory), the entry and the object:
+  `inventory/hardware/active/servers.yaml: entry 3: device "srv-03":
+  device_type is required`. The file is no longer printed twice, and a
+  validation error with several missing fields is several lines, each with
+  its context, instead of one line followed by bare continuations.
 - **Short field names everywhere the tool speaks.** Validation errors name
   the key as it is written now (`site is required`, not `site_slug is
   required`), and the skeletons `ingest`/`collect` generate use `site:`,

@@ -97,8 +97,15 @@ func main() {
 	for _, base := range dataDirs(dirs) {
 		dataset, err := collect(base)
 		if err != nil {
-			fmt.Fprintf(os.Stderr, "❌ Model validation failed for %s:\n%v\n", base, err)
-			os.Exit(1)
+			// Every problem on its own line. The cross-object checks need the
+			// whole directory loaded, so they run once these are fixed.
+			list := loader.Problems(err)
+			for _, problem := range list {
+				fmt.Fprintf(os.Stderr, "❌ %v\n", problem)
+			}
+			fmt.Fprintf(os.Stderr, "%d problem(s) in %s; fix them to run the cross-object checks\n", len(list), base)
+			fatal = true
+			continue
 		}
 		if skipLint {
 			continue

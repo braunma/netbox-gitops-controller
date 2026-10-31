@@ -482,7 +482,59 @@ func wrap(kind, name string, errs []error) error {
 	if name == "" {
 		name = "<unnamed>"
 	}
-	return fmt.Errorf("%s %q: %w", kind, name, errors.Join(errs...))
+	// Each problem keeps the object in front of it, so a list of them reads
+	// line by line without losing which object a line is about.
+	wrapped := make([]error, len(errs))
+	for i, err := range errs {
+		wrapped[i] = fmt.Errorf("%s %q: %w", kind, name, err)
+	}
+	return errors.Join(wrapped...)
+}
+
+// KindOf names a model the way its validation errors do ("device", "virtual
+// machine", ...), so an error found before validation can say the same.
+func KindOf(v Validator) string {
+	switch v.(type) {
+	case *Site:
+		return "site"
+	case *Rack:
+		return "rack"
+	case *Role:
+		return "role"
+	case *Tag:
+		return "tag"
+	case *VLAN:
+		return "vlan"
+	case *VLANGroup:
+		return "vlan group"
+	case *VRF:
+		return "vrf"
+	case *Prefix:
+		return "prefix"
+	case *ModuleType:
+		return "module type"
+	case *DeviceType:
+		return "device type"
+	case *DeviceConfig:
+		return "device"
+	case *Platform:
+		return "platform"
+	case *TenantGroup:
+		return "tenant group"
+	case *CustomField:
+		return "custom field"
+	case *Tenant:
+		return "tenant"
+	case *ClusterType:
+		return "cluster type"
+	case *ClusterGroup:
+		return "cluster group"
+	case *Cluster:
+		return "cluster"
+	case *VMConfig:
+		return "virtual machine"
+	}
+	return "object"
 }
 
 // validateRename checks a declared rename_from against the identity it is meant

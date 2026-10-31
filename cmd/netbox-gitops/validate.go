@@ -98,8 +98,7 @@ func runValidate(cmd *cobra.Command, args []string) error {
 		ModuleTypeLibrary: resolveModuleTypeLibrary(),
 	})
 	if err != nil {
-		logger.Error("Failed to load the data directory", err)
-		return err
+		return reportLoadProblems(logger, err, "nothing was validated against NetBox")
 	}
 
 	logger.Info("Validating against %s...", netboxURL)

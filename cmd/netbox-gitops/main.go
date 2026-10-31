@@ -136,6 +136,15 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 	dataDir = resolvedDir
 
+	// Read and check the whole data directory before anything talks to
+	// NetBox. The phases below load their files one kind at a time, between
+	// writes, so without this a typo in racks.yaml surfaced only after the
+	// sites, roles and tags had already been applied, and only that one file's
+	// problems were shown.
+	if err := preflight(logger); err != nil {
+		return err
+	}
+
 	// Load environment variables
 	netboxURL := os.Getenv("NETBOX_URL")
 	netboxToken := os.Getenv("NETBOX_TOKEN")
@@ -534,6 +543,39 @@ func resolvePath(flagValue, envName, defaultPath string) string {
 func resolveModuleTypeLibrary() string {
 	return resolvePath(moduleTypeLibrary, "MODULETYPE_LIBRARY",
 		filepath.Join(dataDir, "definitions", "module_type_library"))
+}
+
+// preflight loads every definition and inventory folder the way the phases
+// will — same ignore patterns, same libraries — and reports every problem at
+// once, one per line. It writes nothing and needs no NetBox.
+func preflight(logger *utils.Logger) error {
+	patterns, err := resolveIgnorePatterns()
+	if err != nil {
+		logger.Error("Invalid ignore pattern", err)
+		return err
+	}
+	dl := loader.NewDataLoader(dataDir, utils.NewDiscardLogger())
+	dl.SetIgnorePatterns(patterns)
+	_, err = dl.LoadDataset(loader.DatasetOptions{
+		DeviceTypeLibrary: resolveDeviceTypeLibrary(),
+		ModuleTypeLibrary: resolveModuleTypeLibrary(),
+	})
+	return reportLoadProblems(logger, err, "nothing was sent to NetBox")
+}
+
+// reportLoadProblems prints every problem a load returned on its own line,
+// then one line saying how many and what was therefore not done. It returns
+// nil for a nil error, so callers can pass a load's result straight through.
+func reportLoadProblems(logger *utils.Logger, err error, consequence string) error {
+	if err == nil {
+		return nil
+	}
+	problems := loader.Problems(err)
+	for _, problem := range problems {
+		logger.Error("%s", nil, problem)
+	}
+	logger.Error("%d problem(s) in %s; %s. `yamlcheck` reports the same list.", nil, len(problems), dataDir, consequence)
+	return fmt.Errorf("the YAML in %s has %d problem(s)", dataDir, len(problems))
 }
 
 // resolveIgnorePatterns returns the filename globs to skip while loading:
