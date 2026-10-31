@@ -4,9 +4,10 @@
 # here only for what the template cannot know: its access or trunk VLANs, its
 # management IP, an MTU.
 #
-# Cables are NOT declared here. The endpoint side (server, storage, patch
-# panel) owns every `link:`, so re-patching a port is a one-place edit; see
-# inventory/hardware/active/servers.yaml.
+# Server cables are NOT declared here: the endpoint side (server, storage)
+# owns the `link:`, so re-patching a port is a one-place edit; see
+# inventory/hardware/active/servers.yaml. The inter-switch trunk through the
+# patch panels is declared once, on berlin-leaf-01 Eth1/49, as a path.
 
 defaults:
   device_type: "dell-s5248f-on"
@@ -49,12 +50,16 @@ devices:
         untagged_vlan: "AI-Compute"
         description: "Connection to berlin-srv-ai-01"
 
-      # Uplink to spine
+      # Inter-switch trunk to berlin-leaf-02 in rack A02, through pp-01
+      # front 3 and pp-02 front 3; one declaration, three cables. The type
+      # comes from the panels' cable_defaults; blue cords mark the trunk, the
+      # backbone keeps the panels' purple.
       - name: "Eth1/49"
         mode: "tagged"
         tagged_vlans: ["Management", "Server-Production", "Storage", "AI-Compute"]
-        description: "Uplink to spine (future)"
+        description: "Trunk to berlin-leaf-02 via patch panels"
         mtu: 9000
+        link: { via: ["berlin-pp-01:3", "berlin-pp-02:3"], peer_device: "berlin-leaf-02", peer_port: "Eth1/49", color: "blue" }
 
   - name: "berlin-leaf-02"
     site: "berlin-dc"
@@ -69,6 +74,19 @@ devices:
         mode: "access"
         untagged_vlan: "Storage"
         description: "Connection to storage system"
+
+      # Far end of berlin-srv-web-02 eth1 (the strand is declared there).
+      - name: "Eth1/2"
+        mode: "access"
+        untagged_vlan: "Server-Production"
+        description: "Connection to berlin-srv-web-02 eth1 (via patch panels)"
+
+      # Far end of the trunk from berlin-leaf-01 Eth1/49 (declared there).
+      - name: "Eth1/49"
+        mode: "tagged"
+        tagged_vlans: ["Management", "Server-Production", "Storage", "AI-Compute"]
+        description: "Trunk to berlin-leaf-01 via patch panels"
+        mtu: 9000
 
   # ========================================
   # Frankfurt DC - Leaf Switch

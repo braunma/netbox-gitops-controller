@@ -70,6 +70,32 @@ expect() {
   if [ "$2" = "$3" ]; then ok "$1" "$3"; else fail "$1" "got '${2:-<empty>}', want '$3'"; fi
 }
 
+# trace_path <device> <interface> -> the physical path NetBox computes from
+# that interface, every port along it, " > " separated. trace_far_end is its
+# last element. Front and rear ports are labelled so a backbone that landed on
+# the wrong port kind is visible in the assertion's output.
+trace_path() {
+  local id
+  id="$(field dcim/interfaces "device=$1&name=$(python3 -c 'import urllib.parse,sys;print(urllib.parse.quote(sys.argv[1]))' "$2")" id)"
+  [ -n "$id" ] || { echo ""; return; }
+  api "dcim/interfaces/${id}/trace/" | python3 -c '
+import json, sys
+def name(t):
+    if not t: return "∅"
+    if isinstance(t, list): return ", ".join(name(x) for x in t)
+    dev = t["device"]["name"] if isinstance(t.get("device"), dict) else "?"
+    kind = {"front-ports": "front ", "rear-ports": "rear "}.get(t.get("url", "").rstrip("/").split("/")[-2], "")
+    return f"{dev}[{kind}{t['"'"'name'"'"']}]"
+hops = []
+for a, cable, b in json.load(sys.stdin):
+    for end in (a, b):
+        n = name(end)
+        if not hops or hops[-1] != n:
+            hops.append(n)
+print(" > ".join(hops))'
+}
+trace_far_end() { trace_path "$1" "$2" | awk -F" > " "{print \$NF}"; }
+
 summary_of() { grep -oE '[0-9]+ created, [0-9]+ updated, [0-9]+ deleted' "$1" | tail -1; }
 
 wipe() {
@@ -212,6 +238,34 @@ expect "one-ended cable wires both ends" \
   "$(field dcim/interfaces "device=berlin-srv-web-01&name=eth0" "connected_endpoints.0.device.name")" "berlin-leaf-01"
 expect "peer port is the declared one" \
   "$(field dcim/interfaces "device=berlin-srv-web-01&name=eth0" "connected_endpoints.0.name")" "Eth1/1"
+
+# Two strands run through the patch panels between rack A01 and rack A02:
+# server -> pp-01 -> pp-02 -> switch, and switch -> pp-01 -> pp-02 -> switch.
+# Each is three cables in three files (patch cord, backbone, patch cord) plus
+# the front-to-rear mapping from the panel's device type. NetBox's trace walks
+# the physical path; its far end is the only proof the chain is whole. The
+# failure modes are a strand that ends inside a panel (wrong rear port, wrong
+# mapping) and a backbone wired to front ports instead of rear ports.
+expect "server strand traces through both panels to the switch" \
+  "$(trace_far_end berlin-srv-web-02 eth1)" "berlin-leaf-02[Eth1/2]"
+expect "server strand crosses the two rear ports" \
+  "$(trace_path berlin-srv-web-02 eth1)" \
+  "berlin-srv-web-02[eth1] > berlin-pp-01[front 2] > berlin-pp-01[rear 2] > berlin-pp-02[rear 2] > berlin-pp-02[front 2] > berlin-leaf-02[Eth1/2]"
+expect "switch strand traces through both panels to the other switch" \
+  "$(trace_far_end berlin-leaf-01 Eth1/49)" "berlin-leaf-02[Eth1/49]"
+expect "switch strand is the same path seen from the far end" \
+  "$(trace_far_end berlin-leaf-02 Eth1/49)" "berlin-leaf-01[Eth1/49]"
+# Only cables that still have ends count: deleting a device leaves its cables
+# behind as empty shells in NetBox (see "dangling cables" in CHANGELOG).
+expect "exactly two backbone cables between the panels' rear ports" \
+  "$(api "dcim/cables/?limit=500" | python3 -c '
+import json, sys
+n = 0
+for c in json.load(sys.stdin)["results"]:
+    a, b = c["a_terminations"], c["b_terminations"]
+    if a and b and a[0]["object_type"] == "dcim.rearport" and b[0]["object_type"] == "dcim.rearport":
+        n += 1
+print(n)')" "2"
 
 # Dropping the switch-side `link:` must not have dropped the switch-side VLAN
 # configuration, which is the reason that interface is still listed at all.

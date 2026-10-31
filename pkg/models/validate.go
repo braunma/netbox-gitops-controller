@@ -322,7 +322,7 @@ func (d *DeviceConfig) Validate() error {
 		if fp.RearPort == "" {
 			errs = append(errs, fmt.Errorf("front port %q: rear_port is required", fp.Name))
 		}
-		if err := validateLink(fp.Link); err != nil {
+		if err := validatePortLink(fp.Link); err != nil {
 			errs = append(errs, fmt.Errorf("front port %q: %w", fp.Name, err))
 		}
 	}
@@ -331,7 +331,7 @@ func (d *DeviceConfig) Validate() error {
 			errs = append(errs, fmt.Errorf("rear port %d: name is required", i+1))
 			continue
 		}
-		if err := validateLink(rp.Link); err != nil {
+		if err := validatePortLink(rp.Link); err != nil {
 			errs = append(errs, fmt.Errorf("rear port %q: %w", rp.Name, err))
 		}
 	}
@@ -460,7 +460,8 @@ func (v *VMConfig) Validate() error {
 	return wrap("virtual machine", v.Name, errs)
 }
 
-// validateLink checks that a cable link definition names both ends.
+// validateLink checks that a cable link definition names both ends, and that
+// every patch panel on its path names a device and a port.
 func validateLink(link *LinkConfig) error {
 	if link == nil {
 		return nil
@@ -470,6 +471,23 @@ func validateLink(link *LinkConfig) error {
 	}
 	if link.PeerPort == "" {
 		return errors.New("link.peer_port is required")
+	}
+	for i, hop := range link.Via {
+		if hop.Device == "" || hop.Port == "" {
+			return fmt.Errorf("link.via[%d] must name a patch panel and its front port (\"device:port\")", i+1)
+		}
+	}
+	return nil
+}
+
+// validatePortLink is validateLink for a front or rear port, where a path
+// through further panels makes no sense: a port's cable has exactly one peer.
+func validatePortLink(link *LinkConfig) error {
+	if err := validateLink(link); err != nil {
+		return err
+	}
+	if link != nil && len(link.Via) > 0 {
+		return errors.New("link.via is only for interfaces; a panel port's cable has one peer")
 	}
 	return nil
 }

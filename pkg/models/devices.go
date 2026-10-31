@@ -3,12 +3,27 @@
 package models
 
 import (
+	"fmt"
 	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
-// LinkConfig represents a cable connection definition
+// LinkConfig represents a cable connection definition.
+//
+// Without Via it is one cable: this port to peer_device/peer_port. With Via
+// it is a whole path through patch panels, written once at the endpoint:
+//
+//	link:
+//	  via: ["pp-a01:2", "pp-b02:2"]
+//	  peer_device: "leaf-02"
+//	  peer_port: "Eth1/1"
+//
+// The loader expands that into the cables NetBox holds — this port to the
+// first panel's front port, each panel's rear port to the next panel's rear
+// port (the front-to-rear mapping comes from the panel's device type), and the
+// last panel's front port to the peer — so the three cables of a strand are
+// no longer three declarations in three files. See loader.ExpandCablePaths.
 type LinkConfig struct {
 	PeerDevice string  `yaml:"peer_device" json:"peer_device"`
 	PeerPort   string  `yaml:"peer_port" json:"peer_port"`
@@ -16,6 +31,50 @@ type LinkConfig struct {
 	Color      string  `yaml:"color,omitempty" json:"color,omitempty"`
 	Length     float64 `yaml:"length,omitempty" json:"length,omitempty"`
 	LengthUnit string  `yaml:"length_unit,omitempty" json:"length_unit,omitempty"`
+	// Via lists the patch panels the cable runs through, in order from this
+	// port to the peer, each as the panel's front port the cord lands on.
+	Via []ViaHop `yaml:"via,omitempty" json:"via,omitempty"`
+}
+
+// ViaHop is one patch panel on a cable path: the panel and the front port the
+// cord from the previous hop lands on. The cable attributes describe the
+// cable that LEAVES this panel toward the peer (the backbone to the next
+// panel, or the last cord to the peer); where they are empty, the link's own
+// attributes apply to that segment too.
+//
+// In YAML a hop is either a mapping or the shorthand "device:port":
+//
+//	via: ["pp-a01:2", { device: "pp-b02", port: "2", color: "blue" }]
+type ViaHop struct {
+	Device     string  `yaml:"device" json:"device"`
+	Port       string  `yaml:"port" json:"port"`
+	CableType  string  `yaml:"cable_type,omitempty" json:"cable_type,omitempty"`
+	Color      string  `yaml:"color,omitempty" json:"color,omitempty"`
+	Length     float64 `yaml:"length,omitempty" json:"length,omitempty"`
+	LengthUnit string  `yaml:"length_unit,omitempty" json:"length_unit,omitempty"`
+}
+
+// UnmarshalYAML accepts the "device:port" shorthand next to the mapping form.
+func (h *ViaHop) UnmarshalYAML(value *yaml.Node) error {
+	if value.Kind == yaml.ScalarNode {
+		var s string
+		if err := value.Decode(&s); err != nil {
+			return err
+		}
+		device, port, ok := strings.Cut(s, ":")
+		if !ok || device == "" || port == "" {
+			return fmt.Errorf("via hop %q must be \"device:port\" or a mapping with device and port", s)
+		}
+		h.Device, h.Port = device, port
+		return nil
+	}
+	type rawViaHop ViaHop
+	var raw rawViaHop
+	if err := value.Decode(&raw); err != nil {
+		return err
+	}
+	*h = ViaHop(raw)
+	return nil
 }
 
 // IPConfig represents IP address configuration
@@ -106,6 +165,29 @@ type FrontPortConfig struct {
 	Link             *LinkConfig `yaml:"link,omitempty" json:"link,omitempty"`
 }
 
+// CableAttrs are the attributes of a cable that a patch panel can supply as
+// defaults for the cables on its ports (see CableDefaults).
+type CableAttrs struct {
+	CableType  string  `yaml:"cable_type,omitempty" json:"cable_type,omitempty"`
+	Color      string  `yaml:"color,omitempty" json:"color,omitempty"`
+	Length     float64 `yaml:"length,omitempty" json:"length,omitempty"`
+	LengthUnit string  `yaml:"length_unit,omitempty" json:"length_unit,omitempty"`
+}
+
+// CableDefaults are what the cables of a path (`link.via`) through a patch
+// panel are unless the path says otherwise: Front for the patch cords into
+// its front ports, Rear for the backbones out of its rear ports. A panel
+// takes one kind of connector, and the colour of a patch cord is rarely worth
+// writing down per cable, so the panel declares both once and a path through
+// it carries only what differs. A cable declared on its own, with its own
+// `link:`, is not touched: it may be a different cable altogether. Declared
+// under `cable_defaults:` on the panel (or in the file's `defaults:` for
+// every panel in it).
+type CableDefaults struct {
+	Front CableAttrs `yaml:"front,omitempty" json:"front,omitempty"`
+	Rear  CableAttrs `yaml:"rear,omitempty" json:"rear,omitempty"`
+}
+
 // ModuleConfig represents a module configuration (e.g., installed GPU)
 //
 // In YAML the references are usually written by their short names (module_type
@@ -149,11 +231,15 @@ type DeviceConfig struct {
 	// This is where the `hw_*` hardware inventory lands when facts are
 	// ingested from an out-of-band scan; see docs/INGEST.md.
 	CustomFields map[string]interface{} `yaml:"custom_fields,omitempty" json:"custom_fields,omitempty"`
-	Tags         []string               `yaml:"tags,omitempty" json:"tags,omitempty"`
-	Modules      []ModuleConfig         `yaml:"modules,omitempty" json:"modules,omitempty"`
-	Interfaces   []InterfaceConfig      `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
-	FrontPorts   []FrontPortConfig      `yaml:"front_ports,omitempty" json:"front_ports,omitempty"`
-	RearPorts    []RearPortConfig       `yaml:"rear_ports,omitempty" json:"rear_ports,omitempty"`
+	// CableDefaults, on a patch panel, are the cable type and colour the
+	// segments of a `link.via` path get at this panel unless the path says
+	// otherwise; see CableDefaults.
+	CableDefaults *CableDefaults    `yaml:"cable_defaults,omitempty" json:"cable_defaults,omitempty"`
+	Tags          []string          `yaml:"tags,omitempty" json:"tags,omitempty"`
+	Modules       []ModuleConfig    `yaml:"modules,omitempty" json:"modules,omitempty"`
+	Interfaces    []InterfaceConfig `yaml:"interfaces,omitempty" json:"interfaces,omitempty"`
+	FrontPorts    []FrontPortConfig `yaml:"front_ports,omitempty" json:"front_ports,omitempty"`
+	RearPorts     []RearPortConfig  `yaml:"rear_ports,omitempty" json:"rear_ports,omitempty"`
 }
 
 // EffectiveFace is the rack face sent to NetBox: the declared one, or "front"
