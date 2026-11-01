@@ -98,6 +98,52 @@ devices:
 	}
 }
 
+// TestLoadDevicesDefaultsExpandRanges verifies that a range in a list shared
+// through `defaults` — eight GPU modules on every node of a batch — is
+// expanded the way it is on a single device, so each device gets one entry
+// per number instead of a module literally named "GPU Slot {1-8}".
+func TestLoadDevicesDefaultsExpandRanges(t *testing.T) {
+	dir := t.TempDir()
+	deviceDir := filepath.Join(dir, "devices")
+	if err := os.MkdirAll(deviceDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	content := `
+defaults:
+  site: "berlin-dc"
+  role: "server"
+  device_type: "gpu-server"
+  modules:
+    - { name: "GPU Slot {1-8}", module_type: "h200" }
+
+devices:
+  - name: "gpu-01"
+  - name: "gpu-02"
+    modules:
+      - { name: "GPU Slot {1-4}", module_type: "h100" }
+`
+	if err := os.WriteFile(filepath.Join(deviceDir, "gpu.yaml"), []byte(content), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	devices, err := NewDataLoader(dir, utils.NewLogger(false)).LoadDevices("devices")
+	if err != nil {
+		t.Fatalf("LoadDevices() error = %v", err)
+	}
+	if len(devices) != 2 {
+		t.Fatalf("got %d devices, want 2", len(devices))
+	}
+	if got := len(devices[0].Modules); got != 8 {
+		t.Fatalf("gpu-01 has %d modules, want 8 from the defaults range: %+v", got, devices[0].Modules)
+	}
+	if devices[0].Modules[0].Name != "GPU Slot 1" || devices[0].Modules[7].Name != "GPU Slot 8" {
+		t.Errorf("gpu-01 module names = %q .. %q, want GPU Slot 1 .. GPU Slot 8", devices[0].Modules[0].Name, devices[0].Modules[7].Name)
+	}
+	// A device's own list replaces the shared one, expanded as before.
+	if got := len(devices[1].Modules); got != 4 || devices[1].Modules[3].Name != "GPU Slot 4" {
+		t.Errorf("gpu-02 modules = %+v, want its own four", devices[1].Modules)
+	}
+}
+
 // TestLoadSitesGroupedDefaults verifies that the grouped form is not a
 // device-only feature: every kind decodes through the same path, so defaults
 // merging and tag union behave identically for, e.g., sites listed under the

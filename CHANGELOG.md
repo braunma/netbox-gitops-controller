@@ -32,6 +32,11 @@ are about to run before applying a sync with pruning enabled.
   will be updated on the first sync to carry them; read the `--dry-run` plan.
   A tag that is defined nowhere is skipped with a warning.
 - Binding an interface into its LAG no longer strips the member's own tags.
+- **Ranges under `defaults` expand.** A shared list in a file's `defaults:`
+  block — `modules: [{ name: "GPU Slot {1-8}", ... }]` for a batch of GPU
+  nodes — gave every device one module literally named `GPU Slot {1-8}`,
+  which the linter then rejected as an unknown module bay. The range is now
+  expanded in the defaults, the way it is on a single device.
 
 ### Added
 

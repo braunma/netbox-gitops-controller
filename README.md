@@ -1004,6 +1004,10 @@ types/groups, clusters, VMs and VM interfaces:
     always was, since the managed tag alone was sent before.
   * **`defaults` combine.** A `tags:` list under `defaults` is merged with each
     object's own list rather than replaced by it.
+  * **Lists under `defaults` are shared, ranges included.** A `modules:` list
+    under `defaults` reaches every device in the file, and a name with a
+    range (`GPU Slot {1-8}`) expands there as it does on a device. A device
+    that lists the same key replaces the shared list; only `tags` combine.
   * **Undefined tags are left off, not fatal.** A tag that exists neither in
     `definitions/extras` nor in NetBox is skipped with a warning, and the
     object is synced without it. `yamlcheck` reports it beforehand as

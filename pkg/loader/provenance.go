@@ -195,6 +195,12 @@ func declaredFromFile[T models.Validator](path string, parked bool) ([]Declared[
 		if err := normalizeFields(defaults, modelType, "defaults"); err != nil {
 			errs = append(errs, err)
 		}
+		// A range in a shared list — `modules: [{ name: "GPU Slot {1-8}" }]`
+		// — is expanded here once, so the defaults hand every device the
+		// same eight entries rather than one entry with a range in its name.
+		if err := expandRanges(defaults, "defaults"); err != nil {
+			errs = append(errs, err)
+		}
 	}
 	// A broken defaults block would turn into a problem on every entry, so it
 	// is reported on its own and the entries are not looked at.
