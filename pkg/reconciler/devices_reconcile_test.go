@@ -3,6 +3,7 @@
 package reconciler
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 
@@ -665,6 +666,34 @@ func TestReconcileInterfacesBindsLAGMembers(t *testing.T) {
 		t.Fatalf("ReconcileDevices() second run error = %v", err)
 	}
 	f.requireMutationCount(t, 0)
+}
+
+// TestReconcileInterfacesListsOncePerDevice pins the request cost of a
+// converged device: its interfaces are listed once, not looked up one by one
+// (LAG member resolution included), and nothing is written.
+func TestReconcileInterfacesListsOncePerDevice(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	seedDeviceFoundation(t, f, c)
+
+	var ifaces []models.InterfaceConfig
+	for i := 1; i <= 12; i++ {
+		ifaces = append(ifaces, testInterface(fmt.Sprintf("eth%d", i), "25gbase-x-sfp28"))
+	}
+	ifaces = append(ifaces, models.InterfaceConfig{Name: "bond0", Type: "lag", Members: []string{"eth1", "eth2"}})
+	dev := testDevice("srv-01", withInterfaces(ifaces...))
+
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{dev}); err != nil {
+		t.Fatalf("ReconcileDevices() error = %v", err)
+	}
+
+	f.resetMutations()
+	if err := NewDeviceReconciler(c).ReconcileDevices([]*models.DeviceConfig{dev}); err != nil {
+		t.Fatalf("ReconcileDevices() second run error = %v", err)
+	}
+	f.requireMutationCount(t, 0)
+	if got := f.listCount("/api/dcim/interfaces/"); got != 1 {
+		t.Errorf("converged device listed its interfaces %d times, want 1", got)
+	}
 }
 
 // TestReconcileInterfacesReportsMissingLAGMember: a bond missing a leg is a

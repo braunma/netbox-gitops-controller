@@ -291,6 +291,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		logger.Info("Summary: %d created, %d updated, %d deleted, %d unchanged",
 			summary.Create, summary.Update, summary.Delete, summary.Unchanged)
 	}
+	logger.Info("NetBox API requests: %d", c.RequestCount())
 	logger.Info("═══════════════════════════════════════════════════════")
 
 	if outputFormat == "json" {

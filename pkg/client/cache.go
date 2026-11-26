@@ -4,6 +4,7 @@ package client
 
 import (
 	"fmt"
+	"sort"
 	"sync"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -22,6 +23,41 @@ func NewCacheManager(client *NetBoxClient) *CacheManager {
 		client: client,
 		cache:  make(map[string]map[string]int),
 	}
+}
+
+// cacheLoadConcurrency is how many cache lists are fetched from NetBox at once.
+// The lists are independent reads, so loading them side by side changes only
+// how long the startup takes; it is kept small so a run never presents NetBox
+// with more than a handful of concurrent requests.
+const cacheLoadConcurrency = 4
+
+// cacheLoad is one list request that fills (part of) a cache.
+type cacheLoad struct {
+	resource string
+	path     string
+	filters  map[string]interface{}
+	siteID   int
+}
+
+// loadAll fetches every load concurrently, at most cacheLoadConcurrency at a
+// time, and stores the results. If any fails, the error returned is that of
+// the first failed load in the order given, so a failing run reports the same
+// error every time.
+func (cm *CacheManager) loadAll(loads []cacheLoad) []error {
+	errs := make([]error, len(loads))
+	sem := make(chan struct{}, cacheLoadConcurrency)
+	var wg sync.WaitGroup
+	for i, l := range loads {
+		wg.Add(1)
+		sem <- struct{}{}
+		go func(i int, l cacheLoad) {
+			defer wg.Done()
+			defer func() { <-sem }()
+			errs[i] = cm.loadResource(l.resource, l.path, l.filters, l.siteID)
+		}(i, l)
+	}
+	wg.Wait()
+	return errs
 }
 
 // LoadGlobal loads global resources (not site-specific)
@@ -44,11 +80,21 @@ func (cm *CacheManager) LoadGlobal() error {
 		"tags":           "extras/tags",
 	}
 
-	for resource, path := range resources {
+	names := make([]string, 0, len(resources))
+	for resource := range resources {
+		names = append(names, resource)
+	}
+	sort.Strings(names)
+
+	loads := make([]cacheLoad, 0, len(names))
+	for _, resource := range names {
 		cm.client.logger.Debug("→ %s", resource)
-		// Pass siteID=0 for global resources (no site prefix)
-		if err := cm.loadResource(resource, path, nil, 0); err != nil {
-			return fmt.Errorf("failed to load %s: %w", resource, err)
+		// siteID=0 for global resources (no site prefix)
+		loads = append(loads, cacheLoad{resource: resource, path: resources[resource]})
+	}
+	for i, err := range cm.loadAll(loads) {
+		if err != nil {
+			return fmt.Errorf("failed to load %s: %w", loads[i].resource, err)
 		}
 	}
 
@@ -91,18 +137,35 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 		"vlan_groups": "ipam/vlan-groups", // Can be site-specific or global
 	}
 
-	for resource, path := range resources {
-		filters := map[string]interface{}{"site_id": siteID}
-		// Pass siteID to create composite keys
-		if err := cm.loadResource(resource, path, filters, siteID); err != nil {
-			return fmt.Errorf("failed to load %s: %w", resource, err)
+	names := make([]string, 0, len(resources))
+	for resource := range resources {
+		names = append(names, resource)
+	}
+	sort.Strings(names)
+
+	loads := make([]cacheLoad, 0, len(names)+1)
+	for _, resource := range names {
+		// siteID creates composite keys
+		loads = append(loads, cacheLoad{
+			resource: resource, path: resources[resource],
+			filters: map[string]interface{}{"site_id": siteID}, siteID: siteID,
+		})
+	}
+	// Also load global VLAN groups (those without site_id). They are stored
+	// under plain keys, the site's under composite ones, so the two loads of
+	// vlan_groups never write the same key.
+	loads = append(loads, cacheLoad{
+		resource: "vlan_groups", path: "ipam/vlan-groups",
+		filters: map[string]interface{}{"site_id": "null"}, // NetBox filter for null site
+	})
+
+	errs := cm.loadAll(loads)
+	for i, err := range errs[:len(errs)-1] {
+		if err != nil {
+			return fmt.Errorf("failed to load %s: %w", loads[i].resource, err)
 		}
 	}
-
-	// Also load global VLAN groups (those without site_id)
-	if err := cm.loadResource("vlan_groups", "ipam/vlan-groups", map[string]interface{}{
-		"site_id": "null", // NetBox filter for null site
-	}, 0); err != nil {
+	if err := errs[len(errs)-1]; err != nil {
 		cm.client.logger.Warning("Failed to load global VLAN groups: %v", err)
 		// Don't fail - this is not critical
 	}
@@ -112,14 +175,10 @@ func (cm *CacheManager) LoadSite(siteSlug string) error {
 
 // loadResource loads a specific resource into cache
 // If siteID > 0, creates composite keys: "site-{siteID}:{identifier}"
+//
+// The list is fetched before the cache lock is taken, so that several loads
+// can wait on NetBox at the same time.
 func (cm *CacheManager) loadResource(resource, path string, filters map[string]interface{}, siteID int) error {
-	cm.mu.Lock()
-	defer cm.mu.Unlock()
-
-	if cm.cache[resource] == nil {
-		cm.cache[resource] = make(map[string]int)
-	}
-
 	// Parse app and endpoint from path
 	app := ""
 	endpoint := ""
@@ -138,6 +197,13 @@ func (cm *CacheManager) loadResource(resource, path string, filters map[string]i
 	objects, err := cm.client.Filter(app, endpoint, filters)
 	if err != nil {
 		return fmt.Errorf("failed to filter %s: %w", resource, err)
+	}
+
+	cm.mu.Lock()
+	defer cm.mu.Unlock()
+
+	if cm.cache[resource] == nil {
+		cm.cache[resource] = make(map[string]int)
 	}
 
 	for _, obj := range objects {

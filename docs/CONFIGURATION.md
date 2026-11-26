@@ -31,6 +31,7 @@ cp .env.example .env      # then fill in NETBOX_URL and NETBOX_TOKEN
 | `NETBOX_URL` | yes | — | Base URL of the NetBox instance, without a trailing `/api`. Missing it stops the run before any request. |
 | `NETBOX_TOKEN` | yes | — | API token. A v1 token (40 hex characters) is sent as `Authorization: Token`, a v2 token (`nbt_<key>.<secret>`, NetBox 4.5+) as `Authorization: Bearer`. The format is detected from the prefix; nothing needs configuring. |
 | `IGNORE_SSL_ERRORS` | no | unset (certificates **are** verified) | Skips TLS certificate verification, for a lab NetBox behind a self-signed certificate. Accepts `true`, `1`, `yes`, `on` (case-insensitive). Every run that sets it prints a warning naming the variable. |
+| `NETBOX_PAGE_SIZE` | no | `1000` | Objects requested per page of a list. NetBox caps it at its own `MAX_PAGE_SIZE` (1000 by default) and links the next page, so a value above the server's limit costs requests, not results. Lower it only if pages of large lists come close to the 30-second request timeout. Must be a whole number of at least 1; anything else stops the run before any request. |
 
 > Certificate verification is on unless you turn it off. If you reach a NetBox
 > whose certificate does not validate, the error says so — do not reach for

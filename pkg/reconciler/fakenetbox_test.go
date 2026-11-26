@@ -30,7 +30,10 @@ type fakeNetBox struct {
 	nextID    int
 	store     map[string][]client.Object // keyed by "app/endpoint"
 	mutations []recordedRequest
-	srv       *httptest.Server
+	// lists counts the GET list requests per path, for tests that pin how
+	// many lookups a reconciler needs.
+	lists map[string]int
+	srv   *httptest.Server
 }
 
 type recordedRequest struct {
@@ -84,6 +87,11 @@ func (f *fakeNetBox) handle(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.Method != "GET" {
 		f.mutations = append(f.mutations, recordedRequest{r.Method, r.URL.Path, body})
+	} else if !hasID {
+		if f.lists == nil {
+			f.lists = make(map[string]int)
+		}
+		f.lists[r.URL.Path]++
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -169,13 +177,15 @@ func (f *fakeNetBox) handle(w http.ResponseWriter, r *http.Request) {
 // matchesFilters applies NetBox-style query filters to an object:
 // "id" matches the object ID, "{field}_id" matches the ID of a (possibly
 // nested) reference field, "{field}_id=null" matches a missing reference,
-// and anything else is a direct field comparison. Pagination params are
-// ignored.
+// and anything else is a direct field comparison. Pagination and rendering
+// params are ignored.
 func matchesFilters(obj client.Object, query url.Values) bool {
 	for k, vals := range query {
-		if k == "limit" || k == "page" || k == "offset" || k == "tag" {
+		if k == "limit" || k == "page" || k == "offset" || k == "tag" || k == "exclude" {
 			// "tag" is a slug filter resolved against the tag store by the
 			// caller (objectHasTagSlugLocked), not a plain field comparison.
+			// "exclude" only drops fields from the rendering (NetBox's
+			// exclude=config_context), it selects nothing.
 			continue
 		}
 		want := vals[0]
@@ -318,6 +328,15 @@ func (f *fakeNetBox) resetMutations() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.mutations = nil
+	f.lists = nil
+}
+
+// listCount returns how many GET list requests hit a path since the last
+// resetMutations.
+func (f *fakeNetBox) listCount(path string) int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.lists[path]
 }
 
 // requireMutationCount fails the test unless exactly n mutating requests
