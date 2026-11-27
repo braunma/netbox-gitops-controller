@@ -8,7 +8,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
@@ -270,27 +269,20 @@ func TestFilterVMs(t *testing.T) {
 	}
 }
 
-// TestPruneTargetsProtectsManagedTag verifies the managed tag is shielded from
-// pruning via KeepSlugs.
-func TestPruneTargetsProtectsManagedTag(t *testing.T) {
-	var found bool
-	for _, target := range pruneTargets(allPhases()) {
-		if target.App == "extras" && target.Endpoint == "tags" {
-			found = true
-			var protects bool
-			for _, slug := range target.KeepSlugs {
-				if slug == constants.ManagedTagSlug {
-					protects = true
-				}
-			}
-			if !protects {
-				t.Errorf("tags prune target must keep the managed tag %q, got KeepSlugs %v",
-					constants.ManagedTagSlug, target.KeepSlugs)
+// TestPruneTargetsNeverIncludeTags pins that tags are out of the prune logic
+// for every phase selection: a tag removed from the YAML stays in NetBox, and
+// so does every object's use of it.
+func TestPruneTargetsNeverIncludeTags(t *testing.T) {
+	selections := []map[string]bool{allPhases()}
+	for phase := range allPhases() {
+		selections = append(selections, map[string]bool{phase: true})
+	}
+	for _, phases := range selections {
+		for _, target := range pruneTargets(phases) {
+			if target.App == "extras" && target.Endpoint == "tags" {
+				t.Errorf("pruneTargets(%v) includes extras/tags; tags must never be pruned", phases)
 			}
 		}
-	}
-	if !found {
-		t.Error("foundation prune must include the tags endpoint")
 	}
 }
 

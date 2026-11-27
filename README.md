@@ -972,7 +972,7 @@ image — the reverse order used for `--prune` — by
 
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`). You never write `gitops` into a `tags:` list yourself.
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
-  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
+  * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected, and tags themselves are never pruned. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
 
 ### Your Own Tags
 
@@ -1249,10 +1249,13 @@ deletion in its plan and the apply carries it out. Set the CI/CD variable
 `NETBOX_PRUNE=false` to turn that off.
 
 Pruning runs after all selected phases and deletes endpoints in reverse
-dependency order (device/VM children first, then sites/platforms/tenants/tags
+dependency order (device/VM children first, then sites/platforms/tenants
 last) to respect NetBox foreign-key constraints. It is scoped to the phases that
 run via `--only`, and cannot be combined with `--site`/`--device`/`--vm` (a
-filtered run would delete the out-of-scope objects the filter excluded). Device children
+filtered run would delete the out-of-scope objects the filter excluded). **Tags
+are never pruned:** a tag removed from `definitions/extras` stays in NetBox,
+along with every object's use of it, because other people and tools attach
+tags too. Delete an unwanted tag by hand in NetBox. Device children
 (interfaces, IP addresses, front/rear ports, modules) are pruned too, and so
 are cables: every cable the controller creates carries the managed tag, a
 cable it finds already wired as declared is adopted (tagged) on the next run,
