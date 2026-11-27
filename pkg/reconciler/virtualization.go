@@ -294,6 +294,9 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 // VLAN resolution and IP assignment. It mirrors the device interface
 // reconciler but cannot cable, so there is no link handling.
 func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *models.VMConfig) error {
+	if len(vm.Interfaces) > 0 {
+		defer preloadComponents(vr.client, "virtualization", "virtual_machine_id", vmID, "interfaces")()
+	}
 	for i, iface := range vm.Interfaces {
 		vr.logger.Debug("    VM interface %d/%d: %s", i+1, len(vm.Interfaces), iface.Name)
 
@@ -493,7 +496,7 @@ func (vr *VirtualizationReconciler) lookupCluster(name string) (id, siteID int, 
 
 // lookupVMInterface resolves a VM interface by name on a given VM.
 func (vr *VirtualizationReconciler) lookupVMInterface(vmID int, name string) (int, bool) {
-	ifaces, err := vr.client.Filter("virtualization", "interfaces", map[string]interface{}{
+	ifaces, err := vr.client.FindComponent("virtualization", "interfaces", map[string]interface{}{
 		"virtual_machine_id": vmID,
 		"name":               name,
 	})

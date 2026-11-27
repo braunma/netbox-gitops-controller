@@ -15,6 +15,7 @@ import (
 	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
@@ -52,6 +53,12 @@ type NetBoxClient struct {
 	// schemas memoises the OPTIONS response of each endpoint, so live
 	// validation asks the server what it accepts once rather than per object.
 	schemas schemaCache
+	// components holds the per-parent snapshots PreloadComponents takes.
+	components componentIndex
+	// pageSize is the limit sent with every list request.
+	pageSize int
+	// requests counts the HTTP requests sent to NetBox, retries included.
+	requests atomic.Int64
 }
 
 // envIsTrue reports whether an environment variable is set to something that
@@ -83,11 +90,14 @@ func NewClient(baseURL, token string, dryRun bool) (*NetBoxClient, error) {
 		logger.Warning("IGNORE_SSL_ERRORS is set: the NetBox TLS certificate will not be verified")
 	}
 
+	pageSize, err := pageSizeFromEnv()
+	if err != nil {
+		return nil, err
+	}
+
 	httpClient := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{InsecureSkipVerify: skipVerify}, // #nosec G402 -- opt-in, warned about, for self-signed dev instances
-		},
+		Timeout:   30 * time.Second,
+		Transport: newTransport(skipVerify),
 	}
 
 	client := &NetBoxClient{
@@ -96,6 +106,7 @@ func NewClient(baseURL, token string, dryRun bool) (*NetBoxClient, error) {
 		httpClient: httpClient,
 		logger:     logger,
 		dryRun:     dryRun,
+		pageSize:   pageSize,
 	}
 
 	client.cache = NewCacheManager(client)
@@ -117,9 +128,64 @@ type Object map[string]interface{}
 const (
 	// maxRetries is the number of additional attempts after a transient failure.
 	maxRetries = 3
-	// defaultPageSize overrides NetBox's default page size (50) for list requests.
-	defaultPageSize = 250
+	// defaultPageSize overrides NetBox's default page size (50) for list
+	// requests. 1000 is NetBox's default MAX_PAGE_SIZE; an instance configured
+	// with a lower maximum caps the page and links the next one, which List
+	// follows, so a value above the server's limit costs requests, not results.
+	defaultPageSize = 1000
 )
+
+// pageSizeEnv overrides defaultPageSize, for an instance whose large pages are
+// slow enough to approach the request timeout.
+const pageSizeEnv = "NETBOX_PAGE_SIZE"
+
+func pageSizeFromEnv() (int, error) {
+	raw := strings.TrimSpace(os.Getenv(pageSizeEnv))
+	if raw == "" {
+		return defaultPageSize, nil
+	}
+	n, err := strconv.Atoi(raw)
+	if err != nil || n < 1 {
+		return 0, fmt.Errorf("%s is %q; it must be a whole number of at least 1", pageSizeEnv, raw)
+	}
+	return n, nil
+}
+
+// newTransport returns the HTTP transport for NetBox requests: Go's default
+// transport (dial, TLS handshake and idle timeouts, keep-alive, HTTP/2) with
+// the TLS verification choice applied.
+//
+// Proxy is cleared on purpose. The client has never honoured HTTP(S)_PROXY,
+// and a NetBox reached directly today must not start being sent through a
+// proxy that happens to be set in a CI job's environment.
+//
+// The idle pool per host is raised above the default of 2 so that the
+// concurrent cache loads at startup keep their connections for reuse instead
+// of reconnecting (and re-doing the TLS handshake) for every request.
+func newTransport(skipVerify bool) *http.Transport {
+	t := http.DefaultTransport.(*http.Transport).Clone()
+	t.Proxy = nil
+	t.TLSClientConfig = &tls.Config{InsecureSkipVerify: skipVerify} // #nosec G402 -- opt-in, warned about, for self-signed dev instances
+	t.MaxIdleConnsPerHost = cacheLoadConcurrency * 2
+	return t
+}
+
+// listExcludes names the list endpoints whose objects carry a rendered
+// config_context. NetBox computes it for every object of every page — merging
+// all config contexts that apply, per device — which dominates the cost of
+// listing devices and VMs. Nothing here reads it (local_context_data, the part
+// a payload may set, is a separate field and is still returned), so list
+// requests ask NetBox to leave it out. Get of a single object is unaffected.
+var listExcludes = map[string]string{
+	"/api/dcim/devices/":                    "config_context",
+	"/api/virtualization/virtual-machines/": "config_context",
+}
+
+// RequestCount reports how many HTTP requests the client has sent to NetBox,
+// retries included.
+func (c *NetBoxClient) RequestCount() int64 {
+	return c.requests.Load()
+}
 
 // retryBaseDelay is doubled after each failed attempt (1s, 2s, 4s).
 // Variable so tests can shorten it.
@@ -162,6 +228,7 @@ func (c *NetBoxClient) doWithRetry(method, requestURL string, jsonBody []byte) (
 			req.Header.Set("Content-Type", "application/json")
 		}
 
+		c.requests.Add(1)
 		resp, err := c.httpClient.Do(req)
 		if err == nil {
 			respBody, readErr := io.ReadAll(resp.Body)
@@ -229,6 +296,15 @@ func (c *NetBoxClient) Request(method, path string, body interface{}) (Object, e
 	}
 
 	statusCode, respBody, err := c.doWithRetry(method, requestURL, jsonBody)
+
+	// A write to an object's detail path may have changed or removed it --
+	// even when it failed, a timeout leaves that unknown -- so a component
+	// snapshot must not answer for it any more. Forgetting is always safe: it
+	// only sends the next lookup of the object to NetBox.
+	if method != "GET" && method != "POST" && method != "OPTIONS" {
+		c.components.forgetPath(path)
+	}
+
 	if err != nil {
 		return nil, err
 	}
@@ -259,7 +335,14 @@ func (c *NetBoxClient) List(path string, filters map[string]interface{}) ([]Obje
 		queryParams.Add(k, fmt.Sprintf("%v", v))
 	}
 	if queryParams.Get("limit") == "" {
-		queryParams.Set("limit", fmt.Sprintf("%d", defaultPageSize))
+		pageSize := c.pageSize
+		if pageSize <= 0 {
+			pageSize = defaultPageSize
+		}
+		queryParams.Set("limit", strconv.Itoa(pageSize))
+	}
+	if exclude, ok := listExcludes[path]; ok && queryParams.Get("exclude") == "" {
+		queryParams.Set("exclude", exclude)
 	}
 	requestURL := c.baseURL + path + "?" + queryParams.Encode()
 
@@ -387,6 +470,8 @@ func (c *NetBoxClient) Apply(app, endpoint string, lookup, payload map[string]in
 	var existing []Object
 	if unresolved, ok := unresolvedReference(lookup); ok {
 		c.logger.Debug("  → %s is scoped by %s, which is only planned in this run; treating as new", endpoint, unresolved)
+	} else if preloaded, ok := c.components.lookup(app, endpoint, lookup); ok {
+		existing = preloaded
 	} else {
 		var err error
 		existing, err = c.Filter(app, endpoint, lookup)
@@ -599,11 +684,19 @@ func (c *NetBoxClient) formatLookup(lookup map[string]interface{}) string {
 	if slug, ok := lookup["slug"]; ok {
 		return fmt.Sprintf("slug=%v", slug)
 	}
-	// Return first key-value pair
-	for k, v := range lookup {
-		return fmt.Sprintf("%s=%v", k, v)
+	// Otherwise the first key in sorted order. Taking the first one Go's map
+	// iteration happens to yield labelled the same object differently from
+	// run to run (prefix=... one time, vrf_id=... the next), which made two
+	// plans of the same state differ.
+	if len(lookup) == 0 {
+		return "{}"
 	}
-	return "{}"
+	keys := make([]string, 0, len(lookup))
+	for k := range lookup {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return fmt.Sprintf("%s=%v", keys[0], lookup[keys[0]])
 }
 
 // printDiff prints a visual diff for pipeline console visibility

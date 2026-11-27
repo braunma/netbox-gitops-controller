@@ -58,6 +58,8 @@ func (o templateOwner) lookup(name string) map[string]interface{} {
 // ports before the front ports that terminate on them, and power ports before
 // the outlets they feed.
 func (dtr *DeviceTypeReconciler) reconcileComponentTemplates(owner templateOwner, c componentTemplates, label string) error {
+	defer dtr.preloadTemplates(owner, c)()
+
 	if err := dtr.reconcileRearPortTemplates(owner, c.RearPorts); err != nil {
 		return fmt.Errorf("failed to reconcile rear port templates for %s: %w", label, err)
 	}
@@ -83,6 +85,28 @@ func (dtr *DeviceTypeReconciler) reconcileComponentTemplates(owner templateOwner
 		return fmt.Errorf("failed to reconcile module bay templates for %s: %w", label, err)
 	}
 	return nil
+}
+
+// preloadTemplates snapshots the owner's templates on every endpoint the
+// declaration uses, so each template is not its own lookup request. Front
+// ports resolve rear ports, and outlets power ports, through the same
+// snapshots.
+func (dtr *DeviceTypeReconciler) preloadTemplates(owner templateOwner, c componentTemplates) func() {
+	var endpoints []string
+	add := func(endpoint string, n int) {
+		if n > 0 {
+			endpoints = append(endpoints, endpoint)
+		}
+	}
+	add("rear-port-templates", len(c.RearPorts)+len(c.FrontPorts))
+	add("front-port-templates", len(c.FrontPorts))
+	add("interface-templates", len(c.Interfaces))
+	add("console-port-templates", len(c.ConsolePorts))
+	add("console-server-port-templates", len(c.ConsoleServerPorts))
+	add("power-port-templates", len(c.PowerPorts)+len(c.PowerOutlets))
+	add("power-outlet-templates", len(c.PowerOutlets))
+	add("module-bay-templates", len(c.ModuleBays))
+	return preloadComponents(dtr.client, "dcim", owner.filter, owner.id, endpoints...)
 }
 
 // componentTemplates is the set of templates shared by device types and module
@@ -338,7 +362,13 @@ func (dtr *DeviceTypeReconciler) ReconcileDeviceTypes(deviceTypes []*models.Devi
 			return err
 		}
 
-		if err := dtr.reconcileDeviceBayTemplates(owner, dt.DeviceBays); err != nil {
+		releaseBays := func() {}
+		if len(dt.DeviceBays) > 0 {
+			releaseBays = preloadComponents(dtr.client, "dcim", owner.filter, owner.id, "device-bay-templates")
+		}
+		err = dtr.reconcileDeviceBayTemplates(owner, dt.DeviceBays)
+		releaseBays()
+		if err != nil {
 			return fmt.Errorf("failed to reconcile device bay templates for %s: %w", dt.Model, err)
 		}
 	}
@@ -387,7 +417,7 @@ func (dtr *DeviceTypeReconciler) reconcileFrontPortTemplates(owner templateOwner
 
 		if tmpl.RearPort != "" {
 			// Find rear port
-			rearPorts, err := dtr.client.Filter("dcim", "rear-port-templates", owner.lookup(tmpl.RearPort))
+			rearPorts, err := dtr.client.FindComponent("dcim", "rear-port-templates", owner.lookup(tmpl.RearPort))
 			if err == nil && len(rearPorts) > 0 {
 				// A multi-position rear port (e.g. an MPO trunk broken out to
 				// several front ports) needs the specific position; single
@@ -532,7 +562,7 @@ func (dtr *DeviceTypeReconciler) reconcilePowerOutletTemplates(owner templateOwn
 		})
 
 		if tmpl.PowerPort != "" {
-			powerPorts, err := dtr.client.Filter("dcim", "power-port-templates", owner.lookup(tmpl.PowerPort))
+			powerPorts, err := dtr.client.FindComponent("dcim", "power-port-templates", owner.lookup(tmpl.PowerPort))
 			if err != nil {
 				return fmt.Errorf("failed to look up power port %s for outlet %s: %w", tmpl.PowerPort, tmpl.Name, err)
 			}

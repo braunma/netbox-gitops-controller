@@ -20,6 +20,28 @@ are about to run before applying a sync with pruning enabled.
   controller before this release behaves the same, so it is a comparison
   problem in the dry-run, not drift; `tests/e2e/repo-data.sh` flags it.
 
+### Changed
+
+- **Fewer requests per run.** A converged run against the sample data needs
+  about a quarter fewer API requests, and roughly a third less time.
+  - The interfaces, front ports and rear ports of a device, a VM's interfaces,
+    and the component templates of a device or module type are now listed
+    once per parent instead of being looked up one request per component.
+    The snapshot answers only exact `{parent, name}` lookups. A name it does
+    not hold is still looked up live, so it can never cause a duplicate create,
+    and an object the run changes is dropped from it, so it is never diffed
+    twice against a stale value.
+  - Device and VM lists ask NetBox not to render `config_context`, which the
+    controller never reads and NetBox computes per object.
+  - The startup caches load four lists at a time instead of one after the
+    other.
+  - Lists are requested 1000 objects per page instead of 250. The new
+    `NETBOX_PAGE_SIZE` overrides it.
+  - The HTTP client now uses Go's default transport settings (dial, TLS
+    handshake and idle timeouts, HTTP/2). It still ignores `HTTP(S)_PROXY`,
+    as before.
+  - The run summary reports the number of NetBox API requests.
+
 ### Fixed
 
 - **Declared `tags:` now reach NetBox.** Every model accepted a `tags:` list,

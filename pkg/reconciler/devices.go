@@ -64,6 +64,29 @@ func (dr *DeviceReconciler) templateType(device *models.DeviceConfig, kind, name
 	return ""
 }
 
+// preloadDevicePorts snapshots the device's interfaces, rear ports and front
+// ports, each only where the YAML declares some or the device type has
+// template ports that protectTemplatePorts will look for. Front ports need the
+// rear ports too, to resolve what they terminate on.
+func (dr *DeviceReconciler) preloadDevicePorts(deviceID int, device *models.DeviceConfig) func() {
+	var endpoints []string
+	dt := dr.deviceTypes[device.DeviceTypeSlug]
+	var tIfaces, tFronts, tRears int
+	if dt != nil {
+		tIfaces, tFronts, tRears = len(dt.Interfaces), len(dt.FrontPorts), len(dt.RearPorts)
+	}
+	if len(device.Interfaces) > 0 || tIfaces > 0 {
+		endpoints = append(endpoints, "interfaces")
+	}
+	if len(device.RearPorts) > 0 || len(device.FrontPorts) > 0 || tRears > 0 {
+		endpoints = append(endpoints, "rear-ports")
+	}
+	if len(device.FrontPorts) > 0 || tFronts > 0 {
+		endpoints = append(endpoints, "front-ports")
+	}
+	return preloadComponents(dr.client, "dcim", "device_id", deviceID, endpoints...)
+}
+
 // protectTemplatePorts marks every port of the device that its device type
 // template defines as seen, so prune never deletes the hardware's own ports.
 // A template port the YAML once listed carries the managed tag from that
@@ -78,7 +101,14 @@ func (dr *DeviceReconciler) protectTemplatePorts(deviceID int, device *models.De
 		if len(names) == 0 {
 			return
 		}
-		ports, err := dr.client.Filter("dcim", endpoint, map[string]interface{}{"device_id": deviceID})
+		// The snapshot taken before the ports were reconciled serves: template
+		// ports exist from the device's creation, and nothing in between
+		// deletes ports. A port the YAML created is marked seen by Apply.
+		ports, ok := dr.client.PreloadedComponents("dcim", endpoint, "device_id", deviceID)
+		var err error
+		if !ok {
+			ports, err = dr.client.Filter("dcim", endpoint, map[string]interface{}{"device_id": deviceID})
+		}
 		if err != nil {
 			// Without the list we cannot tell template ports apart, and prune
 			// must not guess: mark the endpoint incomplete so it is skipped.
@@ -423,6 +453,12 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 		}
 	}
 
+	// Each component lookup below would otherwise be its own request; list
+	// the device's ports once per kind instead. Released as soon as the ports
+	// are done, before modules can add interfaces behind the snapshot's back.
+	release := dr.preloadDevicePorts(deviceID, device)
+	defer release()
+
 	// Reconcile components
 	dr.logger.Debug("  Reconciling interfaces for %s...", device.Name)
 	if err := dr.reconcileInterfaces(deviceID, device); err != nil {
@@ -443,6 +479,7 @@ func (dr *DeviceReconciler) reconcileDevice(device *models.DeviceConfig) error {
 
 	// The hardware's own ports are not the YAML's to delete.
 	dr.protectTemplatePorts(deviceID, device)
+	release()
 
 	// Self-healing: Create missing device bays from device type templates
 	dr.logger.Debug("  Reconciling device bays for %s...", device.Name)
@@ -630,7 +667,7 @@ func declaredInterfaceTags(device *models.DeviceConfig, name string) []string {
 
 // lookupDeviceInterface resolves an interface by name on a device.
 func (dr *DeviceReconciler) lookupDeviceInterface(deviceID int, name string) (int, bool) {
-	found, err := dr.client.Filter("dcim", "interfaces", map[string]interface{}{
+	found, err := dr.client.FindComponent("dcim", "interfaces", map[string]interface{}{
 		"device_id": deviceID,
 		"name":      name,
 	})
@@ -952,7 +989,7 @@ func (dr *DeviceReconciler) reconcileFrontPorts(deviceID int, device *models.Dev
 		dr.logger.Debug("    Front Port %d/%d: %s", i+1, len(device.FrontPorts), port.Name)
 
 		// Find rear port ID
-		rearPorts, err := dr.client.Filter("dcim", "rear-ports", map[string]interface{}{
+		rearPorts, err := dr.client.FindComponent("dcim", "rear-ports", map[string]interface{}{
 			"device_id": deviceID,
 			"name":      port.RearPort,
 		})
