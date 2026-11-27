@@ -12,7 +12,6 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/internal/dotenv"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/loader"
@@ -760,6 +759,12 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 		// Sites, roles, platforms and tenants are referenced by devices, VMs
 		// and clusters, so they come after those phases. Tenants before tenant
 		// groups (a tenant references its group).
+		//
+		// Tags are deliberately not a prune target. A tag is a label that
+		// people, scripts and other tools attach to objects all over NetBox;
+		// dropping one from the YAML must not strip it from everything that
+		// wears it. The controller still creates and updates the tags it
+		// declares, but removing one is a decision made in NetBox by hand.
 		targets = append(targets,
 			client.PruneTarget{App: "dcim", Endpoint: "racks"},
 			client.PruneTarget{App: "dcim", Endpoint: "device-roles"},
@@ -767,8 +772,6 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 			client.PruneTarget{App: "dcim", Endpoint: "sites"},
 			client.PruneTarget{App: "tenancy", Endpoint: "tenants"},
 			client.PruneTarget{App: "tenancy", Endpoint: "tenant-groups"},
-			// The managed tag carries its own slug; never prune it.
-			client.PruneTarget{App: "extras", Endpoint: "tags", KeepSlugs: []string{constants.ManagedTagSlug}},
 		)
 	}
 

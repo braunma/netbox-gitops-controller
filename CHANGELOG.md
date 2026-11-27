@@ -22,6 +22,12 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **`--prune` no longer deletes tags.** A tag removed from
+  `definitions/extras` used to be deleted from NetBox, and with it every
+  object's use of that tag, including ones attached by hand or by other tools.
+  Tags are now out of the prune logic entirely; the controller still creates
+  and updates the tags it declares. Delete an unwanted tag in NetBox by hand.
+
 - **The GitLab pipeline now prunes.** `go_apply` runs `./netbox-gitops --prune`
   and `go_plan` runs `--dry-run --prune`, so removing a rack, device or any
   other object from the YAML deletes it from NetBox at the next apply, and the
