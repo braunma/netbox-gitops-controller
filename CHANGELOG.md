@@ -21,6 +21,11 @@ are about to run before applying a sync with pruning enabled.
   sync after merging adds the `gitops` tag and changes nothing else. What the
   YAML cannot carry is reported, not silently dropped. Adopted objects are
   managed from then on, including by `--prune`. Read-only against NetBox.
+- **`netbox_export` GitLab job** (manual, default branch) runs the export and
+  opens a merge request from `chore/netbox-export`, so adoption goes through
+  the same review and `go_apply` as every other change. `EXPORT_SITES` limits
+  it to some sites. It force-adds the files, because `.gitignore` would
+  otherwise drop the new ones from the commit.
 
 ### Known issues
 

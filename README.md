@@ -745,6 +745,14 @@ does not declare yet as YAML:
 ./netbox-gitops export --out /tmp/review  # somewhere else, to look at first
 ```
 
+**With the GitLab pipeline**, run the manual `netbox_export` job on the
+default branch instead: it exports, pushes `chore/netbox-export` and opens the
+merge request, so the token never leaves CI. See
+[`CI_CD.md`](CI_CD.md#adopting-existing-objects). Exporting locally, mind that
+`.gitignore` lists `/definitions/` and `/inventory/*`: add the new files with
+`git add -f definitions/ inventory/`, or most of them are left out of the
+commit without a word.
+
 Each object is written under the name or slug it already has, so the next sync
 **adopts** it rather than creating a second one: it finds the object, adds the
 `gitops` tag, and manages it from then on. Every field the sync would send

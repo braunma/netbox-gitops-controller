@@ -23,6 +23,7 @@ var (
 	exportSites  []string
 	exportForce  bool
 	exportDryRun bool
+	exportDetail bool
 )
 
 // newExportCommand builds the `export` subcommand.
@@ -51,6 +52,7 @@ Read those lines before merging.`,
 	cmd.Flags().StringSliceVar(&exportSites, "site", nil, "Only export objects at these site slugs (comma-separated or repeated); shared definitions are always exported")
 	cmd.Flags().BoolVar(&exportForce, "force", false, "Overwrite files that already exist")
 	cmd.Flags().BoolVar(&exportDryRun, "dry-run", false, "List the files that would be written, and write nothing")
+	cmd.Flags().BoolVar(&exportDetail, "detailed-exitcode", false, "Exit with code 2 when there was something to export; 0 means the repository already declares everything")
 	return cmd
 }
 
@@ -113,6 +115,9 @@ func runExport(cmd *cobra.Command, args []string) error {
 	if err := writeExport(os.Stdout, out, res, exportForce, exportDryRun); err != nil {
 		logger.Error("Nothing was written", err)
 		return err
+	}
+	if exportDetail && len(res.Files) > 0 {
+		exitCode = 2
 	}
 	return nil
 }

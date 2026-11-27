@@ -28,6 +28,7 @@ NetBox only through the GitLab `apply` stage.
 | validate | `go_validate` | non-default branches + MRs | auto | `./netbox-gitops validate` (choice values and references against the live instance), then `./netbox-gitops --dry-run`. |
 | plan | `go_plan` | MRs only | auto | `--dry-run --prune` → `plan-output.txt` artifact for review, deletions included. |
 | apply | `go_apply` | default branch | **manual** | `./netbox-gitops --prune` (production deploy; deletes gitops-tagged objects removed from the YAML). |
+| validate | `netbox_export` | default branch | manual | `./netbox-gitops export`: writes what NetBox holds and the YAML does not declare yet, pushes `chore/netbox-export` and opens a merge request. Reads NetBox only. See [Adopting existing objects](#adopting-existing-objects). |
 
 ### Fact ingestion (opt-in, not included by default)
 
@@ -63,7 +64,8 @@ Everything the pipeline reads, and what setting it does. Set them in
 | `RUN_E2E` | `false` | Exactly `"true"` enables `e2e`. Needs a Docker-executor runner. |
 | `NETBOX_PRUNE` | `true` | Exactly `"false"` drops `--prune` from `go_plan` and `go_apply`, so objects removed from the YAML stay in NetBox. Any other value prunes: a `gitops`-tagged object no longer declared is deleted. Untagged objects are never touched. |
 | `INGEST_SCHEDULE` | unset | Exactly `"true"`, set on a **pipeline schedule**, runs the optional fact-ingestion jobs. Only read when `.gitlab-ci.ingest.example.yml` is included. |
-| `GITOPS_PUSH_TOKEN` | — | Required by those jobs: a project access token with `write_repository` and `api` scope, so they can push a branch and open a merge request. Mask it. |
+| `EXPORT_SITES` | unset | Comma-separated site slugs for a `netbox_export` run: only objects at those sites are exported (shared definitions always). Set it under **Run pipeline** to adopt a site at a time. |
+| `GITOPS_PUSH_TOKEN` | — | Required by `netbox_export` and the ingestion jobs: a project access token with `write_repository` and `api` scope, so they can push a branch and open a merge request. Mask it. |
 | `COVERAGE_THRESHOLD` | `65` | Minimum total statement coverage (%) for `go_test` over `./pkg/...`. Coverage there is ~79% (August 2026). A non-numeric or empty value fails the job rather than disabling the gate. |
 | `GITLAB_RUNNER_TAG` | `docker` | Runner tag every job requests. |
 | `GOLANG_IMAGE` | `golang:1.24` | Toolchain image for the `go_*` jobs. |
@@ -108,6 +110,35 @@ branch that adds a new site **and** a device in it validates as a plan rather
 than failing with `site ... not found`. A reference that is neither in NetBox
 nor declared anywhere in the YAML is still reported as an error, so genuine
 typos are caught before merge.
+
+## Adopting existing objects
+
+For a NetBox that was filled in by hand before this repository existed:
+
+1. On the default branch, run the manual **`netbox_export`** job (optionally
+   with `EXPORT_SITES`). It opens a merge request from `chore/netbox-export`.
+   Its log and artifacts hold the export report: what NetBox holds that the
+   YAML cannot carry. Read it.
+2. The merge request runs the usual checks. In `go_plan`'s `plan-output.txt`
+   the adopted objects show up as **updates that add the `gitops` tag**, and
+   nothing else should change. A create or a delete there is worth stopping
+   for.
+3. Merge, then run `go_apply`. From now on those objects are managed: removing
+   one from the YAML deletes it at the next apply (pruning is on).
+4. Run `netbox_export` again for the next site; it skips what is declared, and
+   says "Nothing to export" once everything is.
+
+Between exporting and applying, a change someone makes to an exported object
+in the NetBox UI is overwritten by the apply with the exported value. Re-run
+`netbox_export` to refresh the branch (it is rebuilt and force-pushed) if the
+merge request sits for a while, and after adoption make changes through the
+YAML: the next apply reverts UI edits of any field the YAML declares.
+
+Why the job uses `git add -f`: `.gitignore` lists `/definitions/` and
+`/inventory/*`. Files already tracked stay tracked, but new ones — every
+`imported*.yaml` except the VMs' — are skipped by a plain `git add`. If you
+export locally instead (`./netbox-gitops export`), add them with
+`git add -f definitions/ inventory/`.
 
 ## GitHub Actions jobs
 
