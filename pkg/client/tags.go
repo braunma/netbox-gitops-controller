@@ -64,6 +64,34 @@ func (tm *TagManager) Ensure(slug string) (int, error) {
 	return utils.GetIDFromObject(tag), nil
 }
 
+// ResolveManagedTagForPlan looks up the managed tag in a dry run, so the plan
+// is computed with the same tag set the apply will send.
+//
+// NewClient makes no request in dry-run mode, which left the managed tag's ID
+// at 0 and the tag out of every planned payload. The plan then said the
+// opposite of what the apply did: an object with tags of its own was planned
+// as an update on every run, even on a converged instance (its tags without
+// `gitops` differ from what NetBox holds), and an unmanaged object about to be
+// adopted was planned as unchanged. It only reads; when the tag does not exist
+// yet (a NetBox the controller never wrote to), that is recorded so pruning
+// knows nothing can carry it. Outside a dry run it does nothing.
+func (c *NetBoxClient) ResolveManagedTagForPlan() error {
+	if !c.dryRun || c.managedTagID != 0 {
+		return nil
+	}
+	tags, err := c.Filter("extras", "tags", map[string]interface{}{"slug": constants.ManagedTagSlug})
+	if err != nil {
+		return fmt.Errorf("failed to look up the managed tag: %w", err)
+	}
+	if len(tags) == 0 {
+		c.managedTagMissing = true
+		c.logger.Info("Tag %s does not exist yet; the apply creates it", constants.ManagedTagSlug)
+		return nil
+	}
+	c.managedTagID = utils.GetIDFromObject(tags[0])
+	return nil
+}
+
 // GetID retrieves the ID of a tag by slug
 func (tm *TagManager) GetID(slug string) (int, error) {
 	tags, err := tm.client.Filter("extras", "tags", map[string]interface{}{"slug": slug})

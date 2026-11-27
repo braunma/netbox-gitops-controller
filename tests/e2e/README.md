@@ -51,6 +51,21 @@ make e2e-ingest
 | `run.sh` | randomly generated (`gen.py`) | the controller handles inventories it has never seen |
 | `rename.sh` | purpose-built fixtures | correcting an identity edits the object instead of duplicating it |
 | `repo-data.sh` | this repository's own `definitions/` + `inventory/` | the sample data converges, and the conventions it is written in hold |
+| `export.sh` | a NetBox seeded through the API, no `gitops` tag | `export` + apply adopts everything and changes no field of any object |
+
+`export.sh` makes the claim of `netbox-gitops export` directly: it fills a
+NetBox "by hand" (devices with LAGs, VLANs, IPs and modules, cables, a patch
+panel, VMs, clusters, tags on everything), snapshots **every field of every
+object**, exports, checks the YAML, plans, applies, snapshots again and
+compares. The only differences allowed are the `gitops` tag being added (and
+created, on a NetBox the controller never wrote to). It also asserts that the
+plan holds nothing but tag updates, that a second dry-run and a second export
+have nothing to do, and that what the export reports as left out stays
+unmanaged.
+
+It seeds untagged objects and deletes **every** object when it is done, so it
+refuses to start unless NetBox is empty, and it runs first in `make e2e` and
+in the CI job. Run it alone with `make e2e-export`.
 
 `repo-data.sh` is a different claim from the other two. The sample inventory
 leans on conventions whose failure mode is silent: a cable declared on one end

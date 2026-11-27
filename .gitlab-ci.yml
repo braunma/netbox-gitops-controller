@@ -245,6 +245,9 @@ e2e:
       fi
   script:
     - echo "🔁 Running end-to-end tests against ${NETBOX_URL}..."
+    # First, while the service is still empty: it refuses any other NetBox.
+    - echo "🔁 Adopting a hand-made NetBox with export, and proving nothing but tags changes..."
+    - tests/e2e/export.sh
     - tests/e2e/run.sh
     - echo "🔁 Verifying that renames edit objects instead of duplicating them..."
     - tests/e2e/rename.sh

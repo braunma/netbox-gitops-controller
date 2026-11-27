@@ -14,7 +14,7 @@ LDFLAGS    := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildD
 COVERAGE_SCOPE     ?= ./...
 COVERAGE_THRESHOLD ?= 65
 
-.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-local clean
+.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-export e2e-local clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -81,6 +81,7 @@ ingest-preview: build ## Show what a collector run would write, without writing 
 	./$(BINARY) collect --dry-run
 
 e2e: ## End-to-end tests (needs NETBOX_URL and NETBOX_TOKEN)
+	./tests/e2e/export.sh
 	./tests/e2e/run.sh
 	./tests/e2e/rename.sh
 	./tests/e2e/repo-data.sh
@@ -90,6 +91,9 @@ e2e-rename: ## Rename coverage only (needs NETBOX_URL and NETBOX_TOKEN)
 
 e2e-repo: ## Apply this repository's own data (needs NETBOX_URL and NETBOX_TOKEN)
 	./tests/e2e/repo-data.sh
+
+e2e-export: ## Adoption by `export` (needs an EMPTY throwaway NetBox: it deletes everything)
+	./tests/e2e/export.sh
 
 e2e-local: ## Provision a throwaway NetBox from source, then run e2e
 	./tests/e2e/provision-local.sh

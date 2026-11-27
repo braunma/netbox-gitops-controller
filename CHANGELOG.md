@@ -27,6 +27,20 @@ are about to run before applying a sync with pruning enabled.
   it to some sites. It force-adds the files, because `.gitignore` would
   otherwise drop the new ones from the commit.
 
+### Fixed
+
+- **A dry run plans with the managed tag.** The client resolved the `gitops`
+  tag's ID only when writing, so every planned payload lacked it: an object
+  with tags of its own was planned as an update on every run (on a converged
+  instance too), and an unmanaged object about to be adopted was planned as
+  unchanged — the plan said the opposite of what the apply did. A dry run now
+  looks the tag up (read-only) before planning.
+- **`--dry-run --prune` against a NetBox the controller never wrote to** no
+  longer fails with `Select a valid choice. gitops is not one of the available
+  choices`: with no managed tag in NetBox, nothing can carry it, so nothing is
+  planned for deletion.
+- **A cable's adoption is counted in the plan**, as it is in the apply.
+
 ### Known issues
 
 - **`--dry-run --detailed-exitcode` reports changes on a converged instance.**
