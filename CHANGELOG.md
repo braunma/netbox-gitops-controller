@@ -34,20 +34,16 @@ are about to run before applying a sync with pruning enabled.
   with tags of its own was planned as an update on every run (on a converged
   instance too), and an unmanaged object about to be adopted was planned as
   unchanged — the plan said the opposite of what the apply did. A dry run now
-  looks the tag up (read-only) before planning.
+  looks the tag up (read-only) before planning. This was the known issue
+  "`--dry-run --detailed-exitcode` reports changes on a converged instance"
+  (sites, racks, VRFs, VLAN groups, VLANs and prefixes: the objects the sample
+  data tags): `tests/e2e/repo-data.sh` fails its drift check before this fix
+  and passes after it, against NetBox 4.6.7.
 - **`--dry-run --prune` against a NetBox the controller never wrote to** no
   longer fails with `Select a valid choice. gitops is not one of the available
   choices`: with no managed tag in NetBox, nothing can carry it, so nothing is
   planned for deletion.
 - **A cable's adoption is counted in the plan**, as it is in the apply.
-
-### Known issues
-
-- **`--dry-run --detailed-exitcode` reports changes on a converged instance.**
-  Against NetBox 4.6.10 it plans updates for sites, racks, VRFs, VLAN groups,
-  VLANs and prefixes that an apply then does not make, and exits 2. The
-  controller before this release behaves the same, so it is a comparison
-  problem in the dry-run, not drift; `tests/e2e/repo-data.sh` flags it.
 
 ### Changed
 

@@ -14,7 +14,7 @@ LDFLAGS    := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildD
 COVERAGE_SCOPE     ?= ./...
 COVERAGE_THRESHOLD ?= 65
 
-.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-export e2e-local clean
+.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-export e2e-export-more e2e-local clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -94,6 +94,9 @@ e2e-repo: ## Apply this repository's own data (needs NETBOX_URL and NETBOX_TOKEN
 
 e2e-export: ## Adoption by `export` (needs an EMPTY throwaway NetBox: it deletes everything)
 	./tests/e2e/export.sh
+
+e2e-export-more: ## Adoption on 10 random inventories and a 400-server instance (EMPTY throwaway NetBox; slow)
+	./tests/e2e/export-more.sh
 
 e2e-local: ## Provision a throwaway NetBox from source, then run e2e
 	./tests/e2e/provision-local.sh

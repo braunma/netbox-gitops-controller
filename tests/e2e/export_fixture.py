@@ -33,10 +33,13 @@ ENDPOINTS = [
     "dcim/device-types", "dcim/module-types",
     "dcim/interface-templates", "dcim/front-port-templates", "dcim/rear-port-templates",
     "dcim/module-bay-templates", "dcim/device-bay-templates",
+    "dcim/console-port-templates", "dcim/console-server-port-templates",
+    "dcim/power-port-templates", "dcim/power-outlet-templates",
     "virtualization/cluster-types", "virtualization/cluster-groups", "virtualization/clusters",
     "dcim/devices", "dcim/interfaces", "dcim/front-ports", "dcim/rear-ports",
     "dcim/module-bays", "dcim/modules", "dcim/cables", "ipam/ip-addresses",
-    "dcim/mac-addresses",
+    "dcim/mac-addresses", "dcim/device-bays", "dcim/power-ports", "dcim/power-outlets",
+    "dcim/console-ports", "dcim/console-server-ports",
     "virtualization/virtual-machines", "virtualization/interfaces",
 ]
 
@@ -57,6 +60,20 @@ def call(method, path, body=None):
             return json.loads(raw) if raw else None
     except urllib.error.HTTPError as e:
         sys.exit(f"{method} {path} {body}: HTTP {e.code}: {e.read().decode()[:500]}")
+
+
+def try_call(method, path, body=None):
+    """call() that reports an HTTP error instead of exiting."""
+    data = json.dumps(body).encode() if body is not None else None
+    req = urllib.request.Request(f"{URL}/api/{path}", data=data, method=method,
+                                 headers={"Authorization": AUTH, "Content-Type": "application/json",
+                                          "Accept": "application/json"})
+    try:
+        with OPENER.open(req) as r:
+            raw = r.read()
+            return json.loads(raw) if raw else None, None
+    except urllib.error.HTTPError as e:
+        return None, f"HTTP {e.code}: {e.read().decode()[:300]}"
 
 
 def post(ep, **body):
@@ -210,6 +227,157 @@ def seed():
     print("seeded")
 
 
+def bulk(ep, items, size=250):
+    out = []
+    for i in range(0, len(items), size):
+        out += call("POST", f"{ep}/", items[i:i + size])
+    return out
+
+
+def seed_scale(servers_per_site):
+    """A large hand-made instance, created in bulk through the API.
+
+    Four sites, each with racks, a VLAN group, VLANs and their prefixes,
+    two switches, two patch panels and `servers_per_site` servers: an access
+    port with an address and a cable straight to a switch or through both
+    panels (cord, backbone, cord), a LAG of two NICs carrying VLANs, a GPU
+    module, tags and custom field values here and there. Then two clusters
+    with a VM per server, each with an addressed interface.
+    """
+    import random
+    require_empty()
+    rnd = random.Random(4711)
+    tag_ids = [post("extras/tags", name=n.title(), slug=n, color=c)["id"]
+               for n, c in (("prod", "ff0000"), ("backup", "00ff00"), ("pci", "0000ff"), ("legacy", "999999"))]
+    post("extras/custom-fields", name="owner", type="text", object_types=["dcim.device"])
+    post("extras/custom-fields", name="vmid", type="integer", object_types=["virtualization.virtualmachine"])
+    server = post("dcim/device-roles", name="Server", slug="server", color="0000ff", vm_role=True)
+    switch = post("dcim/device-roles", name="Switch", slug="switch", color="00ffff")
+    pprole = post("dcim/device-roles", name="Patch Panel", slug="patch-panel", color="aaaaaa")
+    dell = post("dcim/manufacturers", name="Dell", slug="dell")
+    vrf = post("ipam/vrfs", name="prod", rd="65000:1")
+
+    srvt = post("dcim/device-types", model="PowerEdge R650", slug="r650", manufacturer=dell["id"], u_height=1)
+    bulk("dcim/interface-templates", [{"device_type": srvt["id"], "name": n, "type": t, "mgmt_only": n == "idrac"}
+                                      for n, t in (("idrac", "1000base-t"), ("eth0", "25gbase-x-sfp28"),
+                                                   ("eth1", "25gbase-x-sfp28"), ("eth2", "25gbase-x-sfp28"),
+                                                   ("eth3", "25gbase-x-sfp28"))])
+    post("dcim/module-bay-templates", device_type=srvt["id"], name="PCIe 1", position="1")
+    post("dcim/power-port-templates", device_type=srvt["id"], name="PSU1", type="iec-60320-c14", maximum_draw=800)
+    swt = post("dcim/device-types", model="S5248F-ON", slug="s5248f-on", manufacturer=dell["id"], u_height=1)
+    bulk("dcim/interface-templates", [{"device_type": swt["id"], "name": f"Eth1/{i}", "type": "25gbase-x-sfp28"}
+                                      for i in range(1, 49)])
+    ports = 48
+    ppt = post("dcim/device-types", model="PP-48", slug="pp-48", manufacturer=dell["id"], u_height=1)
+    rears = bulk("dcim/rear-port-templates", [{"device_type": ppt["id"], "name": f"R{i}", "type": "lc", "positions": 1}
+                                              for i in range(1, ports + 1)])
+    bulk("dcim/front-port-templates", [{"device_type": ppt["id"], "name": str(i), "type": "lc",
+                                        "rear_ports": [{"position": 1, "rear_port": r["id"], "rear_port_position": 1}]}
+                                       for i, r in enumerate(rears, 1)])
+    gpu = post("dcim/module-types", model="A100", manufacturer=dell["id"])
+
+    ct = post("virtualization/cluster-types", name="Proxmox", slug="proxmox")
+    vms = []
+    for s in range(4):
+        site = post("dcim/sites", name=f"DC {s}", slug=f"dc-{s}", tags=[tag_ids[0]] if s % 2 == 0 else [])
+        racks = bulk("dcim/racks", [{"name": f"R{s}{r:02d}", "site": site["id"], "u_height": 42}
+                                    for r in range(1, 11)])
+        vg = post("ipam/vlan-groups", name=f"VLANs {s}", slug=f"vlans-{s}", scope_type="dcim.site", scope_id=site["id"])
+        vlans = bulk("ipam/vlans", [{"name": f"vlan{v}", "vid": v, "site": site["id"], "group": vg["id"],
+                                     "tags": [tag_ids[1]] if v % 7 == 0 else []} for v in range(10, 30)])
+        bulk("ipam/prefixes", [{"prefix": f"10.{s}.{i}.0/24", "vrf": vrf["id"], "vlan": v["id"],
+                                "scope_type": "dcim.site", "scope_id": site["id"]} for i, v in enumerate(vlans)])
+        sws = bulk("dcim/devices", [{"name": f"sw-{s}-{i}", "site": site["id"], "role": switch["id"],
+                                     "device_type": swt["id"], "rack": racks[0]["id"], "position": 40 + i, "face": "front"}
+                                    for i in (1, 2)])
+        pps = bulk("dcim/devices", [{"name": f"pp-{s}-{x}", "site": site["id"], "role": pprole["id"],
+                                     "device_type": ppt["id"], "rack": racks[r]["id"], "position": 38, "face": "front"}
+                                    for x, r in (("a", 1), ("b", 0))])
+        srvs = []
+        for i in range(servers_per_site):
+            d = {"name": f"srv-{s}-{i:03d}", "site": site["id"], "role": server["id"], "device_type": srvt["id"],
+                 "rack": racks[1 + i % 9]["id"], "position": 1 + (i // 9) * 1, "face": "front",
+                 "status": rnd.choice(["active", "active", "active", "planned", "offline"]),
+                 "serial": f"SN{s}{i:05d}", "tags": rnd.sample(tag_ids, rnd.randint(0, 2))}
+            if i % 3 == 0:
+                d["custom_fields"] = {"owner": f"team-{i % 5}"}
+            if i % 4 == 0:
+                d["asset_tag"] = f"A-{s}-{i}"
+            srvs.append(d)
+        srvs = bulk("dcim/devices", srvs)
+        ifs = {}
+        for o in list_all("dcim/interfaces", f"site_id={site['id']}&limit=1000"):
+            ifs[(o["device"]["id"], o["name"])] = o
+        fps = {(o["device"]["id"], o["name"]): o for o in list_all("dcim/front-ports", f"site_id={site['id']}&limit=1000")}
+        rps = {(o["device"]["id"], o["name"]): o for o in list_all("dcim/rear-ports", f"site_id={site['id']}&limit=1000")}
+        bays = {o["device"]["id"]: o for o in list_all("dcim/module-bays", f"site_id={site['id']}&limit=1000")}
+
+        lags = bulk("dcim/interfaces", [{"device": d["id"], "name": "bond0", "type": "lag", "mode": "tagged",
+                                         "tagged_vlans": [v["id"] for v in rnd.sample(vlans, 3)]} for d in srvs])
+        patches, ips, cables, modules = [], [], [], []
+        for i, (d, lag) in enumerate(zip(srvs, lags)):
+            v = vlans[i % len(vlans)]
+            e0 = ifs[(d["id"], "eth0")]
+            patches.append({"id": e0["id"], "mode": "access", "untagged_vlan": v["id"],
+                            "mtu": 9000 if i % 2 else None, "description": f"uplink {i}" if i % 5 == 0 else ""})
+            patches.append({"id": ifs[(d["id"], "eth1")]["id"], "lag": lag["id"],
+                            "tags": [tag_ids[2]] if i % 6 == 0 else []})
+            patches.append({"id": ifs[(d["id"], "eth2")]["id"], "lag": lag["id"]})
+            if i % 10 == 0:
+                patches.append({"id": ifs[(d["id"], "eth3")]["id"], "enabled": False})
+            ips.append({"address": f"10.{s}.{i % len(vlans)}.{10 + i // len(vlans)}/24", "vrf": vrf["id"],
+                        "assigned_object_type": "dcim.interface", "assigned_object_id": e0["id"],
+                        "dns_name": f"srv-{s}-{i:03d}.example.net"})
+            port = i % ports + 1
+            sw = sws[i // ports % 2] if i < 2 * ports else None
+            if i < ports:  # straight to a switch
+                cables.append((("dcim.interface", e0["id"]), ("dcim.interface", ifs[(sws[0]["id"], f"Eth1/{port}")]["id"]),
+                               {"type": "dac-passive", "length": 3, "length_unit": "m"}))
+            elif i < 2 * ports:  # cord, backbone, cord
+                cables.append((("dcim.interface", e0["id"]), ("dcim.frontport", fps[(pps[0]["id"], str(port))]["id"]),
+                               {"type": "mmf-om4", "color": "00ffff"}))
+                cables.append((("dcim.rearport", rps[(pps[0]["id"], f"R{port}")]["id"]),
+                               ("dcim.rearport", rps[(pps[1]["id"], f"R{port}")]["id"]), {"type": "mmf-om4"}))
+                cables.append((("dcim.frontport", fps[(pps[1]["id"], str(port))]["id"]),
+                               ("dcim.interface", ifs[(sws[1]["id"], f"Eth1/{port}")]["id"]), {}))
+            if i % 4 == 0:
+                modules.append({"device": d["id"], "module_bay": bays[d["id"]]["id"], "module_type": gpu["id"],
+                                "serial": f"GPU{s}{i:04d}"})
+        for p in patches:
+            if p.get("mtu") is None:
+                p.pop("mtu", None)
+        for i in range(0, len(patches), 250):
+            call("PATCH", "dcim/interfaces/", patches[i:i + 250])
+        made = bulk("ipam/ip-addresses", ips)
+        for i in range(0, len(srvs), 250):
+            call("PATCH", "dcim/devices/", [{"id": d["id"], "primary_ip4": ip["id"]}
+                                           for d, ip in zip(srvs[i:i + 250], made[i:i + 250])])
+        bulk("dcim/cables", [{"a_terminations": [{"object_type": a[0], "object_id": a[1]}],
+                              "b_terminations": [{"object_type": b[0], "object_id": b[1]}], **extra}
+                             for a, b, extra in cables])
+        bulk("dcim/modules", modules)
+
+        cl = post("virtualization/clusters", name=f"pve-{s}", type=ct["id"], scope_type="dcim.site", scope_id=site["id"])
+        vms += [{"name": f"vm-{s}-{i:03d}", "cluster": cl["id"], "site": site["id"], "role": server["id"],
+                 "vcpus": rnd.choice([2, 4, 8]), "memory": rnd.choice([4096, 8192]), "disk": 50,
+                 "custom_fields": {"vmid": 1000 * (s + 1) + i}, "tags": rnd.sample(tag_ids, rnd.randint(0, 1)),
+                 "_vlan": vlans[i % len(vlans)]["id"], "_net": (s, i)} for i in range(servers_per_site)]
+
+    extras = [(v.pop("_vlan"), v.pop("_net")) for v in vms]
+    made = bulk("virtualization/virtual-machines", vms)
+    vifs = bulk("virtualization/interfaces", [{"virtual_machine": vm["id"], "name": "eth0", "mode": "access",
+                                               "untagged_vlan": vl} for vm, (vl, _) in zip(made, extras)])
+    vips = bulk("ipam/ip-addresses", [{"address": f"10.{100 + s}.{i // 250}.{i % 250 + 1}/16",
+                                       "assigned_object_type": "virtualization.vminterface",
+                                       "assigned_object_id": vi["id"]} for vi, (_, (s, i)) in zip(vifs, extras)])
+    for i in range(0, len(made), 250):
+        call("PATCH", "virtualization/virtual-machines/",
+             [{"id": vm["id"], "primary_ip4": ip["id"]} for vm, ip in zip(made[i:i + 250], vips[i:i + 250])])
+    counts = {ep: call("GET", f"{ep}/?limit=1")["count"] for ep in
+              ("dcim/devices", "dcim/interfaces", "dcim/cables", "ipam/ip-addresses", "virtualization/virtual-machines")}
+    print("seeded " + ", ".join(f"{v} {k.split('/')[1]}" for k, v in counts.items()))
+
+
 def snapshot(path):
     snap = {ep: {str(o["id"]): o for o in list_all(ep)} for ep in ENDPOINTS}
     with open(path, "w") as f:
@@ -255,6 +423,12 @@ def compare(before_path, after_path):
     return 1 if problems else 0
 
 
+def managed_count(snapshot_path):
+    """How many objects in a snapshot carry the gitops tag."""
+    snap = json.load(open(snapshot_path))
+    return sum(1 for objs in snap.values() for o in objs.values() if "gitops" in tag_slugs(o))
+
+
 def untagged(snapshot_path, ep, field, value):
     """Exit 0 if the object is in the snapshot without the gitops tag."""
     snap = json.load(open(snapshot_path))
@@ -270,7 +444,7 @@ def cleanup():
     if os.environ.get("E2E_EXPORT_OWNS_INSTANCE") != "1":
         sys.exit("cleanup deletes every object; export.sh sets E2E_EXPORT_OWNS_INSTANCE=1 once it knows the instance is its own")
     order = [
-        ("dcim/cables", None), ("ipam/ip-addresses", None), ("dcim/mac-addresses", None),
+        ("dcim/cables", None), ("dcim/power-ports", None), ("dcim/console-ports", None), ("ipam/ip-addresses", None), ("dcim/mac-addresses", None),
         ("virtualization/interfaces", None), ("virtualization/virtual-machines", None),
         ("dcim/modules", None), ("dcim/devices", None),
         ("virtualization/clusters", None), ("virtualization/cluster-groups", None),
@@ -281,12 +455,53 @@ def cleanup():
         ("dcim/platforms", None), ("dcim/manufacturers", None), ("dcim/device-roles", None),
         ("extras/custom-fields", None), ("extras/tags", None),
     ]
-    for ep, _ in order:
-        for o in list_all(ep):
-            if ep == "extras/tags" and o["slug"] == "gitops":
-                continue
-            call("DELETE", f"{ep}/{o['id']}/")
+    # Several passes: a chassis cannot go while a blade sits in it, and the
+    # order of a few dependencies varies with the data.
+    for _ in range(4):
+        left = 0
+        for ep, _ in order:
+            objs = [o for o in list_all(ep) if not (ep == "extras/tags" and o["slug"] == "gitops")]
+            if ep == "dcim/devices":
+                objs.sort(key=lambda o: o.get("parent_device") is None)  # children first
+            for i in range(0, len(objs), 200):
+                chunk = [{"id": o["id"]} for o in objs[i:i + 200]]
+                _, err = try_call("DELETE", f"{ep}/", chunk)
+                if err:
+                    for o in chunk:
+                        _, err = try_call("DELETE", f"{ep}/{o['id']}/")
+                        left += 1 if err else 0
+        if not left:
+            break
     print("clean")
+
+
+def untag():
+    """Take the gitops tag off every object: what the controller made becomes
+    what a person made, with every other tag it carries left in place."""
+    gitops = list_all("extras/tags", "slug=gitops")
+    if not gitops:
+        return
+    gid = gitops[0]["id"]
+    n = 0
+    for ep in ENDPOINTS:
+        objs, err = [], None
+        path = f"{ep}/?tag=gitops&limit=1000"
+        while path:
+            page, err = try_call("GET", path)
+            if err:
+                break  # not a taggable endpoint
+            objs += page["results"]
+            nxt = page.get("next")
+            path = nxt.split("/api/", 1)[1] if nxt else None
+        objs = [o for o in objs if "tags" in o]  # tags themselves, filtered by tag
+        for i in range(0, len(objs), 200):
+            body = [{"id": o["id"], "tags": [t["id"] for t in o["tags"] if t["id"] != gid]}
+                    for o in objs[i:i + 200]]
+            _, err = try_call("PATCH", f"{ep}/", body)
+            if err:
+                sys.exit(f"untag {ep}: {err}")
+            n += len(body)
+    print(f"untagged {n}")
 
 
 if __name__ == "__main__":
@@ -301,5 +516,11 @@ if __name__ == "__main__":
         sys.exit(untagged(*sys.argv[2:6]))
     elif cmd == "cleanup":
         cleanup()
+    elif cmd == "untag":
+        untag()
+    elif cmd == "managed-count":
+        print(managed_count(sys.argv[2]))
+    elif cmd == "seed-scale":
+        seed_scale(int(sys.argv[2]))
     else:
         sys.exit(f"unknown command {cmd}")

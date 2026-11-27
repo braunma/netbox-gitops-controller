@@ -789,9 +789,9 @@ file each. Nothing is written to NetBox.
 | Tags on a device role | Cannot be declared; the first sync replaces them with `gitops`. |
 | Interfaces, front and rear ports a device type's template already provides | Listed only when they carry something of their own (an IP, VLANs, a cable, a description, tags, ...). |
 
-On NetBox 4.6 the dry-run may also show updates for sites, racks, VRFs, VLAN
-groups, VLANs and prefixes that an apply does not make; that is the known
-dry-run issue in the [changelog](CHANGELOG.md), not the export.
+The plan of that merge request lists one update per adopted object, adding the
+`gitops` tag; a cable's adoption is listed too. An interface that is a LAG
+member can appear twice, once for itself and once for the LAG binding.
 
 -----
 
