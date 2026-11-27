@@ -39,6 +39,16 @@
 #                              Default: "false". Needs a Docker-executor runner
 #                              that can pull the three images above.
 #
+# DELETION:
+#
+#   NETBOX_PRUNE               "false" — and only "false" — stops go_plan and
+#                              go_apply from passing --prune. Any other value
+#                              keeps it on. Default: "true". With it on,
+#                              removing an object from the YAML deletes it
+#                              from NetBox at the next go_apply, provided it
+#                              carries the gitops tag; untagged objects are
+#                              never touched. go_plan lists those deletions.
+#
 # THRESHOLDS AND GATES:
 #
 #   COVERAGE_THRESHOLD         Minimum total statement coverage (%). The
@@ -109,6 +119,13 @@ variables:
   # Set to "false" to skip tests (faster pipeline)
   # Default: "true" - runs all tests
   RUN_TESTS: "true"
+
+  # NETBOX_PRUNE: Controls deletion of objects removed from the YAML
+  # go_plan previews and go_apply performs `--prune`: a gitops-tagged object
+  # no longer declared is deleted. Untagged (hand-made) objects are never
+  # touched. Set to "false" to only create and update.
+  # Default: "true"
+  NETBOX_PRUNE: "true"
 
   # ===========================================================================
   # BUILD CONFIGURATION
@@ -290,7 +307,10 @@ go_plan:
     - go_build
   script:
     - echo "📜 Generating sync plan with Go..."
-    - ./netbox-gitops --dry-run | tee plan-output.txt
+    # With pruning on, the plan lists what go_apply will delete, so the
+    # merge request shows removals alongside creates and updates.
+    - PRUNE_FLAG=""; if [ "$NETBOX_PRUNE" != "false" ]; then PRUNE_FLAG="--prune"; fi
+    - ./netbox-gitops --dry-run $PRUNE_FLAG | tee plan-output.txt
     - echo "✅ Plan generated successfully!"
   artifacts:
     paths:
@@ -307,7 +327,10 @@ go_apply:
     - go_build
   script:
     - echo "🚀 Applying changes to NetBox with Go..."
-    - ./netbox-gitops
+    # --prune deletes gitops-tagged objects no longer declared in the YAML;
+    # without it, removing a rack or device from the YAML left it in NetBox.
+    - PRUNE_FLAG=""; if [ "$NETBOX_PRUNE" != "false" ]; then PRUNE_FLAG="--prune"; echo "🗑️  Pruning objects removed from the YAML (NETBOX_PRUNE=false to disable)"; fi
+    - ./netbox-gitops $PRUNE_FLAG
     - echo "✅ Changes applied successfully!"
   rules:
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH

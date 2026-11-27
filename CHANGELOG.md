@@ -22,6 +22,16 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **The GitLab pipeline now prunes.** `go_apply` runs `./netbox-gitops --prune`
+  and `go_plan` runs `--dry-run --prune`, so removing a rack, device or any
+  other object from the YAML deletes it from NetBox at the next apply, and the
+  merge request's plan lists it as a deletion. Before, the pipeline never
+  passed `--prune` and removed objects stayed in NetBox. Only `gitops`-tagged
+  objects are deleted. **Before your first apply with this change, read the
+  plan:** every managed object removed from the YAML since you started using
+  the controller is deleted in one go. Set `NETBOX_PRUNE=false` to keep the old
+  create-and-update-only behaviour.
+
 - **Fewer requests per run.** A converged run against the sample data needs
   about a quarter fewer API requests, and roughly a third less time.
   - The interfaces, front ports and rear ports of a device, a VM's interfaces,

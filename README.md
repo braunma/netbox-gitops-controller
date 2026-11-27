@@ -1243,6 +1243,11 @@ are never touched.
 ./netbox-gitops --only network --prune
 ```
 
+The GitLab pipeline in this repository passes `--prune` to `go_plan` and
+`go_apply`, so a merge request that removes an object from the YAML shows the
+deletion in its plan and the apply carries it out. Set the CI/CD variable
+`NETBOX_PRUNE=false` to turn that off.
+
 Pruning runs after all selected phases and deletes endpoints in reverse
 dependency order (device/VM children first, then sites/platforms/tenants/tags
 last) to respect NetBox foreign-key constraints. It is scoped to the phases that
