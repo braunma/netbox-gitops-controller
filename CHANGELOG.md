@@ -12,6 +12,16 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Added
+
+- **`netbox-gitops export`** writes what a NetBox instance already holds as
+  this repository's YAML, so objects created by hand can be adopted instead of
+  retyped. Only objects the repository does not declare yet are written, under
+  the identity they already have and with their existing tags, so the first
+  sync after merging adds the `gitops` tag and changes nothing else. What the
+  YAML cannot carry is reported, not silently dropped. Adopted objects are
+  managed from then on, including by `--prune`. Read-only against NetBox.
+
 ### Known issues
 
 - **`--dry-run --detailed-exitcode` reports changes on a converged instance.**

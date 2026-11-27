@@ -53,6 +53,7 @@ make check
 | understand why a change did nothing | [Common Errors](#common-errors) and [Phase Order](#phase-order-dependency-model) |
 | remove something | [Pruning Orphans](#6-pruning-orphans) — deletion is opt-in |
 | see every flag, variable or CI setting | [`docs/CONFIGURATION.md`](docs/CONFIGURATION.md) — one verified table per command |
+| bring a NetBox that was filled by hand under GitOps | [Adopting what NetBox already holds](#-adopting-what-netbox-already-holds) — `netbox-gitops export` |
 | document machines that already exist, without typing them in | [`docs/INGEST.md`](docs/INGEST.md) — sources → YAML → MR → NetBox |
 | know what is planned but not built | [`docs/ROADMAP.md`](docs/ROADMAP.md) |
 
@@ -728,6 +729,61 @@ running all three through:
 | `yamlcheck` | no | Is this repository coherent with itself? |
 | `validate` | yes | Will this instance accept these values? |
 | `--dry-run` | yes | What would change? |
+
+-----
+
+## 📥 Adopting what NetBox already holds
+
+A NetBox that was filled in by hand before this repository existed does not
+have to be retyped. `export` reads it and writes every object the repository
+does not declare yet as YAML:
+
+```bash
+./netbox-gitops export --dry-run          # list the files it would write
+./netbox-gitops export                    # write them into definitions/ and inventory/
+./netbox-gitops export --site berlin-dc   # one site at a time (shared definitions always)
+./netbox-gitops export --out /tmp/review  # somewhere else, to look at first
+```
+
+Each object is written under the name or slug it already has, so the next sync
+**adopts** it rather than creating a second one: it finds the object, adds the
+`gitops` tag, and manages it from then on. Every field the sync would send
+carries the value NetBox already holds, so for an object exported unchanged
+the first sync changes nothing but the tag list. That includes the object's
+existing tags: a sync sets an object's tags to exactly what the YAML declares,
+so they are exported, and every tag is exported as a definition.
+
+Then:
+
+1. Read the end of the export's output. It lists everything NetBox holds that
+   the YAML cannot carry, and what was therefore left out (see below).
+2. `make check` and `./netbox-gitops --dry-run`. The plan should be tag
+   additions; anything else is worth a look before merging.
+3. Open the merge request. After it is applied the objects are managed like
+   any other, **including deletion by `--prune`** once removed from the YAML.
+
+Running `export` again only writes what is still undeclared, so it can be
+done a site at a time. It never overwrites a file (`--force` does); files are
+named `imported*.yaml`, devices one file per site, device and module types one
+file each. Nothing is written to NetBox.
+
+**What is not exported, or exported with a caveat** — each case is reported:
+
+| NetBox holds | What happens |
+|---|---|
+| A device's platform, tenant, description, comments, location, OOB IP; a site's region; a VLAN's or prefix's role | Not in the YAML. A sync does not send them, so they stay as they are. |
+| Several IP addresses on one interface | The primary one (else the first) is declared; the others stay in NetBox, unmanaged. |
+| An address in the global table inside a prefix of a VRF | Not declared: the controller would derive the prefix's VRF, miss the address, and create a copy. |
+| A VLAN in no group at a site with exactly one VLAN group | Exported; the first sync moves it into that group (the controller derives it). |
+| A prefix with no site whose VLAN is at exactly one site | Exported; the first sync scopes it to that site (derived the same way). |
+| VLANs without a site, devices without a name, VM names used twice | Not exported: the repository identifies them by site, name, and name. |
+| Cables to circuits, power or console ports; cables the controller would look for differently (e.g. patch panel front to front) | Not exported. |
+| Tags on a device role | Cannot be declared; the first sync replaces them with `gitops`. |
+| Interfaces, front and rear ports a device type's template already provides | Listed only when they carry something of their own (an IP, VLANs, a cable, a description, tags, ...). |
+
+On NetBox 4.6 the dry-run may also show updates for sites, racks, VRFs, VLAN
+groups, VLANs and prefixes that an apply does not make; that is the known
+dry-run issue in the [changelog](CHANGELOG.md), not the export.
 
 -----
 
