@@ -186,3 +186,18 @@ func TestLoadGlobalReportsFirstFailureInOrder(t *testing.T) {
 		}
 	}
 }
+
+// The label of an object found by neither name nor slug must not depend on
+// map iteration order, or two plans of the same state differ.
+func TestFormatLookupIsDeterministic(t *testing.T) {
+	c := &NetBoxClient{}
+	for i := 0; i < 50; i++ {
+		got := c.formatLookup(map[string]interface{}{"vrf_id": 43, "prefix": "10.10.40.0/24", "site_id": 2})
+		if got != "prefix=10.10.40.0/24" {
+			t.Fatalf("formatLookup = %q, want prefix=10.10.40.0/24", got)
+		}
+	}
+	if got := c.formatLookup(nil); got != "{}" {
+		t.Errorf("formatLookup(nil) = %q", got)
+	}
+}

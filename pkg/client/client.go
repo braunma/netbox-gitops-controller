@@ -684,11 +684,19 @@ func (c *NetBoxClient) formatLookup(lookup map[string]interface{}) string {
 	if slug, ok := lookup["slug"]; ok {
 		return fmt.Sprintf("slug=%v", slug)
 	}
-	// Return first key-value pair
-	for k, v := range lookup {
-		return fmt.Sprintf("%s=%v", k, v)
+	// Otherwise the first key in sorted order. Taking the first one Go's map
+	// iteration happens to yield labelled the same object differently from
+	// run to run (prefix=... one time, vrf_id=... the next), which made two
+	// plans of the same state differ.
+	if len(lookup) == 0 {
+		return "{}"
 	}
-	return "{}"
+	keys := make([]string, 0, len(lookup))
+	for k := range lookup {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+	return fmt.Sprintf("%s=%v", keys[0], lookup[keys[0]])
 }
 
 // printDiff prints a visual diff for pipeline console visibility
