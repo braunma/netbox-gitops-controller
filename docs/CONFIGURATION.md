@@ -223,6 +223,7 @@ pipeline**. Two things are true of all of them:
 | `RUN_TESTS` | `true` | `false` skips `go_test`. |
 | `RUN_QUALITY_CHECKS` | `true` | `false` skips `go_lint`, `yaml_check` and `ingest_check`. |
 | `RUN_E2E` | `false` | Exactly `true` enables `e2e`. Needs a Docker-executor runner that can pull the three service images. |
+| `NETBOX_PRUNE` | `true` | Exactly `false` drops `--prune` from `go_plan` and `go_apply`. Otherwise the plan lists, and the apply deletes, every `gitops`-tagged object no longer declared in the YAML. |
 | `COVERAGE_THRESHOLD` | `65` (from the Makefile) | Minimum total statement coverage. `go_test` runs `make coverage`, which measures `./...` and enforces the bar; setting this variable overrides the Makefile's default. A non-numeric or empty value fails the job rather than disabling the gate. |
 
 ### Fact ingestion (optional, opt-in)

@@ -26,8 +26,8 @@ NetBox only through the GitLab `apply` stage.
 | build | `go_build` | branches + MRs | auto | Builds the `netbox-gitops` binary (artifact, 1 week). |
 | validate | `debug_environment` | — | manual | Dumps repo/Go/env info for debugging, with `go_build`'s binary. |
 | validate | `go_validate` | non-default branches + MRs | auto | `./netbox-gitops validate` (choice values and references against the live instance), then `./netbox-gitops --dry-run`. |
-| plan | `go_plan` | MRs only | auto | `--dry-run` → `plan-output.txt` artifact for review. |
-| apply | `go_apply` | default branch | **manual** | `./netbox-gitops` (production deploy). |
+| plan | `go_plan` | MRs only | auto | `--dry-run --prune` → `plan-output.txt` artifact for review, deletions included. |
+| apply | `go_apply` | default branch | **manual** | `./netbox-gitops --prune` (production deploy; deletes gitops-tagged objects removed from the YAML). |
 
 ### Fact ingestion (opt-in, not included by default)
 
@@ -61,6 +61,7 @@ Everything the pipeline reads, and what setting it does. Set them in
 | `RUN_TESTS` | `true` | Exactly `"false"` skips `go_test`; any other value runs it. |
 | `RUN_QUALITY_CHECKS` | `true` | Exactly `"false"` skips `go_lint`, `yaml_check` and `ingest_check`. |
 | `RUN_E2E` | `false` | Exactly `"true"` enables `e2e`. Needs a Docker-executor runner. |
+| `NETBOX_PRUNE` | `true` | Exactly `"false"` drops `--prune` from `go_plan` and `go_apply`, so objects removed from the YAML stay in NetBox. Any other value prunes: a `gitops`-tagged object no longer declared is deleted. Untagged objects are never touched. |
 | `INGEST_SCHEDULE` | unset | Exactly `"true"`, set on a **pipeline schedule**, runs the optional fact-ingestion jobs. Only read when `.gitlab-ci.ingest.example.yml` is included. |
 | `GITOPS_PUSH_TOKEN` | — | Required by those jobs: a project access token with `write_repository` and `api` scope, so they can push a branch and open a merge request. Mask it. |
 | `COVERAGE_THRESHOLD` | `65` | Minimum total statement coverage (%) for `go_test` over `./pkg/...`. Coverage there is ~79% (August 2026). A non-numeric or empty value fails the job rather than disabling the gate. |
@@ -92,7 +93,8 @@ The end-to-end scripts additionally read `E2E_SEEDS`, `E2E_KEEP` and
 ## Typical flow
 
 1. Push a feature branch → tests, lint, build and `--dry-run` validate run.
-2. Open an MR → `go_plan` produces a `plan-output.txt` artifact; review it.
+2. Open an MR → `go_plan` produces a `plan-output.txt` artifact; review it,
+   including the `delete` lines for anything the MR removes from the YAML.
 3. Merge to the default branch → trigger `go_apply` manually to deploy.
 
 ### Validating branches that add new objects
