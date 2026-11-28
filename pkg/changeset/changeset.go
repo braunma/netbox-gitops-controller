@@ -73,7 +73,7 @@ type kind struct {
 	label string
 	group string
 	// objects returns the list as (identity, object) pairs.
-	objects func(ds *loader.Dataset) []object
+	objects func(ds *loader.Dataset, f forward) []object
 	// removable is false for kinds a prune never deletes (tags, custom
 	// fields), so they are not announced as pending deletions.
 	removable bool
@@ -123,79 +123,85 @@ func scoped(parts ...string) string {
 }
 
 var definitionKinds = []kind{
-	{"tag", GroupFoundation, func(ds *loader.Dataset) []object {
+	{"tag", GroupFoundation, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.Tags, func(t *models.Tag) string { return t.Slug }, nil)
 	}, false},
-	{"role", GroupFoundation, func(ds *loader.Dataset) []object {
+	{"role", GroupFoundation, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.Roles, func(r *models.Role) string { return r.Slug },
 			func(r *models.Role) string { return r.RenameFrom })
 	}, true},
-	{"custom field", GroupFoundation, func(ds *loader.Dataset) []object {
+	{"custom field", GroupFoundation, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.CustomFields, func(f *models.CustomField) string { return f.Name },
 			func(f *models.CustomField) string { return f.RenameFrom })
 	}, false},
-	{"platform", GroupFoundation, func(ds *loader.Dataset) []object {
+	{"platform", GroupFoundation, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.Platforms, func(p *models.Platform) string { return p.Slug },
 			func(p *models.Platform) string { return p.RenameFrom })
 	}, true},
-	{"tenant group", GroupFoundation, func(ds *loader.Dataset) []object {
+	{"tenant group", GroupFoundation, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.TenantGroups, func(g *models.TenantGroup) string { return g.Slug },
 			func(g *models.TenantGroup) string { return g.RenameFrom })
 	}, true},
-	{"tenant", GroupFoundation, func(ds *loader.Dataset) []object {
+	{"tenant", GroupFoundation, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.Tenants, func(t *models.Tenant) string { return t.Slug },
 			func(t *models.Tenant) string { return t.RenameFrom })
 	}, true},
-	{"site", GroupFoundation, func(ds *loader.Dataset) []object {
+	{"site", GroupFoundation, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.Sites, func(s *models.Site) string { return s.Slug },
 			func(s *models.Site) string { return s.RenameFrom })
 	}, true},
-	{"rack", GroupFoundation, func(ds *loader.Dataset) []object {
-		return each(ds.Racks, func(r *models.Rack) string { return scoped(r.SiteSlug, r.Slug) },
+	{"rack", GroupFoundation, func(ds *loader.Dataset, f forward) []object {
+		// NetBox identity: the name within a site (a rack has no slug
+		// there); rename_from holds the previous name.
+		objs := each(ds.Racks, func(r *models.Rack) string { return scoped(f.site(r.SiteSlug), r.Name) },
 			func(r *models.Rack) string { return renamed(r.SiteSlug, r.RenameFrom) })
+		for i, r := range ds.Racks {
+			objs[i].name = scoped(r.SiteSlug, r.Slug)
+		}
+		return objs
 	}, true},
 
-	{"VRF", GroupNetwork, func(ds *loader.Dataset) []object {
+	{"VRF", GroupNetwork, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.VRFs, func(v *models.VRF) string { return v.Name },
 			func(v *models.VRF) string { return v.RenameFrom })
 	}, true},
-	{"VLAN group", GroupNetwork, func(ds *loader.Dataset) []object {
-		return each(ds.VLANGroups, func(g *models.VLANGroup) string { return scoped(g.SiteSlug, g.Slug) },
+	{"VLAN group", GroupNetwork, func(ds *loader.Dataset, f forward) []object {
+		return each(ds.VLANGroups, func(g *models.VLANGroup) string { return scoped(f.site(g.SiteSlug), g.Slug) },
 			func(g *models.VLANGroup) string { return renamed(g.SiteSlug, g.RenameFrom) })
 	}, true},
-	{"VLAN", GroupNetwork, func(ds *loader.Dataset) []object {
+	{"VLAN", GroupNetwork, func(ds *loader.Dataset, f forward) []object {
 		// NetBox identity as the reconciler uses it: the vid within a site.
 		// rename_from holds the previous vid.
-		objs := each(ds.VLANs, func(v *models.VLAN) string { return scoped(v.SiteSlug, strconv.Itoa(v.VID)) },
+		objs := each(ds.VLANs, func(v *models.VLAN) string { return scoped(f.site(v.SiteSlug), strconv.Itoa(v.VID)) },
 			func(v *models.VLAN) string { return renamed(v.SiteSlug, v.RenameFrom) })
 		for i, v := range ds.VLANs {
 			objs[i].name = scoped(v.SiteSlug, fmt.Sprintf("%s (%d)", v.Name, v.VID))
 		}
 		return objs
 	}, true},
-	{"prefix", GroupNetwork, func(ds *loader.Dataset) []object {
-		return each(ds.Prefixes, func(p *models.Prefix) string { return scoped(p.VRFName, p.Prefix) },
+	{"prefix", GroupNetwork, func(ds *loader.Dataset, f forward) []object {
+		return each(ds.Prefixes, func(p *models.Prefix) string { return scoped(f.vrf(p.VRFName), p.Prefix) },
 			func(p *models.Prefix) string { return renamed(p.VRFName, p.RenameFrom) })
 	}, true},
 
-	{"module type", GroupDeviceTypes, func(ds *loader.Dataset) []object {
+	{"module type", GroupDeviceTypes, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.ModuleTypes, moduleTypeKey,
 			func(m *models.ModuleType) string { return m.RenameFrom })
 	}, true},
-	{"device type", GroupDeviceTypes, func(ds *loader.Dataset) []object {
+	{"device type", GroupDeviceTypes, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.DeviceTypes, func(d *models.DeviceType) string { return d.Slug },
 			func(d *models.DeviceType) string { return d.RenameFrom })
 	}, true},
 
-	{"cluster type", GroupClusters, func(ds *loader.Dataset) []object {
+	{"cluster type", GroupClusters, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.ClusterTypes, func(c *models.ClusterType) string { return c.Slug },
 			func(c *models.ClusterType) string { return c.RenameFrom })
 	}, true},
-	{"cluster group", GroupClusters, func(ds *loader.Dataset) []object {
+	{"cluster group", GroupClusters, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.ClusterGroups, func(c *models.ClusterGroup) string { return c.Slug },
 			func(c *models.ClusterGroup) string { return c.RenameFrom })
 	}, true},
-	{"cluster", GroupClusters, func(ds *loader.Dataset) []object {
+	{"cluster", GroupClusters, func(ds *loader.Dataset, f forward) []object {
 		return each(ds.Clusters, func(c *models.Cluster) string { return c.Name },
 			func(c *models.Cluster) string { return c.RenameFrom })
 	}, true},
@@ -277,7 +283,10 @@ type change struct {
 
 // diffKind compares one kind of object between the two datasets.
 func diffKind(k kind, base, head *loader.Dataset) (changed []change, removed []string) {
-	return diffObjects(k.objects(base), k.objects(head))
+	// base is read with the renames head declares applied to the scopes its
+	// identities are built from, so that an object in a renamed site or VRF
+	// is the same object and not a removed one plus a new one.
+	return diffObjects(k.objects(base, forwardOf(head)), k.objects(head, forward{}))
 }
 
 // diffObjects returns the objects of head that are new or differ from base,
@@ -400,12 +409,13 @@ func compareDevices(base, head *loader.Dataset, changedTypes map[string]map[stri
 	// NetBox identifies a device by its name within a site. A device whose
 	// site changed is therefore created anew, and the one at the old site is
 	// what the next pruning sync removes.
+	fwd := forwardOf(head)
 	was := map[string]*models.DeviceConfig{}
 	for _, d := range base.Devices {
 		was[d.Name] = d
 	}
 	for _, d := range head.Devices {
-		if old, ok := was[d.Name]; ok && old.SiteSlug != d.SiteSlug {
+		if old, ok := was[d.Name]; ok && fwd.site(old.SiteSlug) != d.SiteSlug {
 			res.Removed = append(res.Removed, fmt.Sprintf("device %s at site %s (it moved to %s, where NetBox gets a new device)", d.Name, old.SiteSlug, d.SiteSlug))
 		}
 	}
@@ -528,7 +538,7 @@ func compareVMs(base, head *loader.Dataset, changedClusters map[string]bool, res
 		wasVM[vm.Name] = vm
 	}
 	for _, vm := range head.VMs {
-		if old, ok := wasVM[vm.Name]; ok && vm.Cluster != "" && old.Cluster != vm.Cluster {
+		if old, ok := wasVM[vm.Name]; ok && vm.Cluster != "" && forwardOf(head).cluster(old.Cluster) != vm.Cluster {
 			res.Removed = append(res.Removed, fmt.Sprintf("VM %s in %s (it moved to %s, where NetBox gets a new VM)", vm.Name, place(old.Cluster), place(vm.Cluster)))
 		}
 	}
@@ -553,12 +563,14 @@ func removedParts(base, head *loader.Dataset) []string {
 			headDevices[d.RenameFrom] = d
 		}
 	}
+	earlier := earlierNames(head)
+	fwd := forwardOf(head)
 	for _, was := range base.Devices {
 		now, ok := headDevices[was.Name]
 		if !ok {
 			continue
 		}
-		removed = append(removed, missing(deviceParts(was), deviceParts(now), now.Name)...)
+		removed = append(removed, missing(deviceParts(was, nil, fwd), deviceParts(now, earlier, forward{}), now.Name)...)
 	}
 
 	headVMs := map[string]*models.VMConfig{}
@@ -573,7 +585,7 @@ func removedParts(base, head *loader.Dataset) []string {
 		if !ok {
 			continue
 		}
-		removed = append(removed, missing(vmParts(was), vmParts(now), now.Name)...)
+		removed = append(removed, missing(vmParts(was, fwd), vmParts(now, forward{}), now.Name)...)
 	}
 	return removed
 }
@@ -586,7 +598,10 @@ type part struct {
 	keys  []string
 }
 
-func deviceParts(d *models.DeviceConfig) []part {
+// deviceParts lists the prunable parts of a device. earlier, when given,
+// holds the names things had before a rename_from, so that a cable is still
+// recognised after one of its ends was renamed.
+func deviceParts(d *models.DeviceConfig, earlier *renames, f forward) []part {
 	var parts []part
 	for _, m := range d.Modules {
 		parts = append(parts, part{"module " + m.Name, []string{"module " + m.Name}})
@@ -598,28 +613,28 @@ func deviceParts(d *models.DeviceConfig) []part {
 		}
 		parts = append(parts, p)
 		if i.IP != nil && i.IP.Address != "" {
-			parts = append(parts, ipPart(i.IP))
+			parts = append(parts, ipPart(i.IP, f))
 		}
 		if i.Link != nil {
-			parts = append(parts, cablePart(i.Name, i.Link))
+			parts = append(parts, cablePart(i.Name, i.RenameFrom, i.Link, earlier))
 		}
 	}
 	for _, p := range d.FrontPorts {
 		parts = append(parts, part{"front port " + p.Name, []string{"front port " + p.Name}})
 		if p.Link != nil {
-			parts = append(parts, cablePart(p.Name, p.Link))
+			parts = append(parts, cablePart(p.Name, "", p.Link, earlier))
 		}
 	}
 	for _, p := range d.RearPorts {
 		parts = append(parts, part{"rear port " + p.Name, []string{"rear port " + p.Name}})
 		if p.Link != nil {
-			parts = append(parts, cablePart(p.Name, p.Link))
+			parts = append(parts, cablePart(p.Name, "", p.Link, earlier))
 		}
 	}
 	return parts
 }
 
-func vmParts(vm *models.VMConfig) []part {
+func vmParts(vm *models.VMConfig, f forward) []part {
 	var parts []part
 	for _, i := range vm.Interfaces {
 		p := part{"interface " + i.Name, []string{"interface " + i.Name}}
@@ -628,7 +643,7 @@ func vmParts(vm *models.VMConfig) []part {
 		}
 		parts = append(parts, p)
 		if i.IP != nil && i.IP.Address != "" {
-			parts = append(parts, ipPart(i.IP))
+			parts = append(parts, ipPart(i.IP, f))
 		}
 		if i.MACAddress != "" {
 			// A MAC address is an object of its own in NetBox; one that is
@@ -640,17 +655,70 @@ func vmParts(vm *models.VMConfig) []part {
 	return parts
 }
 
-func ipPart(ip *models.IPConfig) part {
+func ipPart(ip *models.IPConfig, f forward) part {
 	label := "address " + ip.Address
 	if ip.VRF != "" {
-		label += " (VRF " + ip.VRF + ")"
+		label += " (VRF " + f.vrf(ip.VRF) + ")"
 	}
 	return part{label, []string{label}}
 }
 
-func cablePart(port string, l *models.LinkConfig) part {
-	label := fmt.Sprintf("cable %s <-> %s[%s]", port, l.PeerDevice, l.PeerPort)
-	return part{label, []string{label}}
+// renames holds, for a dataset, what its renamed devices and interfaces were
+// called before: device name -> previous name, and device name -> interface
+// name -> previous name.
+type renames struct {
+	devices    map[string]string
+	interfaces map[string]map[string]string
+}
+
+func earlierNames(ds *loader.Dataset) *renames {
+	r := &renames{devices: map[string]string{}, interfaces: map[string]map[string]string{}}
+	for _, d := range ds.Devices {
+		if d.RenameFrom != "" {
+			r.devices[d.Name] = d.RenameFrom
+		}
+		for _, i := range d.Interfaces {
+			if i.RenameFrom == "" {
+				continue
+			}
+			if r.interfaces[d.Name] == nil {
+				r.interfaces[d.Name] = map[string]string{}
+			}
+			r.interfaces[d.Name][i.Name] = i.RenameFrom
+		}
+	}
+	return r
+}
+
+// cablePart names a cable by its two ends. A cable is the same cable after
+// the port it starts on, the device at its far end or the port there was
+// renamed with rename_from, so with earlier it also claims every spelling
+// those names had before.
+func cablePart(port, portWas string, l *models.LinkConfig, earlier *renames) part {
+	label := func(port, peer, peerPort string) string {
+		return fmt.Sprintf("cable %s <-> %s[%s]", port, peer, peerPort)
+	}
+	p := part{label(port, l.PeerDevice, l.PeerPort), nil}
+	ports, peers, peerPorts := []string{port}, []string{l.PeerDevice}, []string{l.PeerPort}
+	if earlier != nil {
+		if portWas != "" {
+			ports = append(ports, portWas)
+		}
+		if was := earlier.devices[l.PeerDevice]; was != "" {
+			peers = append(peers, was)
+		}
+		if was := earlier.interfaces[l.PeerDevice][l.PeerPort]; was != "" {
+			peerPorts = append(peerPorts, was)
+		}
+	}
+	for _, a := range ports {
+		for _, b := range peers {
+			for _, c := range peerPorts {
+				p.keys = append(p.keys, label(a, b, c))
+			}
+		}
+	}
+	return p
 }
 
 // missing returns the parts of was that no part of now claims, as
@@ -677,4 +745,44 @@ func place(cluster string) string {
 		return "no cluster"
 	}
 	return "cluster " + cluster
+}
+
+// forward maps the names of sites, VRFs and clusters a dataset renamed with
+// rename_from: previous name -> current name. Identities that are built from
+// such a name (a VLAN in a site, a prefix in a VRF, a VM in a cluster) are
+// read through it on the base side, so a renamed scope does not make
+// everything in it look removed and created again.
+type forward struct {
+	sites, vrfs, clusters map[string]string
+}
+
+func forwardOf(ds *loader.Dataset) forward {
+	f := forward{sites: map[string]string{}, vrfs: map[string]string{}, clusters: map[string]string{}}
+	for _, s := range ds.Sites {
+		if s.RenameFrom != "" {
+			f.sites[s.RenameFrom] = s.Slug
+		}
+	}
+	for _, v := range ds.VRFs {
+		if v.RenameFrom != "" {
+			f.vrfs[v.RenameFrom] = v.Name
+		}
+	}
+	for _, c := range ds.Clusters {
+		if c.RenameFrom != "" {
+			f.clusters[c.RenameFrom] = c.Name
+		}
+	}
+	return f
+}
+
+func (f forward) site(slug string) string    { return now(f.sites, slug) }
+func (f forward) vrf(name string) string     { return now(f.vrfs, name) }
+func (f forward) cluster(name string) string { return now(f.clusters, name) }
+
+func now(renamed map[string]string, name string) string {
+	if to, ok := renamed[name]; ok {
+		return to
+	}
+	return name
 }
