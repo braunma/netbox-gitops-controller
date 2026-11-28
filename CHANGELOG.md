@@ -14,6 +14,25 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **`export` adds to an earlier export instead of colliding with it.** A file
+  that already exists is kept and the new export is written next to it
+  (`imported-2.yaml`); before, the run was refused, and `--force` replaced the
+  merged file with only the new objects — undeclaring the rest, which a sync
+  with `--prune` then deletes. `--force` is now refused unless `--out` points
+  outside the data directory. Devices, VLANs and VRFs that share the identity
+  a sync matches on, and module types of one manufacturer whose models share
+  a slug, are reported and left out instead of being exported twice or over
+  each other.
+- **The request timeout scales with the page size**: 30 s up to 250 objects
+  per page, 120 s at the default of 1000.
+- **`netbox_export` pushes a branch of its own per run**
+  (`chore/netbox-export-<pipeline id>`, no force-push), so a second run no
+  longer replaces an unmerged export, and it no longer fails when the export
+  wrote only `definitions/` or only `inventory/`.
+- **`make e2e` no longer runs `export.sh`** (use `make e2e-export`; the CI job
+  still runs it). The script deletes every object, so it now refuses to start
+  unless every endpoint it cleans up is empty, not only sites, devices, VMs
+  and prefixes, and it cleans up after a seed that failed part-way.
 - **The README is a landing page; the reference moved to `docs/`.** The README
   went from about 1,600 lines to about 230: what the tool does, one example,
   the Quickstart, the features and an index of guides. The sections it used to

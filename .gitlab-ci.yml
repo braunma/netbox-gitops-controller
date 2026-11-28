@@ -542,7 +542,8 @@ go_apply_full:
 #
 # Manual, and only on the default branch, so the export starts from what is
 # actually merged. Run it again after a merge and it exports what is still
-# left (it skips everything declared). Set EXPORT_SITES="site-a,site-b" in
+# left (it skips everything declared, and writes next to the files already
+# there). Every run pushes a branch and merge request of its own. Set EXPORT_SITES="site-a,site-b" in
 # "Run pipeline" to adopt a site at a time — a smaller plan to review.
 #
 # Needs NETBOX_URL/NETBOX_TOKEN (read access is enough) and GITOPS_PUSH_TOKEN
@@ -555,7 +556,9 @@ netbox_export:
     - go_build
   variables:
     GIT_STRATEGY: clone
-    EXPORT_BRANCH: "chore/netbox-export"
+    # One branch per run: a second run (the next site) must not replace the
+    # unmerged export of the first.
+    EXPORT_BRANCH: "chore/netbox-export-${CI_PIPELINE_ID}"
   script:
     # Do not add `set -x`: it would print the Authorization header below.
     - |
@@ -601,7 +604,11 @@ netbox_export:
       # `git add` would silently leave every new exported file out of the MR.
       # This is a fresh clone, so the only untracked files there are the
       # export's.
-      git add -f -- definitions/ inventory/
+      # Only what exists: an export of definitions alone creates no
+      # inventory/, and `git add` fails on a path that matches nothing.
+      for d in definitions inventory; do
+        if [ -d "$d" ]; then git add -f -- "$d/"; fi
+      done
       git commit -q -F - <<MSG
       chore(export): adopt objects that already exist in NetBox
 
@@ -613,7 +620,7 @@ netbox_export:
 
       # The token goes in a header, never in the URL (git echoes URLs in errors).
       AUTH=$(printf 'gitlab-ci-token:%s' "${GITOPS_PUSH_TOKEN}" | base64 | tr -d '\n')
-      git -c http.extraheader="Authorization: Basic ${AUTH}" push -f \
+      git -c http.extraheader="Authorization: Basic ${AUTH}" push \
         -o merge_request.create \
         -o merge_request.target="${CI_DEFAULT_BRANCH}" \
         -o merge_request.title="chore(export): adopt objects that already exist in NetBox" \

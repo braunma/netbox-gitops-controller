@@ -102,7 +102,7 @@ func NewClient(baseURL, token string, dryRun bool) (*NetBoxClient, error) {
 	}
 
 	httpClient := &http.Client{
-		Timeout:   30 * time.Second,
+		Timeout:   requestTimeout(pageSize),
 		Transport: newTransport(skipVerify),
 	}
 
@@ -140,6 +140,18 @@ const (
 	// follows, so a value above the server's limit costs requests, not results.
 	defaultPageSize = 1000
 )
+
+// requestTimeout is the HTTP timeout for a client that lists pageSize objects
+// per request: 30 seconds for up to 250 objects, the page size the timeout
+// was chosen for, and proportionally more for a larger page, so that raising
+// the page size does not turn a slow but working instance into timeouts.
+func requestTimeout(pageSize int) time.Duration {
+	const base, basePage = 30 * time.Second, 250
+	if pageSize <= basePage {
+		return base
+	}
+	return base * time.Duration(pageSize) / basePage
+}
 
 // pageSizeEnv overrides defaultPageSize, for an instance whose large pages are
 // slow enough to approach the request timeout.

@@ -40,9 +40,9 @@ func TestWriteExportWritesEveryFile(t *testing.T) {
 	}
 }
 
-// An existing file stops the whole export before anything is written, so a
-// refusal never leaves half an export behind.
-func TestWriteExportRefusesToOverwrite(t *testing.T) {
+// An existing file is never replaced: the export is written next to it, so a
+// second export adds to a merged first one instead of undeclaring its objects.
+func TestWriteExportKeepsExistingFiles(t *testing.T) {
 	dir := t.TempDir()
 	existing := filepath.Join(dir, "inventory/hardware/active/imported-a.yaml")
 	if err := os.MkdirAll(filepath.Dir(existing), 0o750); err != nil {
@@ -52,15 +52,23 @@ func TestWriteExportRefusesToOverwrite(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	err := writeExport(&bytes.Buffer{}, dir, sampleExport(), false, false, false)
-	if err == nil || !strings.Contains(err.Error(), "imported-a.yaml") {
-		t.Fatalf("writeExport() error = %v, want a refusal naming the file", err)
+	var dry bytes.Buffer
+	if err := writeExport(&dry, dir, sampleExport(), false, true, false); err != nil {
+		t.Fatalf("writeExport(dry-run) error = %v", err)
 	}
-	if _, err := os.Stat(filepath.Join(dir, "definitions/sites/imported.yaml")); !os.IsNotExist(err) {
-		t.Errorf("a file was written despite the refusal")
+	if !strings.Contains(dry.String(), "imported-a-2.yaml") {
+		t.Errorf("dry run does not name the file it would write:\n%s", dry.String())
+	}
+
+	if err := writeExport(&bytes.Buffer{}, dir, sampleExport(), false, false, false); err != nil {
+		t.Fatalf("writeExport() error = %v", err)
 	}
 	if got, _ := os.ReadFile(existing); string(got) != "mine" {
 		t.Errorf("existing file was changed to %q", got)
+	}
+	next := filepath.Join(dir, "inventory/hardware/active/imported-a-2.yaml")
+	if got, err := os.ReadFile(next); err != nil || string(got) != "- name: d\n" {
+		t.Errorf("%s = %q, %v; want the export next to the existing file", next, got, err)
 	}
 
 	if err := writeExport(&bytes.Buffer{}, dir, sampleExport(), true, false, false); err != nil {
@@ -68,6 +76,19 @@ func TestWriteExportRefusesToOverwrite(t *testing.T) {
 	}
 	if got, _ := os.ReadFile(existing); string(got) == "mine" {
 		t.Errorf("--force did not overwrite")
+	}
+}
+
+// Two files under one path would lose the first without a word.
+func TestWriteExportRefusesDuplicatePaths(t *testing.T) {
+	dir := t.TempDir()
+	res := sampleExport()
+	res.Files = append(res.Files, res.Files[0])
+	if err := writeExport(&bytes.Buffer{}, dir, res, false, false, false); err == nil {
+		t.Fatal("writeExport() accepted two files with one path")
+	}
+	if entries, _ := os.ReadDir(dir); len(entries) != 0 {
+		t.Errorf("wrote %d entries despite the refusal", len(entries))
 	}
 }
 

@@ -81,7 +81,6 @@ ingest-preview: build ## Show what a collector run would write, without writing 
 	./$(BINARY) collect --dry-run
 
 e2e: ## End-to-end tests (needs NETBOX_URL and NETBOX_TOKEN)
-	./tests/e2e/export.sh
 	./tests/e2e/run.sh
 	./tests/e2e/rename.sh
 	./tests/e2e/changed.sh

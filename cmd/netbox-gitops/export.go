@@ -41,8 +41,11 @@ Merging the files makes the next sync adopt those objects: it finds each one,
 stamps the gitops tag on it, and manages it from then on. For an object
 exported unchanged, the sync changes nothing else; run --dry-run to see that.
 
-Files are named imported*.yaml. An existing file is never overwritten unless
---force is given. Nothing is written to NetBox: the export only reads.
+Files are named imported*.yaml. An existing file is never overwritten: a
+later export writes next to it (imported-2.yaml, ...). --force overwrites, and
+only together with --out, because every file in the data directory counts as
+declared and replacing one would undeclare its objects. Nothing is written to
+NetBox: the export only reads.
 
 Everything NetBox holds that the YAML cannot express is reported at the end.
 Read those lines before merging.
@@ -57,7 +60,7 @@ object in it that the repository declares would be declared twice.`,
 	}
 	cmd.Flags().StringVar(&exportOut, "out", "", "Directory to write into (default: the data directory)")
 	cmd.Flags().StringSliceVar(&exportSites, "site", nil, "Only export objects at these site slugs (comma-separated or repeated); shared definitions are always exported")
-	cmd.Flags().BoolVar(&exportForce, "force", false, "Overwrite files that already exist")
+	cmd.Flags().BoolVar(&exportForce, "force", false, "Overwrite files that already exist (only with --out pointing outside the data directory)")
 	cmd.Flags().BoolVar(&exportDryRun, "dry-run", false, "List the files that would be written, and write nothing")
 	cmd.Flags().BoolVar(&exportAll, "all", false, "Also write what the repository already declares: a reference export to compare against, not to merge (requires --out outside the data directory)")
 	cmd.Flags().BoolVar(&exportDetail, "detailed-exitcode", false, "Exit with code 2 when there was something to export; 0 means the repository already declares everything")
@@ -126,6 +129,14 @@ func runExport(cmd *cobra.Command, args []string) error {
 	if out == "" {
 		out = dataDir
 	}
+	// Every file in the data directory was loaded as declared, so its objects
+	// are not in this export: overwriting it would drop them from the YAML,
+	// and the next sync with --prune would delete them from NetBox.
+	if exportForce && sameDir(out, dataDir) {
+		err := fmt.Errorf("--force would replace files the repository already declares; use it only with --out pointing elsewhere")
+		logger.Error("Nothing was written", err)
+		return err
+	}
 	if err := writeExport(os.Stdout, out, res, exportForce, exportDryRun, exportAll); err != nil {
 		logger.Error("Nothing was written", err)
 		return err
@@ -164,20 +175,51 @@ func checkReferenceOut(all bool, out, data string) error {
 	return nil
 }
 
-// writeExport writes the files of an export under dir and prints what it
-// did. It checks every file before writing any, so a refusal leaves no
-// half-written export behind. reference marks an --all export, which is
-// summarized as something to compare against instead of something to merge.
-func writeExport(w io.Writer, dir string, res *export.Result, force, dryRun, reference bool) error {
-	var conflicts []string
-	for _, f := range res.Files {
-		if _, err := os.Stat(filepath.Join(dir, f.Path)); err == nil && !force {
-			conflicts = append(conflicts, f.Path)
+// sameDir reports whether two paths name the same directory.
+func sameDir(a, b string) bool {
+	absA, errA := filepath.Abs(a)
+	absB, errB := filepath.Abs(b)
+	return errA == nil && errB == nil && absA == absB
+}
+
+// freePath returns rel, or — when a file by that name exists under dir or is
+// already taken by this export — the first of rel-2, rel-3, ... that is free.
+func freePath(dir, rel string, taken map[string]bool) string {
+	ext := filepath.Ext(rel)
+	stem := strings.TrimSuffix(rel, ext)
+	candidate := rel
+	for n := 2; ; n++ {
+		_, err := os.Stat(filepath.Join(dir, candidate))
+		if !taken[candidate] && os.IsNotExist(err) {
+			return candidate
 		}
+		candidate = fmt.Sprintf("%s-%d%s", stem, n, ext)
 	}
-	if len(conflicts) > 0 && !dryRun {
-		return fmt.Errorf("%d file(s) already exist, pass --force to overwrite them or --out to write elsewhere:\n  %s",
-			len(conflicts), strings.Join(conflicts, "\n  "))
+}
+
+// writeExport writes the files of an export under dir and prints what it
+// did. A file that already exists is left alone: the export is written next
+// to it under the next free name, so a later export adds to an earlier one
+// instead of replacing it. With force the existing file is overwritten.
+// reference marks an --all export, which is summarized as something to
+// compare against instead of something to merge.
+func writeExport(w io.Writer, dir string, res *export.Result, force, dryRun, reference bool) error {
+	// Two files of one export under one path would silently lose the first.
+	seen := make(map[string]bool, len(res.Files))
+	for _, f := range res.Files {
+		if seen[f.Path] {
+			return fmt.Errorf("the export holds two files named %s; nothing was written", f.Path)
+		}
+		seen[f.Path] = true
+	}
+	targets := make([]string, len(res.Files))
+	taken := make(map[string]bool, len(res.Files))
+	for i, f := range res.Files {
+		targets[i] = f.Path
+		if !force {
+			targets[i] = freePath(dir, f.Path, taken)
+		}
+		taken[targets[i]] = true
 	}
 
 	verb := "Wrote"
@@ -189,8 +231,8 @@ func writeExport(w io.Writer, dir string, res *export.Result, force, dryRun, ref
 	} else {
 		fmt.Fprintf(w, "%s %d file(s) under %s:\n", verb, len(res.Files), dir)
 	}
-	for _, f := range res.Files {
-		p := filepath.Join(dir, f.Path)
+	for i, f := range res.Files {
+		p := filepath.Join(dir, targets[i])
 		if !dryRun {
 			if err := os.MkdirAll(filepath.Dir(p), 0o750); err != nil {
 				return err
@@ -199,7 +241,11 @@ func writeExport(w io.Writer, dir string, res *export.Result, force, dryRun, ref
 				return err
 			}
 		}
-		fmt.Fprintf(w, "  %s (%d %s)\n", f.Path, f.Objects, f.Kind)
+		note := ""
+		if targets[i] != f.Path {
+			note = fmt.Sprintf(" — %s exists and is kept", filepath.Base(f.Path))
+		}
+		fmt.Fprintf(w, "  %s (%d %s)%s\n", targets[i], f.Objects, f.Kind, note)
 	}
 
 	fmt.Fprintln(w)

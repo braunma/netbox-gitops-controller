@@ -226,10 +226,23 @@ func (e *exporter) exportRacks() {
 
 func (e *exporter) exportVRFs() {
 	var out []*models.VRF
+	// A VRF is matched by its name alone, and NetBox allows the name twice.
+	count := map[string]int{}
+	for _, o := range e.data["ipam/vrfs"] {
+		count[str(o, "name")]++
+	}
+	warned := map[string]bool{}
 	for _, o := range e.data["ipam/vrfs"] {
 		name := str(o, "name")
 		if e.declared.has(kindVRF, name) {
 			e.skipDeclared(kindVRF)
+			continue
+		}
+		if count[name] > 1 {
+			if !warned[name] {
+				e.warn("VRF name %s exists %d times; none of them was exported, because a VRF is matched by its name alone", name, count[name])
+				warned[name] = true
+			}
 			continue
 		}
 		out = append(out, &models.VRF{
@@ -283,6 +296,14 @@ func (e *exporter) exportVLANGroups() {
 func (e *exporter) exportVLANs() {
 	var out []*models.VLAN
 	noSite := 0
+	// A VLAN is matched by its site and VID, and NetBox allows that pair
+	// twice (in two VLAN groups).
+	count := map[string]int{}
+	for _, o := range e.data["ipam/vlans"] {
+		vid, _, _ := whole(o, "vid")
+		count[nestedStr(o, "site", "slug")+"/"+strconv.Itoa(vid)]++
+	}
+	warned := map[string]bool{}
 	for _, o := range e.data["ipam/vlans"] {
 		site := nestedStr(o, "site", "slug")
 		vid, _, _ := whole(o, "vid")
@@ -293,8 +314,16 @@ func (e *exporter) exportVLANs() {
 		if !e.inScope(site) {
 			continue
 		}
-		if e.declared.has(kindVLAN, site+"/"+strconv.Itoa(vid)) {
+		key := site + "/" + strconv.Itoa(vid)
+		if e.declared.has(kindVLAN, key) {
 			e.skipDeclared(kindVLAN)
+			continue
+		}
+		if count[key] > 1 {
+			if !warned[key] {
+				e.warn("VLAN %d exists %d times at site %s; none of them was exported, because a VLAN is matched by its site and VID alone", vid, count[key], site)
+				warned[key] = true
+			}
 			continue
 		}
 		if nested(o, "group") == nil {
@@ -392,6 +421,13 @@ func (e *exporter) indexModuleTypeRefs() {
 
 func (e *exporter) exportModuleTypes() {
 	tmpl := e.templatesBy("module_type")
+	// The slug and the file name come from the slugified model, which drops
+	// punctuation: "SFP+ 10G" and "SFP 10G" of one manufacturer would share
+	// both, and one would replace the other.
+	count := map[string]int{}
+	for _, o := range e.data["dcim/module-types"] {
+		count[fileName(nestedStr(o, "manufacturer", "name"))+"-"+fileName(utils.Slugify(str(o, "model")))]++
+	}
 	for _, o := range e.data["dcim/module-types"] {
 		mfg := nestedStr(o, "manufacturer", "name")
 		model := str(o, "model")
@@ -400,6 +436,10 @@ func (e *exporter) exportModuleTypes() {
 			continue
 		}
 		slug := utils.Slugify(model)
+		if count[fileName(mfg)+"-"+fileName(slug)] > 1 {
+			e.warn("module type %s %s shares the slug %s with another model of the same manufacturer; it was not exported, declare it by hand with a slug of its own", mfg, model, slug)
+			continue
+		}
 		mt := &models.ModuleType{
 			Model: model, Slug: slug, Manufacturer: mfg,
 			PartNumber: str(o, "part_number"), Airflow: choice(o, "airflow"),

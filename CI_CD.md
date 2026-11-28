@@ -208,8 +208,8 @@ For a NetBox that was filled in by hand before this repository existed:
 
 Between exporting and applying, a change someone makes to an exported object
 in the NetBox UI is overwritten by the apply with the exported value. Re-run
-`netbox_export` to refresh the branch (it is rebuilt and force-pushed) if the
-merge request sits for a while, and after adoption make changes through the
+`netbox_export` (each run opens a branch and merge request of its own; close
+the stale one) if the merge request sits for a while, and after adoption make changes through the
 YAML: the next apply reverts UI edits of any field the YAML declares.
 
 Why the job uses `git add -f`: `.gitignore` lists `/definitions/` and

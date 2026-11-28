@@ -102,6 +102,39 @@ def one(ep, query):
     return r[0]
 
 
+# Every endpoint cleanup() deletes from, in reverse dependency order.
+# require_empty() checks the same list.
+CLEANUP_ORDER = [
+    "dcim/cables",
+    "dcim/power-ports",
+    "dcim/console-ports",
+    "ipam/ip-addresses",
+    "dcim/mac-addresses",
+    "virtualization/interfaces",
+    "virtualization/virtual-machines",
+    "dcim/modules",
+    "dcim/devices",
+    "virtualization/clusters",
+    "virtualization/cluster-groups",
+    "virtualization/cluster-types",
+    "dcim/module-types",
+    "dcim/device-types",
+    "ipam/prefixes",
+    "ipam/vlans",
+    "ipam/vlan-groups",
+    "ipam/vrfs",
+    "dcim/racks",
+    "dcim/sites",
+    "tenancy/tenants",
+    "tenancy/tenant-groups",
+    "dcim/platforms",
+    "dcim/manufacturers",
+    "dcim/device-roles",
+    "extras/custom-fields",
+    "extras/tags",
+]
+
+
 def require_empty():
     """Refuse to touch an instance that holds anything already.
 
@@ -109,8 +142,13 @@ def require_empty():
     afterwards, untagged ones included. Against a real NetBox that would be a
     disaster, so it only ever runs against one that starts out empty.
     """
-    for ep in ("dcim/sites", "dcim/devices", "virtualization/virtual-machines", "ipam/prefixes"):
-        if call("GET", f"{ep}/?limit=1")["count"]:
+    # Every endpoint cleanup() deletes from: an instance holding only tags,
+    # custom fields or device types is not empty either.
+    for ep in CLEANUP_ORDER:
+        # brief: only the count matters. The gitops tag is the one object
+        # cleanup() keeps, so it does not make an instance non-empty.
+        query = "limit=1&brief=1" + ("&slug__n=gitops" if ep == "extras/tags" else "")
+        if call("GET", f"{ep}/?{query}")["count"]:
             sys.exit(f"{URL} is not empty ({ep} has objects). This test deletes untagged objects; "
                      "run it only against a throwaway NetBox (tests/e2e/provision-local.sh).")
 
@@ -443,23 +481,11 @@ def cleanup():
     # empty, so everything in it is this test's. Reverse dependency order.
     if os.environ.get("E2E_EXPORT_OWNS_INSTANCE") != "1":
         sys.exit("cleanup deletes every object; export.sh sets E2E_EXPORT_OWNS_INSTANCE=1 once it knows the instance is its own")
-    order = [
-        ("dcim/cables", None), ("dcim/power-ports", None), ("dcim/console-ports", None), ("ipam/ip-addresses", None), ("dcim/mac-addresses", None),
-        ("virtualization/interfaces", None), ("virtualization/virtual-machines", None),
-        ("dcim/modules", None), ("dcim/devices", None),
-        ("virtualization/clusters", None), ("virtualization/cluster-groups", None),
-        ("virtualization/cluster-types", None),
-        ("dcim/module-types", None), ("dcim/device-types", None),
-        ("ipam/prefixes", None), ("ipam/vlans", None), ("ipam/vlan-groups", None), ("ipam/vrfs", None),
-        ("dcim/racks", None), ("dcim/sites", None), ("tenancy/tenants", None), ("tenancy/tenant-groups", None),
-        ("dcim/platforms", None), ("dcim/manufacturers", None), ("dcim/device-roles", None),
-        ("extras/custom-fields", None), ("extras/tags", None),
-    ]
     # Several passes: a chassis cannot go while a blade sits in it, and the
     # order of a few dependencies varies with the data.
     for _ in range(4):
         left = 0
-        for ep, _ in order:
+        for ep in CLEANUP_ORDER:
             objs = [o for o in list_all(ep) if not (ep == "extras/tags" and o["slug"] == "gitops")]
             if ep == "dcim/devices":
                 objs.sort(key=lambda o: o.get("parent_device") is None)  # children first
