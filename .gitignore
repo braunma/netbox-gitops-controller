@@ -57,3 +57,6 @@ bin/
 # Test coverage output (make test / CI)
 coverage.out
 __pycache__/
+
+# Reference export (`export --all`, EXPORT_REFERENCE): for comparing, never committed
+/export-reference/

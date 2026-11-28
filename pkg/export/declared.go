@@ -16,6 +16,9 @@ import (
 // kind, keyed the way the reconciler looks each kind up in NetBox.
 type declaredIndex struct {
 	keys map[string]map[string]bool
+	// all makes has answer false for everything, so that declared objects
+	// are exported too (Options.All). The slug maps below still apply.
+	all bool
 	// rackSlug maps "site/name" of a declared rack to the slug the YAML gave
 	// it, which is what a device's `rack` has to say.
 	rackSlug map[string]string
@@ -24,10 +27,11 @@ type declaredIndex struct {
 	moduleTypeSlug map[string]string
 }
 
-func (d declaredIndex) has(kind, key string) bool { return d.keys[kind][key] }
+func (d declaredIndex) has(kind, key string) bool { return !d.all && d.keys[kind][key] }
 
-func indexDeclared(ds *loader.Dataset) declaredIndex {
+func indexDeclared(ds *loader.Dataset, all bool) declaredIndex {
 	d := declaredIndex{
+		all:            all,
 		keys:           map[string]map[string]bool{},
 		rackSlug:       map[string]string{},
 		moduleTypeSlug: map[string]string{},
@@ -146,11 +150,24 @@ const fileHeader = `# Exported from NetBox by "netbox-gitops export".
 # exported unchanged the plan should only add the gitops tag.
 `
 
+const referenceFileHeader = `# Reference export from NetBox by "netbox-gitops export --all".
+#
+# This file lists what NetBox holds, including objects the repository already
+# declares. It is for comparing: copy what your own files are missing (a
+# tenant, a description) into them. Do not merge it - every object here that
+# the repository declares would be declared twice.
+`
+
 // render marshals a value as YAML with the export header and a two-space
-// indent, the style of the hand-written files.
-func render(v interface{}, extraHeader string) ([]byte, error) {
+// indent, the style of the hand-written files. reference selects the header
+// of an Options.All export.
+func render(v interface{}, extraHeader string, reference bool) ([]byte, error) {
 	var buf bytes.Buffer
-	buf.WriteString(fileHeader)
+	if reference {
+		buf.WriteString(referenceFileHeader)
+	} else {
+		buf.WriteString(fileHeader)
+	}
 	if extraHeader != "" {
 		buf.WriteString("#\n")
 		buf.WriteString(extraHeader)

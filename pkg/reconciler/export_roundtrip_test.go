@@ -325,6 +325,35 @@ func TestExportedYAMLAdoptsTheInstanceUnchanged(t *testing.T) {
 	if len(again.Files) != 0 {
 		t.Errorf("second export wrote %d files, want none: %v", len(again.Files), again.Files[0].Path)
 	}
+
+	// A reference export (All) writes everything again although the
+	// repository declares it, so a field the YAML gained later can be read
+	// off it. References keep the spelling the repository uses.
+	ds.Racks[0].Slug = "my-own-rack-slug"
+	all, err := export.Export(c, export.Options{Declared: &ds, All: true})
+	if err != nil {
+		t.Fatalf("reference Export() error = %v", err)
+	}
+	for kind, n := range res.Exported {
+		if all.Exported[kind] != n {
+			t.Errorf("reference export wrote %d %s, want %d as in the first export", all.Exported[kind], kind, n)
+		}
+	}
+	var sites, devices string
+	for _, file := range all.Files {
+		switch {
+		case strings.HasPrefix(file.Path, "definitions/sites/"):
+			sites = string(file.Data)
+		case strings.HasPrefix(file.Path, "inventory/hardware/"):
+			devices += string(file.Data)
+		}
+	}
+	if !strings.Contains(sites, "tenant: platform") {
+		t.Errorf("reference export of the declared site carries no tenant:\n%s", sites)
+	}
+	if !strings.Contains(devices, "rack: my-own-rack-slug") {
+		t.Errorf("reference export does not use the repository's rack slug:\n%s", devices)
+	}
 }
 
 func hasWarning(res *export.Result, substr string) bool {

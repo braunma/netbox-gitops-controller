@@ -372,6 +372,17 @@ netbox_export:
       SITE_FLAG=""
       if [ -n "${EXPORT_SITES}" ]; then SITE_FLAG="--site ${EXPORT_SITES}"; fi
 
+      # EXPORT_REFERENCE=true: also write everything NetBox holds, declared
+      # here or not, into export-reference/ as an artifact. It is for
+      # comparing against the YAML (e.g. to copy over `tenant:` lines) and
+      # is never committed: only definitions/ and inventory/ are added below.
+      if [ "${EXPORT_REFERENCE}" = "true" ]; then
+        ./netbox-gitops export --all --out export-reference ${SITE_FLAG} > export-reference-report.txt 2>&1 \
+          || { cat export-reference-report.txt; echo "❌ Reference export failed."; exit 1; }
+        tail -n 40 export-reference-report.txt
+        echo "📦 Reference export written to export-reference/ (job artifacts)."
+      fi
+
       # 0 = nothing left to adopt, 2 = files written, anything else failed.
       set +e
       ./netbox-gitops export --detailed-exitcode ${SITE_FLAG} > export-report.txt 2>&1
@@ -422,6 +433,8 @@ netbox_export:
     when: always
     paths:
       - export-report.txt
+      - export-reference-report.txt
+      - export-reference/
       - definitions/**/imported*.yaml
       - definitions/**/imported/
       - inventory/**/imported*.yaml

@@ -743,7 +743,14 @@ does not declare yet as YAML:
 ./netbox-gitops export                    # write them into definitions/ and inventory/
 ./netbox-gitops export --site berlin-dc   # one site at a time (shared definitions always)
 ./netbox-gitops export --out /tmp/review  # somewhere else, to look at first
+./netbox-gitops export --all --out /tmp/reference  # everything, declared or not, to compare against
 ```
+
+`--all` is for a repository that already adopted its objects: it writes them
+again, with every field the YAML can carry today, so you can copy over what an
+earlier export did not have yet (a `tenant:`, say). It is a reference, not
+something to merge. In GitLab, run `netbox_export` with `EXPORT_REFERENCE=true`
+and take `export-reference/` from the job artifacts.
 
 **With the GitLab pipeline**, run the manual `netbox_export` job on the
 default branch instead: it exports, pushes `chore/netbox-export` and opens the
