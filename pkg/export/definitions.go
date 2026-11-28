@@ -34,7 +34,9 @@ func (e *exporter) exportTags() {
 	var out []*models.Tag
 	for _, o := range e.data["extras/tags"] {
 		slug := str(o, "slug")
-		if slug == constants.ManagedTagSlug {
+		if slug == constants.ManagedTagSlug || slug == constants.StateTagSlug {
+			// The controller's own tags: declaring the state tag would have
+			// the next sync overwrite the note it keeps there.
 			continue
 		}
 		if e.declared.has(kindTag, slug) {

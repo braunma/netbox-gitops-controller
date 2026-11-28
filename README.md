@@ -66,6 +66,7 @@ make check
   * **Safety (Shared Management):**
       * Objects created by this tool are automatically stamped with a **`gitops`** tag.
       * **Opt-in Pruning (`--prune`):** Objects removed from YAML are deleted only when you pass `--prune`, and only if they carry the `gitops` tag — manually created objects are never touched. Combine with `--dry-run` to preview. See the Pruning section below.
+  * **Change-based by default:** In a git checkout a sync reconciles only what changed in the YAML since the commit NetBox was last synced to, and says which objects it picked and why. `--full` reconciles everything. See [What a sync looks at](#what-a-sync-looks-at).
   * **Auto-Wiring:** Physical cabling and LAG (Link Aggregation) members are automatically configured based on the YAML definition.
   * **Renames, not duplicates (`rename_from`):** Correcting a typo in a name, slug or other identifying field renames the existing object instead of creating a second one and orphaning the first. Supported on every managed object type. See the Renaming section below.
   * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
@@ -526,10 +527,12 @@ job log and its `plan-output.txt` artifact.
 ### What the controller fills in
 
 A value the YAML leaves out and another declared object determines is filled
-in when the data is loaded, and said out loud: every run, `yamlcheck` and the
-plan print one line per value (`Derived: device srv-01 interface idrac: vrf
-"Management" (from prefix 10.0.10.0/24)`), so nothing reaches NetBox that is
-not on the record. A value written in the YAML is never changed. The rules:
+in when the data is loaded, and said out loud, one line per value (`Derived:
+device srv-01 interface idrac: vrf "Management" (from prefix
+10.0.10.0/24)`), so nothing reaches NetBox that is not on the record.
+`validate` and `yamlcheck` print every line; a change-based sync or plan
+prints the lines of the objects it picked; `--verbose` prints all of them in
+any sync. A value written in the YAML is never changed. The rules:
 
 | Left out | Filled from | Rule |
 |---|---|---|
@@ -1043,6 +1046,7 @@ image — the reverse order used for `--prune` — by
 
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`). You never write `gitops` into a `tags:` list yourself.
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
+  * **A second tag, `gitops-state`,** is the controller's note to itself: its description holds the commit NetBox was last synced to, which is what a [change-based sync](#what-a-sync-looks-at) compares against. It is never attached to an object. Leave it alone; deleting it only makes the next sync a full one.
   * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected, and tags themselves are never pruned. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
 
 ### Tenants
@@ -1256,14 +1260,103 @@ Executes the synchronization against the NetBox API.
 ./netbox-gitops
 ```
 
+### What a sync looks at
+
+When the data directory is in a git repository, a sync is **change-based**: it
+compares the YAML as it is now with the YAML at the commit NetBox was last
+brought up to date with, and reconciles only the objects that differ. An
+unchanged repository costs three requests; one edited server costs that
+server. Every run starts by saying what it picked and why:
+
+```text
+Scope: changes since 4f1c2a9b7e — the last completed sync (2026-11-27T22:14:03Z)
+  Everything else is left as it is: an edit made in NetBox by hand is neither seen nor reverted. --full reconciles everything.
+  Reconciling 3 of 212 devices, 0 of 4 VMs; definition groups: device-types
+  • device type example-server-r100: changed: interfaces [definitions/device_types/example-server.yaml]
+  • device example-switch-01: changed: serial [inventory/hardware/active/switches.yaml]
+  • device example-server-01: its device type example-server-r100 changed
+  • device example-server-02: its device type example-server-r100 changed
+  No longer declared since 4f1c2a9b7e (1). A change-based sync deletes nothing; the next full sync with --prune removes what the controller manages of these:
+    ✗ interface eth3 of example-server-02
+```
+
+How the selection is made:
+
+  * **On the resolved result, not on files.** Both commits are loaded the way
+    a sync loads them, with `defaults`, derived values and cable paths
+    applied. A device whose file was not touched is still picked when a
+    `defaults` block gave it a different value; a file that was only
+    reformatted picks nothing.
+  * **Definitions run by group.** A changed site, role, rack, tenant, tag or
+    custom field runs the foundation phase; a changed VRF, VLAN or prefix the
+    network phase; a changed device or module type the device-types phase; a
+    changed cluster the cluster definitions. A group with no change is
+    skipped, as with `--only`.
+  * **Devices and VMs are picked one by one**, plus what depends on a change:
+    the devices of a changed device or module type, the children of a
+    reconciled parent device, a device declaring a cable to a changed device
+    or through a changed patch panel, the VMs of a changed cluster.
+
+What it does not do — and a full sync does:
+
+  * **It does not see drift.** An object nobody changed in the YAML is not
+    read from NetBox, so an edit made there by hand stays until a full sync.
+  * **It deletes nothing**, even with `--prune`: pruning deletes every managed
+    object a run did not reconcile, which here would be nearly all of them.
+    What is no longer declared is listed, and removed by the next
+    `--full --prune`.
+
+```bash
+./netbox-gitops --full            # reconcile everything
+./netbox-gitops --full --prune    # ...and delete what is no longer declared
+./netbox-gitops --dry-run --full --detailed-exitcode   # drift check: exit 2 = NetBox differs
+./netbox-gitops --changed-since HEAD~3   # compare against a commit you name
+./netbox-gitops --dry-run --verbose      # also print everything that was looked at and left alone
+```
+
+**What a sync prints.** The scope, each change with its fields, warnings and
+the summary. Objects that were compared and found equal are counted in the
+summary (`N unchanged`) and not listed; `--verbose` lists them, together with
+what was loaded, every derived value and every cable path.
+
+**Where the last commit is kept.** After a sync that covered everything it
+was meant to, the controller writes the commit into NetBox itself: the
+description of a tag named `gitops-state`, which is never attached to
+anything. The note describes NetBox, so it lives there — restore NetBox from a
+backup and the note goes back with it. Do not edit or declare that tag.
+
+**When a sync is full anyway.** Whenever comparing would be a guess, the run
+is a full one and its first lines say why:
+
+| Situation | Why |
+|---|---|
+| The data directory is not in a git repository, or `git` is not installed (the distroless Docker image) | there is nothing to compare against |
+| NetBox has no `gitops-state` tag yet | first sync |
+| The last sync failed, or was limited with `--only`/`--site`/`--device`/`--vm` | NetBox may hold part of a commit; the record was withdrawn when that run started |
+| The recorded commit is not in this clone | a shallow clone (`GIT_DEPTH: 0` in CI), or rewritten history |
+| The controller's own `*.go`, `go.mod` or `go.sum` changed since that commit | unchanged YAML may now be applied differently |
+| Ignore patterns, data directory or library paths differ from the recorded run | another set of files is loaded |
+| A type library lies outside the repository | what it held at the last sync is unknown |
+| The YAML at the recorded commit no longer loads | nothing to compare with |
+
+A run from a data directory with uncommitted changes is applied but not
+recorded, so the sync after it is a full one too. If the controller is
+installed separately from the data repository, run `--full` once after
+upgrading it: the code check above only sees a controller that lives in the
+same repository.
+
+`--only`, `--site`, `--device` and `--vm` set the scope by hand; such a run is
+not change-based.
+
 ### 3\. Drift Detection (CI-friendly)
 
 With `--detailed-exitcode` the process exits with code `2` when changes are
-pending (exit `0` means NetBox is in sync with the YAML). A scheduled CI job
+pending (exit `0` means NetBox is in sync with the YAML). Drift is what nobody
+changed in the YAML, so the check has to be a full plan. A scheduled CI job
 becomes a drift monitor with zero extra infrastructure:
 
 ```bash
-./netbox-gitops --dry-run --detailed-exitcode
+./netbox-gitops --dry-run --full --detailed-exitcode
 ```
 
 ### 4\. Machine-Readable Plan Output
@@ -1339,19 +1432,26 @@ are never touched.
 
 ```bash
 # Preview what pruning would delete (no changes applied)
-./netbox-gitops --dry-run --prune
+./netbox-gitops --dry-run --full --prune
 
 # Apply, deleting orphaned managed objects
-./netbox-gitops --prune
+./netbox-gitops --full --prune
 
 # Prune only the network phase's orphans (VRFs, VLAN groups, VLANs, prefixes)
 ./netbox-gitops --only network --prune
 ```
 
-The GitLab pipeline in this repository passes `--prune` to `go_plan` and
-`go_apply`, so a merge request that removes an object from the YAML shows the
-deletion in its plan and the apply carries it out. Set the CI/CD variable
-`NETBOX_PRUNE=false` to turn that off.
+Only a full sync deletes. A [change-based sync](#what-a-sync-looks-at) given
+`--prune` lists what is no longer declared and leaves it in NetBox: it has
+reconciled only what changed, and pruning deletes whatever a run did not
+reconcile. Outside a git repository every sync is full, so `--prune` alone
+behaves as it always did.
+
+The GitLab pipeline in this repository passes `--prune` to all four sync jobs.
+A merge request that removes an object from the YAML shows it under "No longer
+declared" in `go_plan`; `go_apply` leaves it, and `go_apply_full` (a button,
+or the scheduled pipeline) deletes it. Set the CI/CD variable
+`NETBOX_PRUNE=false` to turn deletion off.
 
 Pruning runs after all selected phases and deletes endpoints in reverse
 dependency order (device/VM children first, then sites/platforms/tenants

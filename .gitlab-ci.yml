@@ -49,6 +49,20 @@
 #                              carries the gitops tag; untagged objects are
 #                              never touched. go_plan lists those deletions.
 #
+# FULL SYNCS:
+#
+#   go_plan and go_apply look only at what changed in the YAML since the
+#   commit NetBox was last synced to. go_plan_full and go_apply_full look at
+#   everything: they are what reverts an edit made in NetBox by hand, and the
+#   only jobs that delete (--prune). Both are manual buttons, and both run in
+#   a scheduled pipeline (Build → Pipeline schedules, on the default branch).
+#
+#   NETBOX_SCHEDULED_APPLY     "true" — and only "true" — lets a scheduled
+#                              pipeline run go_apply_full by itself. Default:
+#                              "false": the schedule only runs go_plan_full,
+#                              which fails when NetBox differs from the YAML,
+#                              and go_apply_full stays a button.
+#
 # THRESHOLDS AND GATES:
 #
 #   COVERAGE_THRESHOLD         Minimum total statement coverage (%). The
@@ -126,6 +140,13 @@ variables:
   # touched. Set to "false" to only create and update.
   # Default: "true"
   NETBOX_PRUNE: "true"
+
+  # NETBOX_SCHEDULED_APPLY: lets a scheduled pipeline apply by itself
+  # A scheduled pipeline always runs go_plan_full. Set this to "true" and it
+  # also runs go_apply_full without waiting for a click: hand edits are
+  # reverted and removed objects deleted every night.
+  # Default: "false" - the scheduled plan reports, a person applies.
+  NETBOX_SCHEDULED_APPLY: "false"
 
   # ===========================================================================
   # BUILD CONFIGURATION
@@ -251,6 +272,8 @@ e2e:
     - tests/e2e/run.sh
     - echo "🔁 Verifying that renames edit objects instead of duplicating them..."
     - tests/e2e/rename.sh
+    - echo "🔁 Verifying that a change-based sync selects what changed, and nothing it must not skip..."
+    - tests/e2e/changed.sh
     - echo "🔁 Applying this repository's own data and checking its conventions..."
     - tests/e2e/repo-data.sh
   rules:
@@ -289,6 +312,10 @@ go_validate:
   stage: validate
   dependencies:
     - go_build
+  variables:
+    # The plan compares against the commit NetBox was last synced to, which a
+    # shallow clone may not hold (it then falls back to a full plan).
+    GIT_DEPTH: "0"
   script:
     # Ask the target instance what it accepts before planning against it: a
     # choice value or a reference this NetBox rejects would otherwise surface
@@ -302,16 +329,24 @@ go_validate:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
     - if: $CI_COMMIT_BRANCH != $CI_DEFAULT_BRANCH
 
-# Plan changes with Go (MR preview)
+# Plan what this merge request changes (MR preview)
+#
+# Change-based: the plan covers what differs in the YAML between the commit
+# NetBox was last synced to and this branch, and names every object it picked
+# and why. It is what go_apply will do after the merge. It does not look at
+# anything else, so it does not show drift; go_plan_full does.
 go_plan:
   extends: .go_base
   stage: plan
   dependencies:
     - go_build
+  variables:
+    GIT_DEPTH: "0"
   script:
-    - echo "📜 Generating sync plan with Go..."
-    # With pruning on, the plan lists what go_apply will delete, so the
-    # merge request shows removals alongside creates and updates.
+    - echo "📜 Planning what changed since the last sync..."
+    # --prune is passed so the plan and the apply are the same command. A
+    # change-based sync deletes nothing: the plan lists what is no longer
+    # declared, and go_apply_full is what removes it.
     - PRUNE_FLAG=""; if [ "$NETBOX_PRUNE" != "false" ]; then PRUNE_FLAG="--prune"; fi
     - ./netbox-gitops --dry-run $PRUNE_FLAG | tee plan-output.txt
     - echo "✅ Plan generated successfully!"
@@ -322,24 +357,112 @@ go_plan:
   rules:
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
 
-# Apply changes with Go (production)
+# Plan everything (drift and deletions included)
+#
+# Compares every declared object with NetBox, whatever changed or did not:
+# edits made in NetBox by hand, leftovers of a failed apply, and the objects
+# --prune would delete. Slow on a large inventory, which is why it is a button
+# in merge requests and on the default branch, and automatic only in a
+# scheduled pipeline.
+#
+# Exit code 2 means "NetBox differs from the YAML". In a scheduled pipeline
+# that fails the job, so the schedule's owner hears about it -- unless
+# NETBOX_SCHEDULED_APPLY is "true", in which case go_apply_full is about to
+# fix it and the job only warns.
+go_plan_full:
+  extends: .go_base
+  stage: plan
+  dependencies:
+    - go_build
+  script:
+    - echo "📜 Planning a full sync..."
+    - PRUNE_FLAG=""; if [ "$NETBOX_PRUNE" != "false" ]; then PRUNE_FLAG="--prune"; fi
+    - |
+      set +e
+      ./netbox-gitops --dry-run --full --detailed-exitcode $PRUNE_FLAG > plan-full-output.txt 2>&1
+      STATUS=$?
+      set -e
+      cat plan-full-output.txt
+      if [ "${STATUS}" = "2" ]; then
+        echo "⚠️  NetBox differs from the YAML (see the plan above). go_apply_full brings it back in line."
+      elif [ "${STATUS}" = "0" ]; then
+        echo "✅ NetBox matches the YAML."
+      fi
+      exit "${STATUS}"
+  artifacts:
+    when: always
+    paths:
+      - plan-full-output.txt
+    expire_in: 1 week
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'schedule' && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $NETBOX_SCHEDULED_APPLY == "true"
+      allow_failure: true
+    - if: $CI_PIPELINE_SOURCE == 'schedule' && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      when: manual
+      allow_failure: true
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: true
+
+# Apply what changed (production)
+#
+# Change-based: reconciles the objects whose YAML changed since the commit
+# NetBox was last synced to, and records the new commit in NetBox (the
+# description of the tag `gitops-state`). The first run, a run after a failed
+# one, and a run after the controller's own code changed are full syncs; the
+# job log says which it was and why. Deletes nothing.
 go_apply:
   extends: .go_base
   stage: apply
   dependencies:
     - go_build
+  variables:
+    GIT_DEPTH: "0"
   script:
     - echo "🚀 Applying changes to NetBox with Go..."
-    # --prune deletes gitops-tagged objects no longer declared in the YAML;
-    # without it, removing a rack or device from the YAML left it in NetBox.
-    - PRUNE_FLAG=""; if [ "$NETBOX_PRUNE" != "false" ]; then PRUNE_FLAG="--prune"; echo "🗑️  Pruning objects removed from the YAML (NETBOX_PRUNE=false to disable)"; fi
+    - PRUNE_FLAG=""; if [ "$NETBOX_PRUNE" != "false" ]; then PRUNE_FLAG="--prune"; fi
     - ./netbox-gitops $PRUNE_FLAG
     - echo "✅ Changes applied successfully!"
   rules:
+    # A scheduled pipeline is for the full sync below.
+    - if: $CI_PIPELINE_SOURCE == 'schedule'
+      when: never
     - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
       when: manual
   environment:
     name: production
+  # One apply at a time: two overlapping runs would each read NetBox while the
+  # other writes it.
+  resource_group: production
+
+# Apply everything (production)
+#
+# Reconciles every declared object and, unless NETBOX_PRUNE is "false",
+# deletes gitops-tagged objects the YAML no longer declares. This is the job
+# that reverts hand edits and performs the deletions go_plan announced. A
+# button on the default branch; automatic in a scheduled pipeline when
+# NETBOX_SCHEDULED_APPLY is "true".
+go_apply_full:
+  extends: .go_base
+  stage: apply
+  dependencies:
+    - go_build
+  script:
+    - echo "🚀 Applying a full sync to NetBox..."
+    # --prune deletes gitops-tagged objects no longer declared in the YAML;
+    # without it, removing a rack or device from the YAML left it in NetBox.
+    - PRUNE_FLAG=""; if [ "$NETBOX_PRUNE" != "false" ]; then PRUNE_FLAG="--prune"; echo "🗑️  Pruning objects removed from the YAML (NETBOX_PRUNE=false to disable)"; fi
+    - ./netbox-gitops --full $PRUNE_FLAG
+    - echo "✅ Full sync applied successfully!"
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'schedule' && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH && $NETBOX_SCHEDULED_APPLY == "true"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: true
+  environment:
+    name: production
+  resource_group: production
 
 # =============================================================================
 # ADOPTING EXISTING NETBOX OBJECTS

@@ -73,7 +73,7 @@ else
 fi
 
 echo ">>> plan (what go_plan shows in the merge request)"
-"${BIN}" --data-dir "${DIR}" --dry-run --prune --output json >"${WORK}/plan.json" 2>"${WORK}/plan.log"
+"${BIN}" --data-dir "${DIR}" --dry-run --full --prune --output json >"${WORK}/plan.json" 2>"${WORK}/plan.log"
 python3 - "${WORK}/plan.json" >"${WORK}/plan-check.txt" <<'PY'
 import json, sys
 plan = json.load(open(sys.argv[1]))
@@ -90,7 +90,7 @@ ${FIX} snapshot "${WORK}/after-plan.json" >/dev/null
 if ${FIX} compare "${WORK}/before.json" "${WORK}/after-plan.json" >/dev/null; then ok "dry-run wrote nothing"; else fail "dry-run wrote nothing" "NetBox changed"; fi
 
 echo ">>> apply (what go_apply does)"
-if "${BIN}" --data-dir "${DIR}" --prune >"${WORK}/apply.log" 2>&1; then
+if "${BIN}" --data-dir "${DIR}" --full --prune >"${WORK}/apply.log" 2>&1; then
   ok "apply succeeded" "$(grep -E 'Summary:' "${WORK}/apply.log" | sed 's/.*Summary: //')"
 else
   fail "apply succeeded" "see ${WORK}/apply.log"
@@ -111,7 +111,7 @@ case $? in
 esac
 
 echo ">>> converged"
-"${BIN}" --data-dir "${DIR}" --dry-run --prune --detailed-exitcode >"${WORK}/second.log" 2>&1
+"${BIN}" --data-dir "${DIR}" --dry-run --full --prune --detailed-exitcode >"${WORK}/second.log" 2>&1
 rc=$?
 if [ "${rc}" = "0" ]; then ok "second dry-run has nothing to do"; else fail "second dry-run has nothing to do" "exit ${rc}: $(grep -E 'Plan:' "${WORK}/second.log" | sed 's/.*Plan: //')"; fi
 "${BIN}" export --data-dir "${DIR}" --dry-run --detailed-exitcode >"${WORK}/reexport.log" 2>&1

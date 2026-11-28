@@ -26,8 +26,10 @@ NetBox only through the GitLab `apply` stage.
 | build | `go_build` | branches + MRs | auto | Builds the `netbox-gitops` binary (artifact, 1 week). |
 | validate | `debug_environment` | — | manual | Dumps repo/Go/env info for debugging, with `go_build`'s binary. |
 | validate | `go_validate` | non-default branches + MRs | auto | `./netbox-gitops validate` (choice values and references against the live instance), then `./netbox-gitops --dry-run`. |
-| plan | `go_plan` | MRs only | auto | `--dry-run --prune` → `plan-output.txt` artifact for review, deletions included. |
-| apply | `go_apply` | default branch | **manual** | `./netbox-gitops --prune` (production deploy; deletes gitops-tagged objects removed from the YAML). |
+| plan | `go_plan` | MRs only | auto | `--dry-run --prune`, change-based → `plan-output.txt`: what this merge request changes, every picked object with the reason, and what is no longer declared. Does not show drift. |
+| plan | `go_plan_full` | MRs + default branch: **manual**; scheduled pipeline: auto | — | `--dry-run --full --prune --detailed-exitcode` → `plan-full-output.txt`: every difference between the YAML and NetBox, hand edits and pending deletions included. Exit 2 (differences found) fails the scheduled job unless `NETBOX_SCHEDULED_APPLY="true"`. |
+| apply | `go_apply` | default branch, not in scheduled pipelines | **manual** | `./netbox-gitops --prune`, change-based: applies what changed since the last sync and records the commit in NetBox. Deletes nothing. |
+| apply | `go_apply_full` | default branch: **manual**; scheduled pipeline: auto when `NETBOX_SCHEDULED_APPLY="true"` | — | `./netbox-gitops --full --prune`: reconciles everything, reverts hand edits, deletes gitops-tagged objects removed from the YAML. |
 | validate | `netbox_export` | default branch | manual | `./netbox-gitops export`: writes what NetBox holds and the YAML does not declare yet, pushes `chore/netbox-export` and opens a merge request. Reads NetBox only. See [Adopting existing objects](#adopting-existing-objects). |
 
 ### Fact ingestion (opt-in, not included by default)
@@ -62,7 +64,8 @@ Everything the pipeline reads, and what setting it does. Set them in
 | `RUN_TESTS` | `true` | Exactly `"false"` skips `go_test`; any other value runs it. |
 | `RUN_QUALITY_CHECKS` | `true` | Exactly `"false"` skips `go_lint`, `yaml_check` and `ingest_check`. |
 | `RUN_E2E` | `false` | Exactly `"true"` enables `e2e`. Needs a Docker-executor runner. |
-| `NETBOX_PRUNE` | `true` | Exactly `"false"` drops `--prune` from `go_plan` and `go_apply`, so objects removed from the YAML stay in NetBox. Any other value prunes: a `gitops`-tagged object no longer declared is deleted. Untagged objects are never touched. |
+| `NETBOX_PRUNE` | `true` | Exactly `"false"` drops `--prune` from the sync jobs, so objects removed from the YAML stay in NetBox. Any other value prunes: a `gitops`-tagged object no longer declared is deleted by `go_apply_full` (only a full sync deletes). Untagged objects are never touched. |
+| `NETBOX_SCHEDULED_APPLY` | `false` | Exactly `"true"` lets a **scheduled pipeline** run `go_apply_full` by itself, so hand edits are reverted and removed objects deleted on the schedule. Otherwise the schedule only runs `go_plan_full`, which fails when NetBox differs from the YAML, and applying stays a click. |
 | `INGEST_SCHEDULE` | unset | Exactly `"true"`, set on a **pipeline schedule**, runs the optional fact-ingestion jobs. Only read when `.gitlab-ci.ingest.example.yml` is included. |
 | `EXPORT_SITES` | unset | Comma-separated site slugs for a `netbox_export` run: only objects at those sites are exported (shared definitions always). Set it under **Run pipeline** to adopt a site at a time. |
 | `EXPORT_REFERENCE` | unset | Set to `true` for a `netbox_export` run to also get `export-reference/` in the job artifacts: everything NetBox holds as YAML, including what the repository already declares (`export --all`). For comparing, not merging; it is never committed. |
@@ -96,9 +99,45 @@ The end-to-end scripts additionally read `E2E_SEEDS`, `E2E_KEEP` and
 ## Typical flow
 
 1. Push a feature branch → tests, lint, build and `--dry-run` validate run.
-2. Open an MR → `go_plan` produces a `plan-output.txt` artifact; review it,
-   including the `delete` lines for anything the MR removes from the YAML.
-3. Merge to the default branch → trigger `go_apply` manually to deploy.
+2. Open an MR → `go_plan` produces a `plan-output.txt` artifact; review it:
+   the objects it picked and why, the planned changes, and the "No longer
+   declared" list for anything the MR removes from the YAML.
+3. Merge to the default branch → trigger `go_apply` manually to deploy what
+   changed.
+4. To delete what was removed, or to bring back what somebody edited in
+   NetBox, trigger `go_apply_full` — or let the schedule below do it.
+
+### Change-based and full jobs
+
+`go_plan` and `go_apply` look only at what changed in the YAML since the
+commit NetBox was last synced to (see
+[What a sync looks at](README.md#what-a-sync-looks-at)). That keeps them
+short, and it is also what they leave out: they do not notice an edit made in
+NetBox by hand, and they delete nothing. `go_plan_full` and `go_apply_full`
+compare everything.
+
+Three of the jobs set `GIT_DEPTH: "0"`: the comparison needs the commit NetBox
+was last synced to, which a shallow clone may not contain. Without it the run
+is a full one and says so.
+
+The first `go_apply` after this pipeline is installed is a full sync (NetBox
+has no record yet) and writes the record; so is the first one after a failed
+apply, and after every change to the controller's own Go code.
+
+### The scheduled full sync
+
+Create a pipeline schedule on the default branch (**Build → Pipeline
+schedules**, e.g. nightly). It runs `go_plan_full`:
+
+- With `NETBOX_SCHEDULED_APPLY` unset, the job **fails when NetBox differs
+  from the YAML**, which notifies the schedule's owner. Read
+  `plan-full-output.txt`, then click `go_apply_full` in that pipeline.
+- With `NETBOX_SCHEDULED_APPLY="true"` (set it on the schedule or the
+  project), `go_apply_full` runs by itself: hand edits are reverted and
+  removed objects deleted every night, and the plan job only warns.
+
+Without a schedule nothing is lost, but nothing is deleted and no drift is
+corrected until somebody clicks `go_apply_full`.
 
 ### Validating branches that add new objects
 

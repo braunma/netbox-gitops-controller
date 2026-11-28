@@ -48,12 +48,12 @@ print(r[0]["id"] if len(r) == 1 else "")'
 }
 count() { api "$1/?$2" | python3 -c 'import json,sys; print(json.load(sys.stdin)["count"])'; }
 
-sync() { "${BIN}" --data-dir "${DIR}" >"${WORK}/$1.log" 2>&1; }
+sync() { "${BIN}" --data-dir "${DIR}" --full >"${WORK}/$1.log" 2>&1; }
 
 wipe() {
   local empty="${WORK}/empty"
   mkdir -p "${empty}/definitions" "${empty}/inventory"
-  "${BIN}" --data-dir "${empty}" --prune >"${WORK}/wipe.log" 2>&1 || true
+  "${BIN}" --data-dir "${empty}" --full --prune >"${WORK}/wipe.log" 2>&1 || true
   # --prune deliberately leaves custom fields alone: deleting one destroys the
   # value it holds on every object that has it. They therefore survive a wipe,
   # and a leftover field under this test's *new* name would make the rename a
@@ -311,7 +311,7 @@ else
 fi
 
 # Nothing should have been left behind for --prune to reap.
-"${BIN}" --data-dir "${DIR}" --prune >"${WORK}/prune.log" 2>&1
+"${BIN}" --data-dir "${DIR}" --full --prune >"${WORK}/prune.log" 2>&1
 s="$(grep -oE '[0-9]+ created, [0-9]+ updated, [0-9]+ deleted' "${WORK}/prune.log" | tail -1)"
 if echo "${s}" | grep -qE ', 0 deleted'; then
   ok "rename left no orphans" "${s}"

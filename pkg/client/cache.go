@@ -62,7 +62,7 @@ func (cm *CacheManager) loadAll(loads []cacheLoad) []error {
 
 // LoadGlobal loads global resources (not site-specific)
 func (cm *CacheManager) LoadGlobal() error {
-	cm.client.logger.Info("Loading global caches...")
+	cm.client.logger.Debug("Loading global caches...")
 
 	resources := map[string]string{
 		"device_types":   "dcim/device-types",
@@ -98,13 +98,13 @@ func (cm *CacheManager) LoadGlobal() error {
 		}
 	}
 
-	cm.client.logger.Success("Global caches loaded")
+	cm.client.logger.Debug("Global caches loaded")
 	return nil
 }
 
 // LoadSite loads site-specific resources with composite keys
 func (cm *CacheManager) LoadSite(siteSlug string) error {
-	cm.client.logger.Info("Reloading cache for site: %s", siteSlug)
+	cm.client.logger.Debug("Reloading cache for site: %s", siteSlug)
 
 	// Find site ID
 	siteID, ok := cm.GetGlobalID("sites", siteSlug)

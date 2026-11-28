@@ -60,6 +60,9 @@ type NetBoxClient struct {
 	components componentIndex
 	// pageSize is the limit sent with every list request.
 	pageSize int
+	// stateTagID is the ID of the sync state tag once ReadSyncState or a
+	// write has seen it; 0 while it is not known to exist.
+	stateTagID int
 	// requests counts the HTTP requests sent to NetBox, retries included.
 	requests atomic.Int64
 }
