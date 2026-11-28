@@ -3,6 +3,7 @@
 package reconciler
 
 import (
+	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
 	"github.com/braunma/netbox-gitops-controller/pkg/utils"
@@ -337,6 +338,12 @@ func (fr *FoundationReconciler) ReconcileTags(tags []*models.Tag) error {
 	fr.logger.Info("Reconciling %d tags...", len(tags))
 
 	for _, tag := range tags {
+		if tag.Slug == constants.StateTagSlug {
+			// The controller keeps its sync state in this tag's description;
+			// applying a declared one would erase it on every run.
+			fr.logger.Warning("Tag %s is the controller's own sync state tag and is not managed from YAML; remove it from definitions/extras", tag.Slug)
+			continue
+		}
 		payload := map[string]interface{}{
 			"name":        tag.Name,
 			"slug":        tag.Slug,

@@ -895,9 +895,33 @@ func (dr *DeviceReconciler) installDeviceIntoBay(deviceID, deviceBayID int, devi
 		return fmt.Errorf("failed to detach device from rack: %w", err)
 	}
 
-	// STEP 2: Update the bay to install the device
+	// STEP 2: Take the device out of the bay it sits in now. NetBox refuses to
+	// install a device that another bay still holds ("already installed in
+	// ..."), so a changed device_bay has to vacate the old bay first. Only a
+	// bay that really holds this device is emptied: a bay occupied by another
+	// device is that device's to leave.
+	occupied, err := dr.client.Filter("dcim", "device-bays", map[string]interface{}{
+		"installed_device_id": deviceID,
+	})
+	if err != nil {
+		return fmt.Errorf("failed to look up the bay the device is installed in: %w", err)
+	}
+	for _, bay := range occupied {
+		bayID := utils.GetIDFromObject(bay)
+		if bayID == 0 || bayID == deviceBayID || utils.GetIDFromObject(bay["installed_device"]) != deviceID {
+			continue
+		}
+		dr.logger.Info("  Removing %s from device bay %v before installing it into %s", device.Name, bay["name"], device.DeviceBay)
+		if err := dr.client.Update("dcim", "device-bays", bayID, map[string]interface{}{
+			"installed_device": nil,
+		}); err != nil {
+			return fmt.Errorf("failed to remove the device from its previous bay: %w", err)
+		}
+	}
+
+	// STEP 3: Update the bay to install the device
 	// This is the NetBox API way to install a device into a bay
-	dr.logger.Debug("    2. Updating bay to install device...")
+	dr.logger.Debug("    3. Updating bay to install device...")
 	err = dr.client.Update("dcim", "device-bays", deviceBayID, map[string]interface{}{
 		"installed_device": deviceID,
 	})

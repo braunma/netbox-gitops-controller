@@ -58,7 +58,7 @@ wait_for_netbox() {
 wipe() {
   local empty="${WORK}/empty"
   mkdir -p "${empty}/definitions" "${empty}/inventory"
-  "${BIN}" --data-dir "${empty}" --prune >"${WORK}/wipe.log" 2>&1 || true
+  "${BIN}" --data-dir "${empty}" --full --prune >"${WORK}/wipe.log" 2>&1 || true
 }
 
 log "==> building"
@@ -120,7 +120,7 @@ for seed in ${SEEDS}; do
   fi
 
   # 4. THE invariant: a second apply must have nothing to do
-  "${BIN}" --data-dir "${DIR}" >"${WORK}/apply2-${seed}.log" 2>&1
+  "${BIN}" --data-dir "${DIR}" --full >"${WORK}/apply2-${seed}.log" 2>&1
   s2="$(summary_of "${WORK}/apply2-${seed}.log")"
   if echo "${s2}" | grep -qE '^0 created, 0 updated, 0 deleted'; then
     ok "idempotent" "${s2}"
@@ -130,11 +130,11 @@ for seed in ${SEEDS}; do
   fi
 
   # 5. drift detection must agree that the instance is in sync
-  "${BIN}" --data-dir "${DIR}" --dry-run --detailed-exitcode >/dev/null 2>&1
+  "${BIN}" --data-dir "${DIR}" --full --dry-run --detailed-exitcode >/dev/null 2>&1
   [ $? -eq 0 ] && ok "drift exit code" || fail "drift exit code" "expected 0 on a converged instance"
 
   # 6. pruning a converged instance must delete nothing
-  "${BIN}" --data-dir "${DIR}" --prune >"${WORK}/prune-${seed}.log" 2>&1
+  "${BIN}" --data-dir "${DIR}" --full --prune >"${WORK}/prune-${seed}.log" 2>&1
   sp="$(summary_of "${WORK}/prune-${seed}.log")"
   if echo "${sp}" | grep -qE ', 0 deleted,'; then ok "prune deletes nothing" "${sp}"; else
     fail "prune deletes nothing" "${sp}"
