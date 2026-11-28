@@ -91,6 +91,12 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **A blade can move to another bay.** Changing `device_bay` failed with
+  NetBox's "device is already installed in ..." because the device was
+  installed into the new bay while the old one still held it. The old bay is
+  now emptied first. Two blades swapping bays in one commit still need two
+  commits.
+
 - **A device's `rack` and a module's `module_type` resolve when the phase that
   defines them does not run.** NetBox has no slug for racks and module types;
   the YAML slug was only known while the foundation and device type phases
