@@ -18,12 +18,12 @@ NetBox only through the GitLab `apply` stage.
 
 | Stage | Job | When | Auto/Manual | Purpose |
 |-------|-----|------|-------------|---------|
-| test | `go_test` | branches + MRs | auto | `go test ./pkg/... -race` with a coverage gate (`COVERAGE_THRESHOLD`, default 65%); uploads `coverage.out`. |
-| test | `go_lint` | branches + MRs | auto | `make lint` — `gofmt -l` (a check, not a rewrite), `go vet`, and the SPDX header check. Blocking. |
-| test | `ingest_check` | branches + MRs | auto | `tests/e2e/ingest.sh` — the whole fact-ingestion path against the sample data. Needs no NetBox and no credentials, which is the claim it makes. |
+| test | `go_test` | branches + MRs, when code changed | auto | `go test ./pkg/... -race` with a coverage gate (`COVERAGE_THRESHOLD`, default 65%); uploads `coverage.out`. |
+| test | `go_lint` | branches + MRs, when code changed | auto | `make lint` — `gofmt -l` (a check, not a rewrite), `go vet`, and the SPDX header check. Blocking. |
+| test | `ingest_check` | branches + MRs, when code changed | auto | `tests/e2e/ingest.sh` — the whole fact-ingestion path against the sample data. Needs no NetBox and no credentials, which is the claim it makes. |
 | test | `yaml_check` | branches + MRs | auto | `go run ./cmd/yamlcheck` (YAML syntax, typed model validation, and the cross-object lint checks: duplicate names and IPs, rack collisions, cables, references). |
 | test | `e2e` | branches + MRs, only when `RUN_E2E="true"` | auto | `tests/e2e/{run,rename,repo-data}.sh` against a throwaway NetBox started as a CI service. Never talks to the project's NetBox: it exports its own target in the job shell. |
-| build | `go_build` | branches + MRs | auto | Builds the `netbox-gitops` binary (artifact, 1 week). |
+| build | `go_build` | branches + MRs | auto | Provides the `netbox-gitops` binary (artifact, 1 week): compiles it, or with `REUSE_BUILD="true"` downloads the one an earlier pipeline built from the same source. |
 | validate | `debug_environment` | — | manual | Dumps repo/Go/env info for debugging, with `go_build`'s binary. |
 | validate | `go_validate` | non-default branches + MRs | auto | `./netbox-gitops validate` (choice values and references against the live instance), then `./netbox-gitops --dry-run`. |
 | plan | `go_plan` | MRs only | auto | `--dry-run --prune`, change-based → `plan-output.txt`: what this merge request changes, every picked object with the reason, and what is no longer declared. Does not show drift. |
@@ -63,6 +63,7 @@ Everything the pipeline reads, and what setting it does. Set them in
 | `NETBOX_TOKEN` | — | **Required.** v1 (40 hex chars) or v2 (`nbt_<key>.<secret>`). Mark it masked. |
 | `RUN_TESTS` | `true` | Exactly `"false"` skips `go_test`; any other value runs it. |
 | `RUN_QUALITY_CHECKS` | `true` | Exactly `"false"` skips `go_lint`, `yaml_check` and `ingest_check`. |
+| `REUSE_BUILD` | `false` | Exactly `"true"` makes `go_build` store the binary in the project's package registry and reuse it in later pipelines with the same Go source. See [Building once](#building-once). |
 | `RUN_E2E` | `false` | Exactly `"true"` enables `e2e`. Needs a Docker-executor runner. |
 | `NETBOX_PRUNE` | `true` | Exactly `"false"` drops `--prune` from the sync jobs, so objects removed from the YAML stay in NetBox. Any other value prunes: a `gitops`-tagged object no longer declared is deleted by `go_apply_full` (only a full sync deletes). Untagged objects are never touched. |
 | `NETBOX_SCHEDULED_APPLY` | `false` | Exactly `"true"` lets a **scheduled pipeline** run `go_apply_full` by itself, so hand edits are reverted and removed objects deleted on the schedule. Otherwise the schedule only runs `go_plan_full`, which fails when NetBox differs from the YAML, and applying stays a click. |
@@ -123,6 +124,43 @@ is a full one and says so.
 The first `go_apply` after this pipeline is installed is a full sync (NetBox
 has no record yet) and writes the record; so is the first one after a failed
 apply, and after every change to the controller's own Go code.
+
+### Building once
+
+Most commits in a data repository only edit YAML. Two things keep such a
+commit from paying for the controller's code:
+
+- **`go_test`, `go_lint` and `ingest_check` run only when code changed**: a
+  `.go` file, `go.mod`, `go.sum`, the `Makefile`, `.gitlab-ci.yml`, or
+  anything under `tests/`, `example/` or `schema/`. `yaml_check` always runs;
+  it is the check of the data. Scheduled and manually started pipelines, and
+  the first push of a branch, run everything.
+- **`REUSE_BUILD="true"` compiles once per code version.** `go_build`
+  computes a key from every tracked Go file, the module files and the
+  compiler. If the project's package registry (Deploy → Package registry)
+  holds a binary under that key, the job downloads it; otherwise it compiles
+  and stores the result. The later jobs see the same artifact either way.
+
+  Because the key is made from the source, a stored binary is never older
+  than the code: any change to a `.go` file is a new key. A reused binary
+  keeps the `--version` stamp of the commit that built it, which is the
+  commit in which the code last changed.
+
+  If the registry cannot be reached or is disabled, the job says so and
+  compiles; nothing fails.
+
+  **Why it is off by default.** Every job in a project can upload a package,
+  including a job on an unprotected branch. Protected and unprotected refs use
+  separate package names, so nothing is shared by accident, but a person who
+  can run pipelines could deliberately upload a binary under the protected
+  name, and `go_apply` on main would then run it with the NetBox token.
+  Enable `REUSE_BUILD` when everyone who can run a pipeline in the project is
+  also trusted with what `go_apply` does, which is the usual case for a small
+  infrastructure team.
+
+  Stored binaries are about 12 MB each, one per code version. Old ones can be
+  deleted under Deploy → Package registry at any time; the next pipeline
+  builds again.
 
 ### The scheduled full sync
 

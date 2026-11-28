@@ -148,6 +148,20 @@ variables:
   # Default: "false" - the scheduled plan reports, a person applies.
   NETBOX_SCHEDULED_APPLY: "false"
 
+  # REUSE_BUILD: build the binary once per code version, not once per pipeline
+  # With "true", go_build stores the binary in this project's package registry
+  # under a key made from the Go source, and later pipelines with the same
+  # source download it instead of compiling. A commit that only edits YAML
+  # then gets its binary in seconds. The key changes with any tracked .go
+  # file, go.mod, go.sum and the compiler, so a stored binary is never older
+  # than the code.
+  # Off by default because of who can write there: every job in this project
+  # can upload a package, including a job on an unprotected branch. Enable it
+  # when everyone who can run a pipeline here is also trusted with what
+  # go_apply does. See CI_CD.md, "Building once".
+  # Default: "false" - every pipeline compiles.
+  REUSE_BUILD: "false"
+
   # ===========================================================================
   # BUILD CONFIGURATION
   # ===========================================================================
@@ -173,8 +187,25 @@ cache:
 .go_base:
   image: ${GOLANG_IMAGE}
   before_script:
+    # No `go mod download` here: the jobs that compile fetch the modules they
+    # need by themselves, and the jobs that only run the built binary
+    # (validate, plan, apply) need none.
     - go version
-    - go mod download
+
+# The paths whose change can alter what the controller does or whether its
+# tests pass. A commit that touches none of them — one that only edits YAML
+# under definitions/ or inventory/ — skips the jobs that test the code.
+# (`rules:changes` is always true in scheduled and manually started
+# pipelines and for the first push of a branch, so those run everything.)
+.code_paths: &code_paths
+  - "**/*.go"
+  - go.mod
+  - go.sum
+  - Makefile
+  - .gitlab-ci.yml
+  - tests/**/*
+  - example/**/*
+  - schema/**/*
 
 # Run Go tests
 go_test:
@@ -196,7 +227,9 @@ go_test:
     - if: $RUN_TESTS == "false"
       when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      changes: *code_paths
     - if: $CI_COMMIT_BRANCH
+      changes: *code_paths
 
 # End-to-end test against a real NetBox.
 #
@@ -287,14 +320,49 @@ go_build:
   extends: .go_base
   stage: build
   script:
-    - echo "🔨 Building Go binary..."
-    # Stamp the build so `netbox-gitops --version` identifies exactly what ran,
-    # which is what makes the changelog's upgrade advice actionable.
+    # Build, or with REUSE_BUILD fetch what an earlier pipeline built from the
+    # same source. Either way the job ends with ./netbox-gitops as its
+    # artifact, which is all the later jobs know about.
     - |
-      VERSION="${CI_COMMIT_TAG:-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}}"
-      go build -v -trimpath \
-        -ldflags "-X main.version=${VERSION} -X main.commit=${CI_COMMIT_SHORT_SHA} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-        -o netbox-gitops ./cmd/netbox-gitops/
+      # The key covers everything the binary is made from: every tracked Go
+      # file (by content), the module files, the compiler and the cgo switch.
+      CODE_KEY="$( { git ls-files -s -- '*.go' go.mod go.sum; go version; echo "cgo=${CGO_ENABLED}"; } | sha256sum | cut -c1-20 )"
+      # Protected and unprotected refs keep separate binaries, as GitLab's
+      # caches do.
+      if [ "${CI_COMMIT_REF_PROTECTED}" = "true" ]; then TRUST=protected; else TRUST=unprotected; fi
+      PACKAGE_URL="${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/generic/netbox-gitops-${TRUST}/${CODE_KEY}/netbox-gitops"
+      REUSED=false
+      if [ "${REUSE_BUILD}" = "true" ]; then
+        echo "♻️ Looking for a binary built from this source (key ${CODE_KEY}, ${TRUST})..."
+        # -s without -S: a miss (404) is the ordinary first-time case, not an
+        # error worth a line of its own.
+        if curl -fsL --header "JOB-TOKEN: ${CI_JOB_TOKEN}" -o netbox-gitops "${PACKAGE_URL}" \
+            && chmod +x netbox-gitops && ./netbox-gitops --version >/dev/null 2>&1; then
+          REUSED=true
+          echo "♻️ Reusing it; nothing to compile."
+        else
+          rm -f netbox-gitops
+          echo "   None stored yet (or the package registry is not reachable); building."
+        fi
+      fi
+      if [ "${REUSED}" != "true" ]; then
+        echo "🔨 Building Go binary..."
+        # Stamp the build so `netbox-gitops --version` identifies exactly what
+        # ran, which is what makes the changelog's upgrade advice actionable.
+        # A reused binary keeps the stamp of the commit that built it: the
+        # commit in which the code last changed.
+        VERSION="${CI_COMMIT_TAG:-${CI_COMMIT_REF_NAME}-${CI_COMMIT_SHORT_SHA}}"
+        go build -v -trimpath \
+          -ldflags "-X main.version=${VERSION} -X main.commit=${CI_COMMIT_SHORT_SHA} -X main.buildDate=$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+          -o netbox-gitops ./cmd/netbox-gitops/
+        if [ "${REUSE_BUILD}" = "true" ]; then
+          if curl -fsS --header "JOB-TOKEN: ${CI_JOB_TOKEN}" --upload-file netbox-gitops "${PACKAGE_URL}" >/dev/null; then
+            echo "♻️ Stored for later pipelines with the same source."
+          else
+            echo "⚠ Could not store the binary (is the package registry enabled for this project?). This pipeline is unaffected; the next one builds again."
+          fi
+        fi
+      fi
     - ./netbox-gitops --version
     - ./netbox-gitops --help
     - echo "✅ Go binary built successfully!"
@@ -587,7 +655,9 @@ go_lint:
     - if: $RUN_QUALITY_CHECKS == "false"
       when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      changes: *code_paths
     - if: $CI_COMMIT_BRANCH
+      changes: *code_paths
 
 # The ingestion path end to end. It sits with the quality checks rather than
 # with the e2e jobs because it needs no NetBox and no credentials — which is
@@ -602,7 +672,9 @@ ingest_check:
     - if: $RUN_QUALITY_CHECKS == "false"
       when: never
     - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+      changes: *code_paths
     - if: $CI_COMMIT_BRANCH
+      changes: *code_paths
 
 yaml_check:
   extends: .go_base
