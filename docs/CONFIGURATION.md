@@ -120,7 +120,7 @@ made. See [Adopting what NetBox already holds](ADOPTING.md).
 |---|---|---|
 | `--out <dir>` | the data directory | Where the `definitions/` and `inventory/` files are written. |
 | `--site <slug>` | every site | Only export objects at these sites (comma-separated or repeated). Tags, roles, types and the other shared definitions are always exported. |
-| `--force` | off | Overwrite files that already exist. Without it, one existing file stops the export before anything is written. |
+| `--force` | off | Overwrite files that already exist; only accepted with `--out` pointing outside the data directory. Without it, an existing file is kept and the export is written next to it (`imported-2.yaml`). |
 | `--dry-run` | off | List the files and the report, and write nothing. |
 | `--all` | off | Also write what the repository already declares: a reference export of everything NetBox holds, to compare the YAML against. Needs `--out` outside `definitions/` and `inventory/`. Not for merging. |
 | `--detailed-exitcode` | off | Exit `2` when there was something to export, `0` when the repository already declares everything. What the `netbox_export` CI job uses to decide whether to open a merge request. |

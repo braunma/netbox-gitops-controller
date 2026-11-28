@@ -66,8 +66,9 @@ have nothing to do, and that what the export reports as left out stays
 unmanaged.
 
 It seeds untagged objects and deletes **every** object when it is done, so it
-refuses to start unless NetBox is empty, and it runs first in `make e2e` and
-in the CI job. Run it alone with `make e2e-export`.
+refuses to start unless NetBox is empty — nothing in any endpoint it cleans
+up. It is therefore not part of `make e2e`; it runs first in the CI job, and
+on its own with `make e2e-export`.
 
 `export-more.sh` asserts the same on more data, and is not part of `make e2e`
 because it takes a while (about an hour against a single-threaded

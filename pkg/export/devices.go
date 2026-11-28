@@ -88,6 +88,14 @@ func (e *exporter) exportDevices() map[int]*exportedDev {
 		}
 	}
 
+	// A device is matched by its site and name, and NetBox allows that pair
+	// twice (under two tenants).
+	count := map[string]int{}
+	for _, d := range e.data["dcim/devices"] {
+		count[nestedStr(d, "site", "slug")+"/"+str(d, "name")]++
+	}
+	warned := map[string]bool{}
+
 	out := map[int]*exportedDev{}
 	unnamed := 0
 	for _, d := range e.data["dcim/devices"] {
@@ -102,6 +110,13 @@ func (e *exporter) exportDevices() map[int]*exportedDev {
 		}
 		if e.declared.has(kindDevice, site+"/"+name) {
 			e.skipDeclared(kindDevice)
+			continue
+		}
+		if count[site+"/"+name] > 1 {
+			if !warned[site+"/"+name] {
+				e.warn("device name %s exists %d times at site %s; none of them was exported, because a device is matched by its site and name alone", name, count[site+"/"+name], site)
+				warned[site+"/"+name] = true
+			}
 			continue
 		}
 		id := idOf(d)

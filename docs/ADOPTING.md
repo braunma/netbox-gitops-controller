@@ -44,11 +44,13 @@ Then:
    any other, **including deletion by `--prune`** once removed from the YAML.
 
 Running `export` again only writes what is still undeclared. It never
-overwrites a file, and a run that would is refused as a whole. Shared
-definitions always go to the same `definitions/<kind>/imported.yaml`, so before
-exporting a second site, rename or merge the `imported.yaml` files of the first
-run (or write elsewhere with `--out`). Do not use `--force` for this: it
-replaces the earlier file with only the new objects. Devices go to one
+overwrites a file: where one exists, the new export is written next to it
+(`imported-2.yaml`), so a second site's shared definitions land beside the
+first run's. `--force` overwrites and is only accepted with `--out` pointing
+outside the data directory, because replacing a file there would undeclare
+its objects. Objects that share the identity a sync matches on (two devices of
+one name at a site, a VID twice at a site, a VRF name twice) are reported and
+left out. Devices go to one
 `imported-<site>.yaml` per site, device and module types to one file each under
 an `imported/` directory. Nothing is written to NetBox.
 

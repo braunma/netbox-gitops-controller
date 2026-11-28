@@ -35,8 +35,10 @@ ok()   { printf '  ✓ %-44s %s\n' "$1" "${2:-}"; }
 go build -o "${BIN}" ./cmd/netbox-gitops/ || exit 1
 rm -rf "${DIR}" && mkdir -p "${DIR}"
 
-echo ">>> seeding a hand-made NetBox (no gitops tag anywhere)"
-${FIX} seed || exit 1
+# The instance is this test's once it is known to be empty. The trap is set
+# before seeding, so a seed that fails part-way does not leave objects behind
+# that make the next run refuse to start.
+python3 -c 'import sys; sys.path.insert(0, "tests/e2e"); import export_fixture as f; f.require_empty()' || exit 1
 export E2E_EXPORT_OWNS_INSTANCE=1
 cleanup() {
   if [ "${E2E_KEEP:-}" = "1" ]; then echo ">>> kept: ${WORK}"; return; fi
@@ -44,6 +46,8 @@ cleanup() {
   rm -rf "${WORK}"
 }
 trap cleanup EXIT
+echo ">>> seeding a hand-made NetBox (no gitops tag anywhere)"
+${FIX} seed || exit 1
 ${FIX} snapshot "${WORK}/before.json" >/dev/null
 
 echo ">>> export"
