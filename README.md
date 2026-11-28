@@ -5,6 +5,16 @@ This Go tool enables **declarative management** (Infrastructure as Code) for a N
 The YAML in this repository is the desired state. You edit it, open a merge
 request, and a pipeline applies it — nobody clicks anything in the NetBox UI.
 
+![Architecture: engineers, the Proxmox API and iDRAC BMCs feed the tool; YAML goes through the Git repository and the sync into NetBox, hardware facts from a scan go to NetBox directly, and export writes NetBox objects back as YAML](docs/architecture.svg)
+
+Everything inside the `netbox-gitops` box is a command of this tool; the grey
+boxes are the systems it talks to. Purple is the route through the YAML:
+`collect` and `ingest` write YAML for a merge request, the sync reconciles the
+repository into NetBox, and `export` writes existing NetBox objects out as YAML
+files for you to commit. Coral is the one route that does not pass through the
+YAML: `scan` reads the BMCs of the servers the inventory declares and writes
+their hardware facts to NetBox as `hw_` custom fields.
+
 -----
 
 ## ⏱ Quickstart
