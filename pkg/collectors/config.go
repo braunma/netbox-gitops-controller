@@ -5,7 +5,9 @@ package collectors
 import (
 	"errors"
 	"fmt"
+	"net/netip"
 	"os"
+	"sort"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -49,6 +51,107 @@ type Source struct {
 	// does not report a name a NetBox cluster can be matched on, so it is
 	// declared here rather than guessed.
 	Cluster string `yaml:"cluster"`
+
+	// The keys below belong to scan sources (type "idrac"), which `scan`
+	// reads. A scan source has no url: the hosts it reaches are the addresses
+	// the inventory declares.
+
+	// UsernameEnv and PasswordEnv are the *names* of the environment variables
+	// holding the BMC credentials — never the credentials themselves.
+	UsernameEnv string `yaml:"username_env"`
+	PasswordEnv string `yaml:"password_env"`
+	// Targets says where the list of hosts comes from. The only value is
+	// "inventory": the address each selected device declares on Interface.
+	Targets string `yaml:"targets"`
+	// Interface is the name of the device interface whose address is scanned,
+	// e.g. "idrac". It is declared rather than assumed, so the file says which
+	// port of a machine a scan talks to.
+	Interface string `yaml:"interface"`
+	// Select narrows the source to some of the declared devices. Without it
+	// the source covers every device that has an address on Interface.
+	Select Selector `yaml:"select"`
+	// Port is the HTTPS port of the BMC. Zero means 443.
+	Port int `yaml:"port"`
+	// Concurrency is how many hosts are scanned at once. Zero means
+	// DefaultScanConcurrency.
+	Concurrency int `yaml:"concurrency"`
+}
+
+// Selector picks devices by what the inventory already says about them. Every
+// key that is set must match; an empty selector matches every device.
+type Selector struct {
+	Site string `yaml:"site"`
+	Rack string `yaml:"rack"`
+	Role string `yaml:"role"`
+	// Tags must all be carried by the device.
+	Tags []string `yaml:"tags"`
+	// Prefix is a CIDR the scanned address must fall into, e.g. the
+	// out-of-band management network.
+	Prefix string `yaml:"prefix"`
+}
+
+// IsZero reports whether the selector selects everything.
+func (s Selector) IsZero() bool {
+	return s.Site == "" && s.Rack == "" && s.Role == "" && len(s.Tags) == 0 && s.Prefix == ""
+}
+
+// TypeIDRAC is the scan source type for Dell iDRACs, read over Redfish.
+const TypeIDRAC = "idrac"
+
+// TargetsInventory is the one supported value of a scan source's `targets`.
+const TargetsInventory = "inventory"
+
+// DefaultScanConcurrency is how many hosts a scan source reads at once when
+// its `concurrency` is not set. MaxScanConcurrency bounds what may be set.
+const (
+	DefaultScanConcurrency = 5
+	MaxScanConcurrency     = 50
+)
+
+// scanTypes are the source types `scan` reads. They write hardware facts onto
+// devices NetBox already holds; every other type is a `collect` source, whose
+// facts are written into the YAML.
+var scanTypes = map[string]bool{TypeIDRAC: true}
+
+// IsScan reports whether the source is read by `scan` rather than `collect`.
+func (s Source) IsScan() bool {
+	return scanTypes[s.Type]
+}
+
+// KnownTypes returns every source type either command understands, sorted.
+func KnownTypes() []string {
+	types := RegisteredTypes()
+	for name := range scanTypes {
+		types = append(types, name)
+	}
+	sort.Strings(types)
+	return types
+}
+
+// Credentials reads a scan source's username and password from the environment
+// variables the configuration names.
+func (s Source) Credentials() (username, password string, err error) {
+	username = strings.TrimSpace(os.Getenv(s.UsernameEnv))
+	password = os.Getenv(s.PasswordEnv)
+	var missing []string
+	if username == "" {
+		missing = append(missing, s.UsernameEnv)
+	}
+	if password == "" {
+		missing = append(missing, s.PasswordEnv)
+	}
+	if len(missing) > 0 {
+		return "", "", fmt.Errorf("source %q: environment variable(s) %s empty or unset", s.Name, strings.Join(missing, ", "))
+	}
+	return username, password, nil
+}
+
+// ScanConcurrency is the number of hosts the source scans at once.
+func (s Source) ScanConcurrency() int {
+	if s.Concurrency > 0 {
+		return s.Concurrency
+	}
+	return DefaultScanConcurrency
 }
 
 // ShouldVerifyTLS reports whether certificates are checked for this source.
@@ -116,16 +219,25 @@ func (c *Config) Validate() error {
 		}
 		seen[src.Name] = true
 
-		if src.Type == "" {
-			errs = append(errs, fmt.Errorf("%s: type is required (known types: %v)", where, RegisteredTypes()))
-		} else if _, ok := registry[src.Type]; !ok {
-			errs = append(errs, fmt.Errorf("%s: unknown type %q (known types: %v)", where, src.Type, RegisteredTypes()))
-		}
-		if src.URL == "" {
-			errs = append(errs, fmt.Errorf("%s: url is required", where))
-		}
-		if src.TokenEnv == "" {
-			errs = append(errs, fmt.Errorf("%s: token_env is required", where))
+		if src.IsScan() {
+			errs = append(errs, validateScanSource(where, src)...)
+		} else {
+			// A source with no type yet is checked as a `collect` source, so
+			// everything missing is reported in one pass.
+			if src.Type == "" {
+				errs = append(errs, fmt.Errorf("%s: type is required (known types: %v)", where, KnownTypes()))
+			} else if _, ok := registry[src.Type]; !ok {
+				errs = append(errs, fmt.Errorf("%s: unknown type %q (known types: %v)", where, src.Type, KnownTypes()))
+			}
+			if src.URL == "" {
+				errs = append(errs, fmt.Errorf("%s: url is required", where))
+			}
+			if src.TokenEnv == "" {
+				errs = append(errs, fmt.Errorf("%s: token_env is required", where))
+			}
+			if src.Type != "" {
+				errs = append(errs, rejectScanKeys(where, src)...)
+			}
 		}
 		if src.TimeoutSeconds < 0 {
 			errs = append(errs, fmt.Errorf("%s: timeout_seconds must not be negative", where))
@@ -133,6 +245,71 @@ func (c *Config) Validate() error {
 	}
 
 	return errors.Join(errs...)
+}
+
+// validateScanSource checks the keys of a scan source.
+func validateScanSource(where string, src Source) []error {
+	var errs []error
+	if src.UsernameEnv == "" {
+		errs = append(errs, fmt.Errorf("%s: username_env is required (name the environment variable holding the username)", where))
+	}
+	if src.PasswordEnv == "" {
+		errs = append(errs, fmt.Errorf("%s: password_env is required (name the environment variable holding the password)", where))
+	}
+	if src.Targets != TargetsInventory {
+		errs = append(errs, fmt.Errorf("%s: targets must be %q — the hosts to scan are the addresses the inventory declares", where, TargetsInventory))
+	}
+	if src.Interface == "" {
+		errs = append(errs, fmt.Errorf("%s: interface is required (the device interface whose address is scanned, e.g. \"idrac\")", where))
+	}
+	if src.Select.Prefix != "" {
+		if _, err := netip.ParsePrefix(src.Select.Prefix); err != nil {
+			errs = append(errs, fmt.Errorf("%s: select.prefix %q is not a CIDR such as 192.0.2.0/24", where, src.Select.Prefix))
+		}
+	}
+	if src.Port < 0 || src.Port > 65535 {
+		errs = append(errs, fmt.Errorf("%s: port must be between 1 and 65535", where))
+	}
+	if src.Concurrency < 0 || src.Concurrency > MaxScanConcurrency {
+		errs = append(errs, fmt.Errorf("%s: concurrency must be between 1 and %d", where, MaxScanConcurrency))
+	}
+	// A scan source reaches the hosts the inventory names, with a username
+	// and a password. A url, a token or a cluster on it would be read by
+	// nothing, and a key that is read by nothing is a misunderstanding.
+	for key, set := range map[string]bool{"url": src.URL != "", "token_env": src.TokenEnv != "", "cluster": src.Cluster != ""} {
+		if set {
+			errs = append(errs, fmt.Errorf("%s: %s does not apply to a source of type %q", where, key, src.Type))
+		}
+	}
+	sortErrors(errs)
+	return errs
+}
+
+// rejectScanKeys reports scan-only keys set on a `collect` source.
+func rejectScanKeys(where string, src Source) []error {
+	set := map[string]bool{
+		"username_env": src.UsernameEnv != "",
+		"password_env": src.PasswordEnv != "",
+		"targets":      src.Targets != "",
+		"interface":    src.Interface != "",
+		"select":       !src.Select.IsZero(),
+		"port":         src.Port != 0,
+		"concurrency":  src.Concurrency != 0,
+	}
+	var errs []error
+	for key, isSet := range set {
+		if isSet {
+			errs = append(errs, fmt.Errorf("%s: %s does not apply to a source of type %q", where, key, src.Type))
+		}
+	}
+	sortErrors(errs)
+	return errs
+}
+
+// sortErrors orders errors by message, so a run reports them the same way
+// every time.
+func sortErrors(errs []error) {
+	sort.Slice(errs, func(i, j int) bool { return errs[i].Error() < errs[j].Error() })
 }
 
 // Select returns the sources named by --source, or every source when no name

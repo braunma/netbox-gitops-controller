@@ -17,7 +17,9 @@
 #   scan  →  netbox-gitops writes YAML  →  branch  →  merge request  →  a human
 #   reads the diff  →  merge  →  the normal apply pipeline syncs it to NetBox
 #
-# No job here talks to NetBox. They need NO NETBOX_TOKEN. The only credentials
+# No job here talks to NetBox, with one exception at the end of the file
+# (scan_idrac_*, which writes hardware facts directly). They need NO
+# NETBOX_TOKEN. The only credentials
 # involved are read-only ones for the systems being scanned, plus a GitLab
 # token that can push a branch and open a merge request. A discovered fact
 # reaches NetBox only by being reviewed, exactly like a hand-written line.
@@ -186,3 +188,45 @@ ingest_preview:
   rules:
     - when: manual
       allow_failure: true
+
+# -----------------------------------------------------------------------------
+# Hardware scan: the jobs that DO talk to NetBox.
+#
+# `netbox-gitops scan` reads the iDRACs of the devices the inventory declares
+# and writes their hardware facts to NetBox as hw_ custom fields. It opens no
+# merge request and changes no file. docs/INGEST.md → "Hardware facts straight
+# to NetBox".
+#
+# One job per source in collectors.yaml, so each runs on the runner that
+# reaches its management network and holds only its own credentials. The
+# variables a job needs are the ones its source names (username_env,
+# password_env), plus NETBOX_URL and NETBOX_TOKEN. Scope each credential
+# variable to its job's environment in the CI/CD settings if a runner should
+# never see another group's password.
+#
+# A BMC that does not answer is a warning and the job stays green. Add
+# --strict to the command to make it fail instead.
+# -----------------------------------------------------------------------------
+.scan_base:
+  image: $GOLANG_IMAGE
+  stage: validate
+  before_script:
+    - go build -o netbox-gitops ./cmd/netbox-gitops/
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "schedule" && $INGEST_SCHEDULE == "true"
+    - when: manual
+      allow_failure: true
+
+scan_idrac_ceph:
+  extends: .scan_base
+  tags:
+    - $GITLAB_RUNNER_TAG # a runner that reaches this source's BMC network
+  script:
+    - ./netbox-gitops scan --source idrac-ceph
+
+# scan_idrac_lab:
+#   extends: .scan_base
+#   tags:
+#     - runner-lab-oob
+#   script:
+#     - ./netbox-gitops scan --source idrac-lab

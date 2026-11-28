@@ -10,9 +10,10 @@
 // pipeline.
 //
 // A Snapshot is a description of what was seen, never an instruction. Nothing
-// in this package or below it writes to NetBox: discovered facts reach NetBox
-// only by being written into this repository's YAML, reviewed as a merge
-// request, and reconciled like every hand-written line. See docs/INGEST.md.
+// in this package writes to NetBox. Discovered facts reach NetBox by being
+// written into this repository's YAML, reviewed as a merge request, and
+// reconciled like every hand-written line — with one exception, the hardware
+// facts `scan` writes directly through pkg/facts. See docs/INGEST.md.
 //
 // Zero means "not reported". A source that could not read a fact leaves the
 // field at its zero value, and the YAML writer never writes a zero-valued
@@ -105,6 +106,16 @@ type HardwareFacts struct {
 	// StorageTotalTB is kept numeric here and rendered to two decimals where it
 	// is written, so the YAML matches what the iDRAC importer puts in NetBox.
 	StorageTotalTB float64 `json:"storage_total_tb,omitempty"`
+
+	// GPUsRead says that the source looked for GPUs, which is what tells "no
+	// GPU" (a fact, written as 0) from "not looked" (nothing written).
+	GPUsRead bool `json:"gpus_read,omitempty"`
+	GPUCount int  `json:"gpu_count,omitempty"`
+	// GPUModel groups the cards by model, e.g. "3× Tesla T4".
+	GPUModel string `json:"gpu_model,omitempty"`
+	// GPUMemoryGB is the memory of all cards together; 0 when the controller
+	// does not report it, which is the usual case on an iDRAC.
+	GPUMemoryGB int `json:"gpu_memory_gb,omitempty"`
 
 	BIOSVersion string `json:"bios_version,omitempty"`
 

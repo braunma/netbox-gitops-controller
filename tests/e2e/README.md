@@ -52,6 +52,7 @@ make e2e-ingest
 | `rename.sh` | purpose-built fixtures | correcting an identity edits the object instead of duplicating it |
 | `changed.sh` | the example data in a git repository of its own | a change-based sync picks what changed and its dependents, leaves drift and deletions to `--full`, and falls back to a full sync whenever the recorded commit cannot be trusted |
 | `repo-data.sh` | this repository's own `definitions/` + `inventory/` | the sample data converges, and the conventions it is written in hold |
+| `scan.sh` | purpose-built fixtures and a fake iDRAC it starts itself | `scan` writes only declared `hw_` fields, each source uses its own credentials, a sync afterwards has nothing to do |
 | `export.sh` | a NetBox seeded through the API, no `gitops` tag | `export` + apply adopts everything and changes no field of any object |
 
 `export.sh` makes the claim of `netbox-gitops export` directly: it fills a

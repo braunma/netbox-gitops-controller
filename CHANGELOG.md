@@ -53,6 +53,25 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`scan`: hardware facts from iDRACs, written straight to NetBox.** A source
+  of type `idrac` in `collectors.yaml` reads the BMCs of the devices the
+  inventory declares, over Redfish, and writes CPU, GPU, memory, storage,
+  firmware and power facts as `hw_` custom fields on those devices. The hosts are the
+  addresses declared on the interface the source names (`interface: idrac`),
+  narrowed by `select` (site, rack, role, tags, prefix); there is no host list
+  and no range scan. Each source has its own credentials, and a device two
+  sources select is an error. This is the one route to NetBox that does not
+  pass through the YAML, and it is narrow: only `hw_` fields declared in
+  `definitions/custom_fields` for devices are written, `serial` and
+  `asset_tag` are compared and reported but never written, no device is
+  created, and a `hw_` field set in a device's YAML is left to the YAML. The
+  sync does not undo what a scan wrote. `collect` skips these sources.
+  The idrac-json `ingest` format is unchanged.
+  GPUs are new with this route: `hw_gpu_count` (written as `0` for a machine
+  without one, so a removed card does not stay on record), `hw_gpu_model`
+  (cards grouped by model, e.g. `3× Tesla T4`) and `hw_gpu_memory_gb`. The
+  example definitions declare all three; add them to your own
+  `definitions/custom_fields` to have them written.
 - **`export --all`** also writes the objects the repository already declares,
   into a separate `--out` directory: a reference of everything NetBox holds.
   Use it to find what an earlier export could not carry yet, such as the

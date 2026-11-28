@@ -95,6 +95,7 @@ func main() {
 	rootCmd.AddCommand(newValidateCommand())
 	rootCmd.AddCommand(newCollectCommand())
 	rootCmd.AddCommand(newIngestCommand())
+	rootCmd.AddCommand(newScanCommand())
 	rootCmd.AddCommand(newExportCommand())
 
 	if err := rootCmd.Execute(); err != nil {

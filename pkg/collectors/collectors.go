@@ -8,6 +8,10 @@
 // to NetBox. A collector's only effect on the world is the Snapshot it returns;
 // what happens to that Snapshot — matching it against the declared inventory,
 // writing YAML, opening a merge request — is somebody else's job.
+//
+// The same holds for the scan sources in this package (IDRACScanner): they
+// read BMCs and return results. Writing those results to NetBox is done by
+// pkg/facts, from the `scan` command.
 package collectors
 
 import (

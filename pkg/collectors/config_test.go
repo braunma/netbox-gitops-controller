@@ -174,3 +174,102 @@ func TestToken(t *testing.T) {
 		t.Error("expected an error for an empty token variable")
 	}
 }
+
+func TestLoadConfigScanSource(t *testing.T) {
+	path := writeConfig(t, `sources:
+  - name: pve-prod
+    type: proxmox
+    url: https://pve.example.com:8006
+    token_env: PROXMOX_TOKEN
+  - name: idrac-ceph
+    type: idrac
+    username_env: IDRAC_CEPH_USER
+    password_env: IDRAC_CEPH_PASS
+    targets: inventory
+    interface: idrac
+    select:
+      tags: ["ceph"]
+      prefix: 192.0.2.0/24
+    concurrency: 8
+`)
+
+	cfg, err := LoadConfig(path)
+	if err != nil {
+		t.Fatalf("LoadConfig: %v", err)
+	}
+	if cfg.Sources[0].IsScan() {
+		t.Error("a proxmox source was read as a scan source")
+	}
+	src := cfg.Sources[1]
+	if !src.IsScan() {
+		t.Fatal("an idrac source was not read as a scan source")
+	}
+	if src.ScanConcurrency() != 8 || src.Select.Prefix != "192.0.2.0/24" || len(src.Select.Tags) != 1 {
+		t.Errorf("scan keys were not read: %+v", src)
+	}
+	if (Source{}).ScanConcurrency() != DefaultScanConcurrency {
+		t.Error("an unset concurrency must fall back to the documented default")
+	}
+}
+
+// Each kind of source rejects the other kind's keys: a key that nothing reads
+// is a misunderstanding, and it should surface when the file is loaded.
+func TestValidateSourceKinds(t *testing.T) {
+	cases := []struct {
+		name, body string
+		want       []string
+	}{
+		{"scan source without its keys", `sources:
+  - name: idrac-a
+    type: idrac
+`, []string{"username_env is required", "password_env is required", `targets must be "inventory"`, "interface is required"}},
+		{"scan source with collect keys", `sources:
+  - name: idrac-a
+    type: idrac
+    username_env: U
+    password_env: P
+    targets: inventory
+    interface: idrac
+    url: https://192.0.2.1
+    token_env: T
+`, []string{"url does not apply", "token_env does not apply"}},
+		{"scan source with a bad prefix and concurrency", `sources:
+  - name: idrac-a
+    type: idrac
+    username_env: U
+    password_env: P
+    targets: inventory
+    interface: idrac
+    select: { prefix: "192.0.2.0" }
+    concurrency: 500
+`, []string{"select.prefix", "concurrency must be between"}},
+		{"collect source with scan keys", `sources:
+  - name: pve
+    type: proxmox
+    url: https://pve.example.com:8006
+    token_env: T
+    interface: idrac
+    select: { site: berlin }
+`, []string{"interface does not apply", "select does not apply"}},
+		{"unknown type lists both kinds", `sources:
+  - name: x
+    type: ilo
+    url: https://x
+    token_env: T
+`, []string{`unknown type "ilo"`, "idrac", "proxmox"}},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := LoadConfig(writeConfig(t, tc.body))
+			if err == nil {
+				t.Fatal("the configuration was accepted")
+			}
+			for _, want := range tc.want {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error does not mention %q:\n%v", want, err)
+				}
+			}
+		})
+	}
+}

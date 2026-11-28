@@ -70,6 +70,7 @@ func TestHardwareFactTypesMatchTheirDeclarations(t *testing.T) {
 		DiskCount: 3, StorageSummary: "2x894GB", StorageTotalTB: 15.32,
 		BIOSVersion: "2.19.0", PowerState: "Off",
 		PowerConsumedWatts: 284, PowerPeakWatts: 612,
+		GPUsRead: true, GPUCount: 2, GPUModel: "2× NVIDIA A40 (48 GB)", GPUMemoryGB: 96,
 	}
 
 	wantInteger := map[string]bool{
@@ -77,6 +78,7 @@ func TestHardwareFactTypesMatchTheirDeclarations(t *testing.T) {
 		"hw_ram_slots_total": true, "hw_ram_slots_used": true, "hw_ram_slots_available": true,
 		"hw_memory_speed_mhz": true, "hw_disk_count": true,
 		"hw_power_consumed_watts": true, "hw_power_peak_watts": true,
+		"hw_gpu_count": true, "hw_gpu_memory_gb": true,
 	}
 
 	for _, kv := range hardwareCustomFields(facts, DefaultCustomFieldPrefix) {
@@ -113,6 +115,25 @@ func TestMeaningfulZeroesAreWritten(t *testing.T) {
 	}
 	if _, ok := written["hw_disk_count"]; ok {
 		t.Error("a machine that said nothing about storage had a disk count invented for it")
+	}
+}
+
+// A machine without a GPU says 0 once the source has looked, so a card that
+// was removed does not stay on record; a source that never looked says nothing.
+func TestGPUCountIsWrittenOnlyWhenTheSourceLooked(t *testing.T) {
+	has := func(h discovery.HardwareFacts) (interface{}, bool) {
+		for _, kv := range hardwareCustomFields(h, DefaultCustomFieldPrefix) {
+			if kv.Key == "hw_gpu_count" {
+				return kv.Value, true
+			}
+		}
+		return nil, false
+	}
+	if got, ok := has(discovery.HardwareFacts{CPUCount: 2, GPUsRead: true}); !ok || got != 0 {
+		t.Errorf("a scanned machine without a GPU reported %v, want 0 written", got)
+	}
+	if _, ok := has(discovery.HardwareFacts{CPUCount: 2}); ok {
+		t.Error("a source that never looked for GPUs had a count invented for it")
 	}
 }
 
