@@ -325,6 +325,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "tenant": {
+          "type": "string"
         }
       },
       "required": [
@@ -477,6 +480,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "tenant": {
+          "type": "string"
         }
       },
       "type": "object"
@@ -647,6 +653,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "tenant": {
+          "type": "string"
         }
       },
       "type": "object"

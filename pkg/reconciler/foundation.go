@@ -45,6 +45,7 @@ func (fr *FoundationReconciler) ReconcileSites(sites []*models.Site) error {
 		if site.Comments != "" {
 			payload["comments"] = site.Comments
 		}
+		setTenant(fr.client, payload, site.Tenant, "site", site.Name)
 
 		if _, err := ensure(fr.client, "dcim", "sites", ensureSpec{
 			kind:        "site",
@@ -98,6 +99,7 @@ func (fr *FoundationReconciler) ReconcileRacks(racks []*models.Rack) error {
 		if rack.Description != "" {
 			payload["description"] = rack.Description
 		}
+		setTenant(fr.client, payload, rack.Tenant, "rack", rack.Name)
 
 		if _, err := ensure(fr.client, "dcim", "racks", ensureSpec{
 			kind: "rack",
@@ -268,6 +270,13 @@ func (fr *FoundationReconciler) ReconcileTenants(tenants []*models.Tenant) error
 			renameFrom:  client.SlugifiedRename(tenant.RenameFrom),
 			payload:     payload,
 			tags:        tenant.Tags,
+			// Register so the sites, racks, VRFs, VLANs, prefixes, devices,
+			// clusters and VMs reconciled later can resolve a tenant created
+			// in this same run, including in --dry-run where it is not
+			// written to NetBox.
+			register: func(id int) {
+				fr.client.Cache().Register("tenants", id, tenant.Slug, tenant.Name)
+			},
 		}); err != nil {
 			return err
 		}

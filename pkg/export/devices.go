@@ -112,7 +112,8 @@ func (e *exporter) exportDevices() map[int]*exportedDev {
 			DeviceTypeSlug: nestedStr(d, "device_type", "slug"),
 			Status:         status(d),
 			Serial:         str(d, "serial"), AssetTag: str(d, "asset_tag"),
-			Tags: e.tags(d),
+			Tenant: nestedStr(d, "tenant", "slug"),
+			Tags:   e.tags(d),
 		}
 		if pd := nested(d, "parent_device"); pd != nil {
 			cfg.ParentDevice = str(pd, "name")
@@ -129,7 +130,7 @@ func (e *exporter) exportDevices() map[int]*exportedDev {
 			}
 		}
 		cfg.CustomFields = e.customFieldValues("device "+name, d)
-		for _, f := range []string{"platform", "tenant", "cluster", "location", "virtual_chassis", "config_template"} {
+		for _, f := range []string{"platform", "cluster", "location", "virtual_chassis", "config_template"} {
 			if nested(d, f) != nil {
 				e.notCarried(f)
 			}

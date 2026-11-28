@@ -103,6 +103,9 @@
           },
           "type": "array"
         },
+        "tenant": {
+          "type": "string"
+        },
         "u_height": {
           "type": "integer"
         },
@@ -164,6 +167,9 @@
           },
           "type": "array"
         },
+        "tenant": {
+          "type": "string"
+        },
         "u_height": {
           "type": "integer"
         },
@@ -220,6 +226,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "tenant": {
+          "type": "string"
         },
         "u_height": {
           "type": "integer"

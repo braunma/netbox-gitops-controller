@@ -779,7 +779,7 @@ file each. Nothing is written to NetBox.
 
 | NetBox holds | What happens |
 |---|---|
-| A device's platform, tenant, description, comments, location, OOB IP; a site's region; a VLAN's or prefix's role | Not in the YAML. A sync does not send them, so they stay as they are. |
+| A device's platform, description, comments, location, OOB IP; a site's region; a VLAN's or prefix's role | Not in the YAML. A sync does not send them, so they stay as they are. |
 | Several IP addresses on one interface | The primary one (else the first) is declared; the others stay in NetBox, unmanaged. |
 | An address in the global table inside a prefix of a VRF | Not declared: the controller would derive the prefix's VRF, miss the address, and create a copy. |
 | A VLAN in no group at a site with exactly one VLAN group | Exported; the first sync moves it into that group (the controller derives it). |
@@ -1037,6 +1037,40 @@ image — the reverse order used for `--prune` — by
   * The script automatically tags every object it creates with `GitOps Managed` (slug: `gitops`). You never write `gitops` into a `tags:` list yourself.
   * **Default behavior:** If you remove a device from the YAML file, it is **not** deleted from NetBox — the tool only creates and updates objects unless you opt into pruning.
   * **Pruning (`--prune`):** Run a sync with `--prune` to delete orphans — objects that still carry the `gitops` tag but are no longer declared in YAML. Only managed objects are ever deleted; manually created objects (without the tag) are protected, and tags themselves are never pruned. Combine with `--dry-run` to preview the deletions before applying them. Pruning is scoped to the phases that run (`--only`) and cannot be combined with `--site`/`--device`/`--vm`. See the Pruning section below for the full semantics.
+
+### Tenants
+
+A tenant (German NetBox UI: *Mandant*) is defined once and then assigned with
+a `tenant:` field on anything that can belong to one — sites, racks, devices,
+VRFs, VLANs, prefixes, clusters and VMs:
+
+```yaml
+# definitions/tenant_groups/tenant_groups.yaml — optional grouping
+- name: "Internal"
+  slug: "internal"
+
+# definitions/tenants/tenants.yaml — define the tenant once
+- name: "Platform Engineering"
+  slug: "platform-engineering"
+  group: "internal"
+
+# definitions/sites/sites.yaml — reference it by slug (the name works too)
+- name: "Berlin DC"
+  slug: "berlin-dc"
+  tenant: "platform-engineering"
+  description: "Primary data center"
+```
+
+To give every object in a file the same tenant, put `tenant:` under the file's
+`defaults:` block; an entry's own `tenant:` wins.
+
+  * **Nothing is inherited.** A rack in a site with a tenant has no tenant
+    unless it (or its file's `defaults:`) declares one, exactly as in NetBox.
+  * **Leaving `tenant:` out leaves the tenant alone.** A tenant assigned in the
+    NetBox UI survives a sync; removing the line from the YAML does not clear
+    it in NetBox.
+  * **An unknown tenant never fails the object.** `validate` reports it as
+    `unknown-tenant`; a sync creates the object without a tenant and warns.
 
 ### Your Own Tags
 

@@ -128,6 +128,7 @@ func Check(ds Dataset, opts Options) []Finding {
 	c.checkIPAddresses()
 	c.checkCables()
 	c.checkVMs()
+	c.checkTenants()
 	c.checkTags()
 
 	c.locate()
@@ -1176,9 +1177,6 @@ func (c *checker) checkVMs() {
 		if vm.Platform != "" && !c.platforms[vm.Platform] {
 			c.reference(ref, "unknown-platform", "platform", vm.Platform, len(c.ds.Platforms), keys(c.platforms)...)
 		}
-		if vm.Tenant != "" && !c.tenants[vm.Tenant] {
-			c.reference(ref, "unknown-tenant", "tenant", vm.Tenant, len(c.ds.Tenants), keys(c.tenants)...)
-		}
 
 		ifaces := make(map[string]bool, len(vm.Interfaces))
 		for _, iface := range vm.Interfaces {
@@ -1191,6 +1189,41 @@ func (c *checker) checkVMs() {
 				c.reference(iref, "unknown-vrf", "VRF", iface.IP.VRF, len(c.ds.VRFs), keys(c.vrfs)...)
 			}
 		}
+	}
+}
+
+// checkTenants reports a `tenant:` that names no declared tenant, on every
+// kind the sync sends a tenant for. The sync leaves such a tenant off with a
+// warning, so the object silently belongs to nobody.
+func (c *checker) checkTenants() {
+	check := func(ref, tenant string) {
+		if tenant != "" && !c.tenants[tenant] {
+			c.reference(ref, "unknown-tenant", "tenant", tenant, len(c.ds.Tenants), keys(c.tenants)...)
+		}
+	}
+	for _, s := range c.ds.Sites {
+		check("site "+s.Slug, s.Tenant)
+	}
+	for _, r := range c.ds.Racks {
+		check("rack "+r.Name, r.Tenant)
+	}
+	for _, v := range c.ds.VRFs {
+		check("VRF "+v.Name, v.Tenant)
+	}
+	for _, v := range c.ds.VLANs {
+		check(fmt.Sprintf("VLAN %s (%d)", v.Name, v.VID), v.Tenant)
+	}
+	for _, p := range c.ds.Prefixes {
+		check("prefix "+p.Prefix, p.Tenant)
+	}
+	for _, d := range c.ds.Devices {
+		check(deviceRef(d.Name), d.Tenant)
+	}
+	for _, cl := range c.ds.Clusters {
+		check("cluster "+cl.Name, cl.Tenant)
+	}
+	for _, vm := range c.ds.VMs {
+		check("virtual machine "+vm.Name, vm.Tenant)
 	}
 }
 

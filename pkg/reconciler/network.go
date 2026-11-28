@@ -38,6 +38,7 @@ func (nr *NetworkReconciler) ReconcileVRFs(vrfs []*models.VRF) error {
 		if vrf.Description != "" {
 			payload["description"] = vrf.Description
 		}
+		setTenant(nr.client, payload, vrf.Tenant, "VRF", vrf.Name)
 
 		if _, err := ensure(nr.client, "ipam", "vrfs", ensureSpec{
 			kind:        "VRF",
@@ -170,6 +171,7 @@ func (nr *NetworkReconciler) ReconcileVLANs(vlans []*models.VLAN) error {
 		if vlan.Description != "" {
 			payload["description"] = vlan.Description
 		}
+		setTenant(nr.client, payload, vlan.Tenant, "VLAN", vlan.Name)
 
 		if _, err := ensure(nr.client, "ipam", "vlans", ensureSpec{
 			kind: "VLAN",
@@ -258,6 +260,7 @@ func (nr *NetworkReconciler) ReconcilePrefixes(prefixes []*models.Prefix) error 
 		if prefix.Description != "" {
 			payload["description"] = prefix.Description
 		}
+		setTenant(nr.client, payload, prefix.Tenant, "prefix", prefix.Prefix)
 
 		lookup := map[string]interface{}{"prefix": prefix.Prefix}
 		if prefix.VRFName != "" {

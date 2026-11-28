@@ -59,20 +59,20 @@ func seedHandMadeInstance(f *fakeNetBox) {
 	tenant := f.seed("tenancy", "tenants", client.Object{"name": "Platform", "slug": "platform", "group": ref(tg), "description": "", "tags": tagRefs()})
 
 	site := f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc", "status": val("active"),
-		"time_zone": "Europe/Berlin", "description": "", "comments": "", "tags": tagRefs(prod)})
+		"time_zone": "Europe/Berlin", "description": "", "comments": "", "tenant": ref(tenant), "tags": tagRefs(prod)})
 	rack := f.seed("dcim", "racks", client.Object{"name": "Rack A01", "site": ref(site), "status": val("active"),
-		"width": val("19"), "u_height": 42.0, "description": "", "tags": tagRefs()})
+		"width": val("19"), "u_height": 42.0, "description": "", "tenant": ref(tenant), "tags": tagRefs()})
 	rack["width"] = map[string]interface{}{"value": 19.0, "label": "19 inches"}
 
-	vrf := f.seed("ipam", "vrfs", client.Object{"name": "prod", "rd": "65000:1", "description": "", "enforce_unique": true, "tags": tagRefs()})
+	vrf := f.seed("ipam", "vrfs", client.Object{"name": "prod", "rd": "65000:1", "description": "", "enforce_unique": true, "tenant": ref(tenant), "tags": tagRefs()})
 	vg := f.seed("ipam", "vlan-groups", client.Object{"name": "Berlin VLANs", "slug": "berlin-vlans", "scope_type": "dcim.site",
 		"scope_id": site["id"], "scope": ref(site), "vid_ranges": []interface{}{[]interface{}{1.0, 4094.0}}, "description": "", "tags": tagRefs()})
 	mgmt := f.seed("ipam", "vlans", client.Object{"name": "mgmt", "vid": 100.0, "site": ref(site), "group": ref(vg),
-		"status": val("active"), "description": "", "tags": tagRefs(prod)})
+		"status": val("active"), "description": "", "tenant": ref(tenant), "tags": tagRefs(prod)})
 	data := f.seed("ipam", "vlans", client.Object{"name": "data", "vid": 200.0, "site": ref(site), "group": ref(vg),
 		"status": val("active"), "description": "", "tags": tagRefs()})
 	f.seed("ipam", "prefixes", client.Object{"prefix": "10.0.0.0/24", "scope_type": "dcim.site", "scope_id": site["id"], "scope": ref(site),
-		"vrf": ref(vrf), "vlan": ref(mgmt), "status": val("active"), "is_pool": false, "description": "mgmt net", "tags": tagRefs()})
+		"vrf": ref(vrf), "vlan": ref(mgmt), "status": val("active"), "is_pool": false, "description": "mgmt net", "tenant": ref(tenant), "tags": tagRefs()})
 
 	// A server type with two NICs, a switch type, a patch panel type.
 	r740 := f.seed("dcim", "device-types", client.Object{"model": "PowerEdge R740", "slug": "r740", "manufacturer": ref(dell),
@@ -104,7 +104,7 @@ func seedHandMadeInstance(f *fakeNetBox) {
 	srv := f.seed("dcim", "devices", client.Object{"name": "srv-01", "site": ref(site), "role": ref(server),
 		"device_type": ref(r740), "rack": ref(rack), "position": 10.0, "face": val("front"), "status": val("active"),
 		"serial": "ABC123", "asset_tag": nil, "tags": tagRefs(prod, backup),
-		"platform": ref(ubuntu), "custom_fields": map[string]interface{}{"owner": "team-a", "unused": nil}})
+		"platform": ref(ubuntu), "tenant": ref(tenant), "custom_fields": map[string]interface{}{"owner": "team-a", "unused": nil}})
 	swDev := f.seed("dcim", "devices", client.Object{"name": "sw-01", "site": ref(site), "role": ref(switchRole),
 		"device_type": ref(sw), "rack": ref(rack), "position": 40.0, "face": val("rear"), "status": val("planned"),
 		"serial": "", "tags": tagRefs()})
@@ -234,6 +234,27 @@ func TestExportedYAMLAdoptsTheInstanceUnchanged(t *testing.T) {
 	for k, n := range want {
 		if counts[k] != n {
 			t.Errorf("exported %d %s, want %d", counts[k], k, n)
+		}
+	}
+
+	// The tenant of every kind that can have one is carried into the YAML.
+	tenants := map[string]string{
+		"site": ds.Sites[0].Tenant, "rack": ds.Racks[0].Tenant, "VRF": ds.VRFs[0].Tenant,
+		"prefix": ds.Prefixes[0].Tenant,
+	}
+	for _, v := range ds.VLANs {
+		if v.Name == "mgmt" {
+			tenants["VLAN"] = v.Tenant
+		}
+	}
+	for _, d := range ds.Devices {
+		if d.Name == "srv-01" {
+			tenants["device"] = d.Tenant
+		}
+	}
+	for _, kind := range []string{"site", "rack", "VRF", "VLAN", "prefix", "device"} {
+		if tenants[kind] != "platform" {
+			t.Errorf("exported %s tenant = %q, want \"platform\"", kind, tenants[kind])
 		}
 	}
 
