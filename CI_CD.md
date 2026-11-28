@@ -112,7 +112,7 @@ The end-to-end scripts additionally read `E2E_SEEDS`, `E2E_KEEP` and
 
 `go_plan` and `go_apply` look only at what changed in the YAML since the
 commit NetBox was last synced to (see
-[What a sync looks at](README.md#what-a-sync-looks-at)). That keeps them
+[What a sync looks at](docs/USAGE.md#what-a-sync-looks-at)). That keeps them
 short, and it is also what they leave out: they do not notice an edit made in
 NetBox by hand, and they delete nothing. `go_plan_full` and `go_apply_full`
 compare everything.

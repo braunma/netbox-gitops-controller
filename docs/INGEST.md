@@ -472,6 +472,14 @@ netbox-gitops collect --detailed-exitcode
 
 Every flag is in [`CONFIGURATION.md`](CONFIGURATION.md).
 
+Each `collect` or `ingest` run ends with a summary in the sync's own shape, and `--detailed-exitcode`
+exits `2` when the repository would change — which is how a scheduled CI job
+decides whether to open a merge request at all:
+
+```text
+Facts: 12 updated, 3 new VMs, 2 parked devices, 41 unchanged
+```
+
 ### Configuring sources
 
 `collect` reads `collectors.yaml` (see

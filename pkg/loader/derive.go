@@ -24,7 +24,7 @@ import (
 // as one line ("Derived: device srv-01 interface idrac: vrf "Production"
 // (from prefix 10.0.10.0/24)") and logged by every run, so what the YAML
 // leaves out is still on the record of what was sent. The rule for each is
-// stated in the README under "What the controller fills in".
+// stated in docs/WRITING_YAML.md under "What the controller fills in".
 func DeriveDefaults(ds *Dataset) ([]string, error) {
 	d := &deriver{ds: ds}
 	d.index()

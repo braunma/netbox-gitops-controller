@@ -6,7 +6,7 @@
 # defaults; `tags` are combined rather than replaced. `defaults.interfaces`
 # does the same per interface name.
 #
-# Conventions (see the README section "Conventions that keep the YAML small"):
+# Conventions (see "Conventions that keep the YAML small" in docs/WRITING_YAML.md):
 #   - Ports come from the device type template, so an interface is listed here
 #     only when it carries device-specific data (an IP, a VLAN, a cable) and
 #     never repeats the template's `type`.
@@ -14,7 +14,7 @@
 #   - A cable is declared on ONE end only — the server side. The reconciler
 #     wires both ends from that single declaration.
 #   - References use the short field names (`site`, `role`, `device_type`,
-#     `rack`); see the README section "Field names".
+#     `rack`); see "Field names" in docs/WRITING_YAML.md.
 
 defaults:
   site: "berlin-dc"

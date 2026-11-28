@@ -46,7 +46,7 @@ func keys(phases map[string]bool) []pruneTargetKey {
 // phases, the mirror image of the prune order asserted below. runSync executes
 // the phases in this sequence and pruneTargets derives its scoping from it, so
 // a reordering here silently changes both. The order is documented in the
-// README's "Phase order" table; keep the two in step.
+// "Phase order" table in docs/CONCEPTS.md; keep the two in step.
 func TestValidPhasesCreationOrder(t *testing.T) {
 	want := []string{"foundation", "network", "device-types", "devices", "virtualization"}
 

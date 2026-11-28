@@ -81,8 +81,8 @@ resolved against the object's site.
 ### Devices and interfaces
 A device references its site, role, device type and rack by slug, written
 with the short keys `site`, `role`, `device_type` and `rack` (the older
-`site_slug`, `role_slug`, ... spellings are still accepted; the README's
-"Field names" table lists every short key). Inventory files support a grouped
+`site_slug`, `role_slug`, ... spellings are still accepted; the
+[Field names](docs/WRITING_YAML.md#field-names) table lists every short key). Inventory files support a grouped
 form where a `defaults` block is merged into every device (device values win,
 tags are combined), so shared fields are written once. `defaults.interfaces`
 does the same per interface name, for the interfaces a device lists (see
@@ -134,8 +134,8 @@ go run ./cmd/yamlcheck               # definitions/, inventory/ and example/
 go run ./cmd/yamlcheck --strict      # fail on warnings as well as errors
 ```
 
-The full list of checks and their severities is in the README section
-*Checking the YAML before it reaches NetBox*.
+The full list of checks and their severities is in
+[Checking the YAML](docs/CHECKS.md#checking-the-yaml-before-it-reaches-netbox).
 
 ### Self-healing device bays and blades
 `example-chassis.yaml` defines device-bay templates; the controller auto-creates
@@ -216,7 +216,7 @@ Every object the controller creates is tagged `gitops`; it is never written
 into the YAML. Tags an object declares itself (`tags: ["production"]`) are set
 in addition, and must be defined in `definitions/extras/tags.yaml`. Only
 `gitops`-tagged objects are eligible for deletion by `--prune`; manually
-created objects are protected. See the README for the full pruning semantics.
+created objects are protected. See [Pruning Orphans](docs/USAGE.md#pruning-orphans) for the full pruning semantics.
 
 ### Hardware facts (`hw_*`)
 
