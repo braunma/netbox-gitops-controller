@@ -31,6 +31,9 @@ var (
 	deviceFilter     string
 	vmFilter         string
 	prune            bool
+	fullSync         bool
+	verboseOutput    bool
+	changedSince     string
 
 	deviceTypeLibrary   string
 	moduleTypeLibrary   string
@@ -80,7 +83,10 @@ func main() {
 	rootCmd.Flags().StringVar(&siteFilter, "site", "", "Restrict reconciliation to devices and VMs of a single site slug")
 	rootCmd.Flags().StringVar(&deviceFilter, "device", "", "Restrict device reconciliation to a single device name")
 	rootCmd.Flags().StringVar(&vmFilter, "vm", "", "Restrict virtual machine reconciliation to a single VM name")
-	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview)")
+	rootCmd.Flags().BoolVar(&prune, "prune", false, "Delete gitops-managed objects that are no longer declared in YAML (use with --dry-run to preview). Only a full sync deletes; a change-based sync lists what is no longer declared and leaves it")
+	rootCmd.Flags().BoolVar(&fullSync, "full", false, "Reconcile everything the YAML declares, not only what changed since the last completed sync. This is what reverts edits made in NetBox by hand and what --prune needs")
+	rootCmd.Flags().BoolVar(&verboseOutput, "verbose", false, "Print a line for everything the sync looks at, including what is loaded, derived and found unchanged. Without it the output is the scope, the changes, the warnings and the summary")
+	rootCmd.Flags().StringVar(&changedSince, "changed-since", "", "Reconcile only what changed since this commit, instead of the commit NetBox has on record (tag gitops-state)")
 	rootCmd.PersistentFlags().StringVar(&deviceTypeLibrary, "devicetype-library", "", "Path to a community-format device type library (default: $DEVICETYPE_LIBRARY, else <data-dir>/definitions/device_type_library)")
 	rootCmd.PersistentFlags().StringVar(&moduleTypeLibrary, "moduletype-library", "", "Path to a community-format module type library (default: $MODULETYPE_LIBRARY, else <data-dir>/definitions/module_type_library)")
 	rootCmd.PersistentFlags().StringSliceVar(&ignoredFiles, "ignore-file", nil, fmt.Sprintf("Filename globs to skip while loading (default: %s)", strings.Join(loader.DefaultIgnorePatterns, ", ")))
@@ -106,6 +112,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 		// out-of-scope objects the filter excluded, so refuse the combination.
 		return fmt.Errorf("--prune cannot be combined with --site, --device or --vm")
 	}
+	if changedSince != "" && fullSync {
+		return fmt.Errorf("--changed-since cannot be combined with --full")
+	}
+	if changedSince != "" && restricted() {
+		return fmt.Errorf("--changed-since cannot be combined with --only, --site, --device or --vm")
+	}
 	if outputFormat == "json" {
 		// Reserve stdout for the JSON plan; every logger created from here
 		// on (including the client's internal one) writes to stderr.
@@ -117,6 +129,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 		return err
 	}
 
+	utils.SetVerbose(verboseOutput)
 	logger := utils.NewLogger(dryRun)
 
 	// Read the config file before anything looks at the environment, so every
@@ -158,7 +171,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// Initialize NetBox client
-	logger.Info("Initializing NetBox client...")
+	logger.Debug("Initializing NetBox client...")
 	c, err := client.NewClient(netboxURL, netboxToken, dryRun)
 	if err != nil {
 		logger.Error("Failed to initialize NetBox client", err)
@@ -177,14 +190,33 @@ func runSync(cmd *cobra.Command, args []string) error {
 	}
 
 	// =========================================================================
+	// SCOPE: everything, or only what changed since the last completed sync
+	// =========================================================================
+	scope, err := decideScope(c, &ds, logger)
+	if err != nil {
+		logger.Error("Invalid scope", err)
+		return err
+	}
+	scope.report(logger)
+	scope.narrow(phases, &ds)
+	scope.begin(c, logger)
+	skipped := scope.skipReason()
+
+	// =========================================================================
 	// LOAD GLOBAL CACHES (MUST BE BEFORE PHASE 1)
 	// =========================================================================
 	// Must happen before device reconciliation - and even earlier here,
-	// because the foundation reconciler needs it too
-	logger.Info("Loading global caches...")
-	if err := c.Cache().LoadGlobal(); err != nil {
-		logger.Error("Failed to load global caches", err)
-		return err
+	// because the foundation reconciler needs it too. A change-based sync
+	// with nothing to reconcile needs none of it.
+	anyPhase := false
+	for _, selected := range phases {
+		anyPhase = anyPhase || selected
+	}
+	if anyPhase {
+		if err := c.Cache().LoadGlobal(); err != nil {
+			logger.Error("Failed to load global caches", err)
+			return err
+		}
 	}
 
 	// =========================================================================
@@ -199,7 +231,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
-		logger.Info("Skipping phase 1 (foundation): not selected via --only")
+		logger.Info("Skipping phase 1 (foundation): %s", skipped)
 	}
 
 	// =========================================================================
@@ -216,12 +248,12 @@ func runSync(cmd *cobra.Command, args []string) error {
 			}
 		}
 		if phases["device-types"] {
-			if err := runDeviceTypes(c, ds, logger); err != nil {
+			if err := runDeviceTypes(c, scope.typesToReconcile(ds), logger); err != nil {
 				return err
 			}
 		}
 	} else {
-		logger.Info("Skipping phase 2 (network & types): not selected via --only")
+		logger.Info("Skipping phase 2 (network & types): %s", skipped)
 	}
 
 	// =========================================================================
@@ -236,7 +268,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
-		logger.Info("Skipping phase 3 (devices): not selected via --only")
+		logger.Info("Skipping phase 3 (devices): %s", skipped)
 	}
 
 	// =========================================================================
@@ -251,13 +283,19 @@ func runSync(cmd *cobra.Command, args []string) error {
 			return err
 		}
 	} else {
-		logger.Info("Skipping phase 4 (virtualization): not selected via --only")
+		logger.Info("Skipping phase 4 (virtualization): %s", skipped)
 	}
 
 	// =========================================================================
 	// PRUNE: delete gitops-managed orphans no longer declared in YAML
 	// =========================================================================
-	if prune {
+	if prune && !scope.Full {
+		// Prune deletes every managed object this run did not reconcile, and
+		// a change-based run reconciles only what changed: pruning here would
+		// delete everything that did not. What is no longer declared was
+		// listed with the scope above.
+		logger.Info("Prune: left to the next full sync (a change-based sync deletes nothing)")
+	} else if prune {
 		logger.Info("═══════════════════════════════════════════════════════")
 		logger.Info("Prune: removing orphaned gitops-managed objects")
 		logger.Info("═══════════════════════════════════════════════════════")
@@ -281,6 +319,10 @@ func runSync(cmd *cobra.Command, args []string) error {
 		}
 	}
 
+	// Everything succeeded: note in NetBox which commit it now matches, so
+	// the next sync can start from there.
+	scope.record(c, logger)
+
 	// =========================================================================
 	// SUMMARY
 	// =========================================================================
@@ -300,7 +342,7 @@ func runSync(cmd *cobra.Command, args []string) error {
 	logger.Info("═══════════════════════════════════════════════════════")
 
 	if outputFormat == "json" {
-		if err := writePlanJSON(os.Stdout, dryRun, summary, c.Recorder().Changes()); err != nil {
+		if err := writePlanJSON(os.Stdout, dryRun, scope.plan(), summary, c.Recorder().Changes()); err != nil {
 			logger.Error("Failed to write JSON plan", err)
 			return err
 		}
@@ -540,7 +582,7 @@ func resolveDeviceTypeLibrary() string {
 // filters, loads the required site caches and reconciles the devices.
 func runDevices(c *client.NetBoxClient, ds loader.Dataset, logger *utils.Logger) error {
 	allDevices := ds.Devices
-	logger.Info("Loaded %d devices from inventory", len(allDevices))
+	logger.Debug("Loaded %d devices from inventory", len(allDevices))
 
 	if siteFilter != "" || deviceFilter != "" {
 		filtered := filterDevices(allDevices, siteFilter, deviceFilter)
@@ -559,13 +601,18 @@ func runDevices(c *client.NetBoxClient, ds loader.Dataset, logger *utils.Logger)
 		uniqueSites[device.SiteSlug] = true
 	}
 
-	logger.Info("Loading site caches for: %v", getKeys(uniqueSites))
+	logger.Debug("Loading site caches for: %v", getKeys(uniqueSites))
 	for siteSlug := range uniqueSites {
 		if err := c.Cache().LoadSite(siteSlug); err != nil {
 			logger.Error("Failed to load site cache for "+siteSlug, err)
 			return err
 		}
 	}
+
+	// The YAML slugs of racks and module types exist in the cache only when
+	// their phases ran in this process; make them resolvable either way.
+	reconciler.RegisterRackAliases(c, ds.Racks)
+	reconciler.RegisterModuleTypeAliases(c, ds.ModuleTypes)
 
 	deviceReconciler := reconciler.NewDeviceReconciler(c)
 	deviceReconciler.SetDeviceTypes(ds.DeviceTypes)
@@ -797,12 +844,13 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 
 // writePlanJSON emits the collected changes as a machine-readable plan,
 // e.g. for posting a terraform-plan-style comment on a merge request.
-func writePlanJSON(w io.Writer, dryRun bool, summary client.ChangeSummary, changes []client.ChangeRecord) error {
+func writePlanJSON(w io.Writer, dryRun bool, scope planScope, summary client.ChangeSummary, changes []client.ChangeRecord) error {
 	plan := struct {
 		DryRun  bool                  `json:"dry_run"`
+		Scope   planScope             `json:"scope"`
 		Summary client.ChangeSummary  `json:"summary"`
 		Changes []client.ChangeRecord `json:"changes"`
-	}{dryRun, summary, changes}
+	}{dryRun, scope, summary, changes}
 
 	enc := json.NewEncoder(w)
 	enc.SetIndent("", "  ")

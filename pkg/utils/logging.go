@@ -20,6 +20,21 @@ func SetDefaultOutput(w io.Writer) {
 	defaultOutput = w
 }
 
+// verbose decides whether Debug lines are printed. It is on unless a command
+// turns it off: a sync does, so that its output is the changes it makes and
+// not a line for everything it looked at.
+var verbose = true
+
+// SetVerbose turns Debug output on or off for every logger.
+func SetVerbose(on bool) {
+	verbose = on
+}
+
+// Verbose reports whether Debug output is printed.
+func Verbose() bool {
+	return verbose
+}
+
 // DefaultOutput is where loggers currently write. Anything that prints
 // alongside them — a diff, a plan — uses it so that --output json moves the
 // whole of a command's human-readable output off stdout together.
@@ -81,8 +96,12 @@ func (l *Logger) Error(msg string, err error, args ...interface{}) {
 	}
 }
 
-// Debug logs a debug message in dim/gray
+// Debug logs a detail message in dim/gray: a step that was looked at and
+// needed nothing. It is printed only while verbose output is on.
 func (l *Logger) Debug(msg string, args ...interface{}) {
+	if !verbose {
+		return
+	}
 	dim := color.New(color.Faint).SprintFunc()
 	fmt.Fprintf(l.writer(), dim(msg)+"\n", args...)
 }

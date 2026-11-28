@@ -12,6 +12,45 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
+### Changed
+
+- **A sync in a git checkout is change-based by default.** It reconciles only
+  the objects whose YAML changed since the commit NetBox was last synced to,
+  instead of comparing every declared object with NetBox on every run. Against
+  the sample data a converged full sync sends 171 requests, a sync after
+  editing one server 32, and a sync with nothing changed 3. The comparison is
+  made on the loaded result (defaults, derived values and cable paths
+  applied), not on file names, and each run lists what it picked and why.
+  **What this changes for you:**
+  - **A change-based sync does not see drift and deletes nothing.** An edit
+    made in NetBox by hand stays until a full sync, and `--prune` on a
+    change-based run only lists what is no longer declared. Run `--full`
+    (with `--prune` to delete) for the previous behaviour; schedule it.
+  - **The pipeline has four sync jobs.** `go_plan` and `go_apply` are
+    change-based. The new `go_plan_full` and `go_apply_full` compare
+    everything; they are manual buttons and run in a scheduled pipeline.
+    **Deletions now happen in `go_apply_full` only** — create a pipeline
+    schedule, or click it, or objects removed from the YAML stay in NetBox.
+    `NETBOX_SCHEDULED_APPLY="true"` lets the schedule apply by itself.
+    `go_apply` no longer appears in scheduled pipelines, and both apply jobs
+    share a `resource_group`.
+  - **NetBox gets a tag named `gitops-state`.** Its description holds the
+    commit of the last completed sync. It is never attached to anything;
+    do not edit, declare or delete it (deleting it only makes the next sync a
+    full one).
+  - A sync is still full when there is nothing safe to compare against: no
+    git repository, no record yet, a failed or hand-scoped previous run, a
+    commit missing from a shallow clone, changed controller code, changed
+    ignore patterns or library paths. The first line of the run says which.
+    Outside a git repository nothing changes at all.
+  - **A sync prints what it changes, not everything it looked at.** Lines for
+    loaded folders, cache loading, derived values, cable paths and objects
+    found unchanged are printed only with the new `--verbose`. A plan for nine
+    new servers went from 632 lines to 64. `validate` prints derived values
+    and cable paths as before.
+  - Scripts that rely on a second run to prove convergence, or on `--prune`
+    to delete, must pass `--full` when they run inside a git checkout.
+
 ### Added
 
 - **`export --all`** also writes the objects the repository already declares,
@@ -21,6 +60,14 @@ are about to run before applying a sync with pruning enabled.
   lines into your files. It is refused inside `definitions/` or `inventory/`,
   because it would declare objects twice. In GitLab, run `netbox_export` with
   `EXPORT_REFERENCE=true` to get it as the `export-reference/` artifact.
+
+- **`--verbose`** restores the line-per-object output of a sync.
+
+- **`--full`** reconciles everything; **`--changed-since <commit>`** compares
+  against a commit you name instead of the recorded one. `--output json`
+  gains a `scope` object (`mode`, `base`, the picked objects with their
+  reasons, and `no_longer_declared`).
+
 - **`tenant:` on sites, racks, devices, VRFs, VLANs and prefixes.** A tenant
   declared in `definitions/tenants` can now be assigned to every kind that has
   a tenant in NetBox, not only to clusters and VMs. It is referenced by slug
@@ -51,6 +98,18 @@ are about to run before applying a sync with pruning enabled.
   created as a MAC address object assigned to the interface and set as its
   primary. A changed MAC leaves the old object assigned until a sync with
   `--prune` removes it. Requires NetBox 4.2 or later.
+
+- **A blade can move to another bay.** Changing `device_bay` failed with
+  NetBox's "device is already installed in ..." because the device was
+  installed into the new bay while the old one still held it. The old bay is
+  now emptied first. Two blades swapping bays in one commit still need two
+  commits.
+
+- **A device's `rack` and a module's `module_type` resolve when the phase that
+  defines them does not run.** NetBox has no slug for racks and module types;
+  the YAML slug was only known while the foundation and device type phases
+  ran in the same process. With `--only devices` a rack move or a module
+  change was skipped with a "not found" warning.
 
 - **A dry run plans with the managed tag.** The client resolved the `gitops`
   tag's ID only when writing, so every planned payload lacked it: an object

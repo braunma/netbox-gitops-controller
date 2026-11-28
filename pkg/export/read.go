@@ -120,7 +120,7 @@ func tagSlugs(obj map[string]interface{}) []string {
 			continue
 		}
 		slug := str(m, "slug")
-		if slug == "" || slug == constants.ManagedTagSlug {
+		if slug == "" || slug == constants.ManagedTagSlug || slug == constants.StateTagSlug {
 			continue
 		}
 		slugs = append(slugs, slug)

@@ -77,7 +77,7 @@ adopt() {
     fail "${name}: yamlcheck" "$(grep -m3 '❌' "${w}/yamlcheck.log" | tr '\n' ' ')"
   fi
 
-  "${BIN}" --data-dir "${data}" --dry-run --prune --output json >"${w}/plan.json" 2>"${w}/plan.log"
+  "${BIN}" --data-dir "${data}" --dry-run --full --prune --output json >"${w}/plan.json" 2>"${w}/plan.log"
   if python3 - "${w}/plan.json" >"${w}/plan-check.txt" <<'PY'
 import json, sys
 plan = json.load(open(sys.argv[1]))
@@ -94,7 +94,7 @@ PY
   fi
 
   t0=$(date +%s)
-  if "${BIN}" --data-dir "${data}" --prune >"${w}/apply.log" 2>&1; then
+  if "${BIN}" --data-dir "${data}" --full --prune >"${w}/apply.log" 2>&1; then
     t1=$(date +%s)
     ok "${name}: apply" "$(grep -E 'Summary:' "${w}/apply.log" | sed 's/.*Summary: //'), $((t1-t0))s"
   else
@@ -107,7 +107,7 @@ PY
     fail "${name}: no field changed but tags" "$(tail -1 "${w}/compare.txt")"; head -25 "${w}/compare.txt"
   fi
 
-  "${BIN}" --data-dir "${data}" --dry-run --prune --detailed-exitcode >"${w}/second.log" 2>&1
+  "${BIN}" --data-dir "${data}" --dry-run --full --prune --detailed-exitcode >"${w}/second.log" 2>&1
   rc=$?
   if [ "${rc}" = "0" ]; then ok "${name}: converged"; else fail "${name}: converged" "exit ${rc}: $(grep -E 'Plan:' "${w}/second.log" | sed 's/.*Plan: //')"; fi
   "${BIN}" export --data-dir "${data}" --dry-run --detailed-exitcode >"${w}/reexport.log" 2>&1

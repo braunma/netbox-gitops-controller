@@ -48,11 +48,14 @@ those are named in [`collectors.yaml`](#collectorsyaml).
 | Flag | Default | What it does |
 |---|---|---|
 | `--dry-run` | off | Plans without writing. Every run ends with `Plan: N to create, N to update, N to delete, N unchanged`. |
+| `--full` | off | Reconciles everything the YAML declares. Without it, a run in a git checkout is change-based: only what changed since the commit NetBox was last synced to (recorded in the tag `gitops-state`) is reconciled. See [What a sync looks at](../README.md#what-a-sync-looks-at) for the cases that are full anyway. |
+| `--changed-since <commit>` | the recorded commit | Compares against the commit you name instead of the one NetBox has on record. Not combinable with `--full` or the four scope flags below. |
+| `--verbose` | off | Prints a line for everything the sync looks at: what is loaded, each derived value and cable path, and every object found unchanged. Without it the output is the scope, the changes, the warnings and the summary. `validate` always prints derived values. |
 | `--only <phases>` | all phases | Comma-separated or repeated: `foundation`, `network`, `device-types`, `devices`, `virtualization`. Selected phases always run in dependency order regardless of the order you list them. An unknown phase is rejected by name. |
 | `--site <slug>` | — | Restricts the **device and virtualization** phases to one site. Foundation and network objects are still reconciled in full. |
 | `--device <name>` | — | Restricts device reconciliation to a single device. |
 | `--vm <name>` | — | Restricts VM reconciliation to a single VM. |
-| `--prune` | off | Deletes objects that carry the `gitops` tag but are no longer declared. Untagged objects are never touched. Refused in combination with `--site`/`--device`/`--vm`, because a filtered run cannot tell an out-of-scope object from an orphan. |
+| `--prune` | off | Deletes objects that carry the `gitops` tag but are no longer declared. Untagged objects are never touched. Refused in combination with `--site`/`--device`/`--vm`, because a filtered run cannot tell an out-of-scope object from an orphan. Only a full sync deletes: a change-based one lists what is no longer declared and leaves it for the next `--full --prune`. |
 
 > Skipped phases are not validated. `--only devices` assumes the sites, roles
 > and device types it references already exist in NetBox; it does not create

@@ -97,3 +97,14 @@ var CacheResourceTypes = []string{
 	"cluster_groups",
 	"clusters",
 }
+
+// The sync state tag. NetBox has no place for a tool to keep a note about
+// itself, so the controller keeps one in the description of a tag of its own:
+// the commit of the last sync that brought every declared object up to date.
+// A change-based sync compares the data directory against that commit. The
+// tag is never attached to anything.
+const (
+	StateTagSlug  = "gitops-state"
+	StateTagName  = "GitOps Sync State"
+	StateTagColor = "9e9e9e"
+)

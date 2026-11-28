@@ -101,7 +101,7 @@ summary_of() { grep -oE '[0-9]+ created, [0-9]+ updated, [0-9]+ deleted' "$1" | 
 wipe() {
   local empty="${WORK}/empty"
   mkdir -p "${empty}/definitions" "${empty}/inventory"
-  "${BIN}" --data-dir "${empty}" --prune >"${WORK}/wipe.log" 2>&1 || true
+  "${BIN}" --data-dir "${empty}" --full --prune >"${WORK}/wipe.log" 2>&1 || true
 }
 
 echo "==> building"
@@ -177,7 +177,7 @@ else
 fi
 
 # The invariant that matters most: a second apply has nothing to do.
-"${BIN}" >"${WORK}/apply2.log" 2>&1
+"${BIN}" --full >"${WORK}/apply2.log" 2>&1
 s="$(summary_of "${WORK}/apply2.log")"
 if echo "${s}" | grep -qE '^0 created, 0 updated, 0 deleted'; then
   ok "second apply is a no-op" "${s}"
@@ -185,13 +185,13 @@ else
   fail "second apply is a no-op" "${s:-no summary}"
 fi
 
-"${BIN}" --dry-run --detailed-exitcode >"${WORK}/drift.log" 2>&1
+"${BIN}" --full --dry-run --detailed-exitcode >"${WORK}/drift.log" 2>&1
 rc=$?
 if [ "${rc}" -eq 0 ]; then ok "no drift reported"; else
   fail "no drift reported" "exit ${rc} (2 = changes still pending)"
 fi
 
-"${BIN}" --prune >"${WORK}/prune.log" 2>&1
+"${BIN}" --full --prune >"${WORK}/prune.log" 2>&1
 s="$(summary_of "${WORK}/prune.log")"
 if echo "${s}" | grep -qE ', 0 deleted'; then
   ok "prune deletes nothing" "${s}"
