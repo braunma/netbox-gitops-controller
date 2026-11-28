@@ -619,7 +619,7 @@ func (c *NetBoxClient) markReferenced(payload map[string]interface{}) {
 		}
 	}
 
-	// rear_ports (NetBox 4.6 front port terminations) nests its references one
+	// rear_ports (NetBox 4.5 front port terminations) nests its references one
 	// level down, as {position, rear_port, rear_port_position}.
 	if mappings, ok := payload["rear_ports"].([]interface{}); ok {
 		for _, m := range mappings {
@@ -804,7 +804,7 @@ func (c *NetBoxClient) calculateDiff(existing Object, desired map[string]interfa
 			continue
 		}
 
-		// rear_ports (NetBox 4.6 front port terminations) is a list of
+		// rear_ports (NetBox 4.5 front port terminations) is a list of
 		// {position, rear_port, rear_port_position} mappings. Its entries carry
 		// no "id", so the ID-set comparison below would read both sides as
 		// empty and report the field permanently equal — a changed mapping

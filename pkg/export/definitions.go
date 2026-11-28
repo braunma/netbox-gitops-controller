@@ -560,7 +560,7 @@ func (e *exporter) componentTemplates(t map[string]map[int][]client.Object, owne
 }
 
 // frontPortRear reads which rear port (and position) a front port or front
-// port template maps to: `rear_port`/`rear_port_position` before NetBox 4.6,
+// port template maps to: `rear_port`/`rear_port_position` before NetBox 4.5,
 // a `rear_ports` list of mappings since.
 func frontPortRear(o map[string]interface{}, rearName map[int]string) (string, int) {
 	pos := 0
