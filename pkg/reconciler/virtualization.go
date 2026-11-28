@@ -299,9 +299,9 @@ func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *
 		if iface.MTU > 0 {
 			payload["mtu"] = iface.MTU
 		}
-		if iface.MACAddress != "" {
-			payload["mac_address"] = iface.MACAddress
-		}
+		// The MAC address is not part of the interface payload: since NetBox
+		// 4.2 it is an object of its own that the interface points at (see
+		// reconcileVMMAC). The interface's mac_address field is read-only.
 		if iface.Mode != "" {
 			payload["mode"] = iface.Mode
 		}
@@ -355,6 +355,12 @@ func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *
 		}
 		ifaceID := utils.GetIDFromObject(ifaceObj)
 
+		if iface.MACAddress != "" && ifaceID > 0 {
+			if err := vr.reconcileVMMAC(ifaceID, ifaceObj, vm.Name, &iface); err != nil {
+				return fmt.Errorf("failed to reconcile MAC address for %s: %w", iface.Name, err)
+			}
+		}
+
 		if iface.IP != nil && ifaceID > 0 {
 			if err := vr.reconcileVMIP(vmID, ifaceID, &iface); err != nil {
 				return fmt.Errorf("failed to reconcile IP for %s: %w", iface.Name, err)
@@ -362,6 +368,53 @@ func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *
 		}
 	}
 
+	return nil
+}
+
+// reconcileVMMAC gives a VM interface its declared MAC address. NetBox keeps
+// a MAC address as an object assigned to the interface, and the interface
+// names one of its MAC addresses as primary; that primary is what the
+// interface shows as its mac_address. So the address is ensured as an object
+// first and made primary second.
+//
+// A MAC address the YAML no longer declares stays assigned until a pruning
+// sync removes it, like an address or an interface that is no longer
+// declared. Nothing is written for an interface without mac_address.
+func (vr *VirtualizationReconciler) reconcileVMMAC(ifaceID int, ifaceObj client.Object, vmName string, iface *models.VMInterfaceConfig) error {
+	mac := utils.CanonicalMAC(iface.MACAddress)
+
+	macObj, err := vr.client.Apply("dcim", "mac-addresses",
+		map[string]interface{}{
+			"mac_address":          mac,
+			"assigned_object_type": constants.AssignedObjectVMInterface,
+			"assigned_object_id":   ifaceID,
+		},
+		map[string]interface{}{
+			"mac_address":          mac,
+			"assigned_object_type": constants.AssignedObjectVMInterface,
+			"assigned_object_id":   ifaceID,
+		})
+	if err != nil {
+		return fmt.Errorf("failed to apply MAC address %s: %w", mac, err)
+	}
+	macID := utils.GetIDFromObject(macObj)
+	if macID == 0 {
+		// Dry run: the MAC address is only planned, so there is nothing to
+		// point the interface at yet. Say what the apply will do.
+		vr.logger.Info("      [DRY-RUN] Would make %s the primary MAC address of %s %s", mac, vmName, iface.Name)
+		return nil
+	}
+
+	// Skip the PATCH when the interface already points at this MAC address:
+	// a direct Update records a change unconditionally.
+	if utils.GetIDFromObject(ifaceObj["primary_mac_address"]) == macID {
+		return nil
+	}
+	if err := vr.client.Update("virtualization", "interfaces", ifaceID, map[string]interface{}{
+		"primary_mac_address": macID,
+	}); err != nil {
+		return fmt.Errorf("failed to set the primary MAC address: %w", err)
+	}
 	return nil
 }
 

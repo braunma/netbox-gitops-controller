@@ -19,6 +19,7 @@ import (
 
 	"github.com/braunma/netbox-gitops-controller/pkg/loader"
 	"github.com/braunma/netbox-gitops-controller/pkg/models"
+	"github.com/braunma/netbox-gitops-controller/pkg/utils"
 )
 
 // The definition groups a change-based sync runs or skips as a whole. The
@@ -628,6 +629,12 @@ func vmParts(vm *models.VMConfig) []part {
 		parts = append(parts, p)
 		if i.IP != nil && i.IP.Address != "" {
 			parts = append(parts, ipPart(i.IP))
+		}
+		if i.MACAddress != "" {
+			// A MAC address is an object of its own in NetBox; one that is
+			// no longer declared is what a pruning sync removes.
+			label := "MAC address " + utils.CanonicalMAC(i.MACAddress)
+			parts = append(parts, part{label, []string{label}})
 		}
 	}
 	return parts

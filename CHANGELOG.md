@@ -91,6 +91,14 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **`mac_address` on a VM interface is applied, once.** NetBox 4.2 made a MAC
+  address an object of its own and the interface's `mac_address` field
+  read-only; the controller still wrote that field, so the MAC never reached
+  NetBox and every run planned the same update again. The address is now
+  created as a MAC address object assigned to the interface and set as its
+  primary. A changed MAC leaves the old object assigned until a sync with
+  `--prune` removes it. Requires NetBox 4.2 or later.
+
 - **A blade can move to another bay.** Changing `device_bay` failed with
   NetBox's "device is already installed in ..." because the device was
   installed into the new bay while the old one still held it. The old bay is

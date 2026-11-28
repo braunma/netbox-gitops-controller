@@ -72,3 +72,18 @@ func GetIDFromObject(obj interface{}) int {
 
 	return 0
 }
+
+// CanonicalMAC writes a MAC address the way NetBox returns it (upper case,
+// colon-separated), so that a different spelling in the YAML is not a
+// difference on every run.
+func CanonicalMAC(mac string) string {
+	hex := strings.ToUpper(strings.NewReplacer(":", "", "-", "", ".", "").Replace(strings.TrimSpace(mac)))
+	if len(hex) != 12 {
+		return strings.ToUpper(strings.TrimSpace(mac))
+	}
+	parts := make([]string, 0, 6)
+	for i := 0; i < 12; i += 2 {
+		parts = append(parts, hex[i:i+2])
+	}
+	return strings.Join(parts, ":")
+}

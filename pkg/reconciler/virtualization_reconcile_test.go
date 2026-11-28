@@ -426,3 +426,84 @@ func TestReconcileClustersToleratesMissingOptionalRefs(t *testing.T) {
 		}
 	}
 }
+
+// Since NetBox 4.2 a MAC address is an object assigned to the interface, and
+// the interface's mac_address field is read-only. The declared MAC must be
+// created as such an object and made the interface's primary — and never be
+// sent in the interface payload, where NetBox drops it and every run would
+// plan it again.
+func TestReconcileVMInterfaceMACAddress(t *testing.T) {
+	f, c := newFakeNetBox(t)
+	f.seed("dcim", "sites", client.Object{"name": "Berlin DC", "slug": "berlin-dc"})
+	if err := c.Cache().LoadGlobal(); err != nil {
+		t.Fatalf("LoadGlobal() error = %v", err)
+	}
+	vr := NewVirtualizationReconciler(c)
+	vms := func(mac string) []*models.VMConfig {
+		return []*models.VMConfig{{
+			Name: "vm1", SiteSlug: "berlin-dc",
+			Interfaces: []models.VMInterfaceConfig{{Name: "eth0", MACAddress: mac}, {Name: "eth1"}},
+		}}
+	}
+	primary := func() (ifaceID, macID int) {
+		t.Helper()
+		for _, iface := range f.objects("virtualization", "interfaces") {
+			if iface["name"] == "eth0" {
+				if _, sent := iface["mac_address"]; sent {
+					t.Errorf("mac_address was sent in the interface payload: %v", iface["mac_address"])
+				}
+				return utils.GetIDFromObject(iface), utils.GetIDFromObject(iface["primary_mac_address"])
+			}
+		}
+		t.Fatal("eth0 not found")
+		return 0, 0
+	}
+
+	// A lower-case, dash-separated spelling is stored the way NetBox writes it.
+	if err := vr.ReconcileVMs(vms("02-00-00-aa-bb-01")); err != nil {
+		t.Fatalf("ReconcileVMs() error = %v", err)
+	}
+	macs := f.objects("dcim", "mac-addresses")
+	if len(macs) != 1 {
+		t.Fatalf("MAC address objects = %d, want 1 (eth1 declares none)", len(macs))
+	}
+	ifaceID, macID := primary()
+	if macs[0]["mac_address"] != "02:00:00:AA:BB:01" {
+		t.Errorf("mac_address = %v, want the canonical spelling", macs[0]["mac_address"])
+	}
+	if assigned, _ := macs[0]["assigned_object_id"].(float64); macs[0]["assigned_object_type"] != "virtualization.vminterface" || int(assigned) != ifaceID {
+		t.Errorf("MAC address is assigned to %v %v, want the interface %d", macs[0]["assigned_object_type"], macs[0]["assigned_object_id"], ifaceID)
+	}
+	if macID != utils.GetIDFromObject(macs[0]) {
+		t.Errorf("primary_mac_address = %d, want %d", macID, utils.GetIDFromObject(macs[0]))
+	}
+
+	// A second run, in either spelling, writes nothing.
+	f.resetMutations()
+	if err := vr.ReconcileVMs(vms("02:00:00:AA:BB:01")); err != nil {
+		t.Fatal(err)
+	}
+	if len(f.mutations) != 0 {
+		t.Errorf("a converged run wrote %d requests: %+v", len(f.mutations), f.mutations)
+	}
+
+	// A changed MAC becomes a second object and the new primary; the old one
+	// is left for the prune.
+	if err := vr.ReconcileVMs(vms("02:00:00:AA:BB:02")); err != nil {
+		t.Fatal(err)
+	}
+	macs = f.objects("dcim", "mac-addresses")
+	if len(macs) != 2 {
+		t.Fatalf("MAC address objects = %d, want the old and the new", len(macs))
+	}
+	_, macID = primary()
+	var newID int
+	for _, m := range macs {
+		if m["mac_address"] == "02:00:00:AA:BB:02" {
+			newID = utils.GetIDFromObject(m)
+		}
+	}
+	if newID == 0 || macID != newID {
+		t.Errorf("primary_mac_address = %d, want the new MAC %d", macID, newID)
+	}
+}
