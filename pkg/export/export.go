@@ -44,6 +44,14 @@ type Options struct {
 	// Declared is what the repository already declares. Those objects are
 	// not exported again. Nil means the repository is empty.
 	Declared *loader.Dataset
+	// All also exports the objects Declared holds: a reference of everything
+	// the instance holds, to compare the repository against (a field added
+	// to the YAML after an object was adopted, such as `tenant`, shows up
+	// there). Declared still decides how references are spelled, so a
+	// device's `rack` uses the slug the repository gave that rack. Such an
+	// export declares objects a second time and must not be written into
+	// the data directory.
+	All bool
 	// Sites, when set, limits the export to objects at these site slugs (and
 	// to the shared definitions — tags, roles, types, ... — that every site
 	// uses).
@@ -110,7 +118,7 @@ func Export(l Lister, opts Options) (*Result, error) {
 	e := &exporter{
 		opts:     opts,
 		data:     make(map[string][]client.Object, len(endpoints)),
-		declared: indexDeclared(opts.Declared),
+		declared: indexDeclared(opts.Declared, opts.All),
 		res: &Result{
 			Exported:        map[string]int{},
 			AlreadyDeclared: map[string]int{},
@@ -209,7 +217,7 @@ func (e *exporter) addFile(p, kind string, objects interface{}, n int, header st
 	if n == 0 {
 		return
 	}
-	data, err := render(objects, header)
+	data, err := render(objects, header, e.opts.All)
 	if err != nil {
 		// The models are plain structs; marshalling them cannot fail short
 		// of a programming error, and dropping a file silently would be worse.

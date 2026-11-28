@@ -24,6 +24,7 @@ var (
 	exportForce  bool
 	exportDryRun bool
 	exportDetail bool
+	exportAll    bool
 )
 
 // newExportCommand builds the `export` subcommand.
@@ -44,7 +45,13 @@ Files are named imported*.yaml. An existing file is never overwritten unless
 --force is given. Nothing is written to NetBox: the export only reads.
 
 Everything NetBox holds that the YAML cannot express is reported at the end.
-Read those lines before merging.`,
+Read those lines before merging.
+
+With --all the objects the repository already declares are written too: a
+reference of everything NetBox holds, to compare your YAML against — for
+example to find the tenants of objects adopted before the YAML could carry
+one. It has to go somewhere else (--out), and it is not for merging: every
+object in it that the repository declares would be declared twice.`,
 		RunE:         runExport,
 		SilenceUsage: true,
 	}
@@ -52,6 +59,7 @@ Read those lines before merging.`,
 	cmd.Flags().StringSliceVar(&exportSites, "site", nil, "Only export objects at these site slugs (comma-separated or repeated); shared definitions are always exported")
 	cmd.Flags().BoolVar(&exportForce, "force", false, "Overwrite files that already exist")
 	cmd.Flags().BoolVar(&exportDryRun, "dry-run", false, "List the files that would be written, and write nothing")
+	cmd.Flags().BoolVar(&exportAll, "all", false, "Also write what the repository already declares: a reference export to compare against, not to merge (requires --out outside the data directory)")
 	cmd.Flags().BoolVar(&exportDetail, "detailed-exitcode", false, "Exit with code 2 when there was something to export; 0 means the repository already declares everything")
 	return cmd
 }
@@ -61,6 +69,11 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	if err := loadConfigFile(configFile, cmd.Flags().Changed("config"), logger); err != nil {
 		logger.Error("Failed to read the configuration file", err)
+		return err
+	}
+
+	if err := checkReferenceOut(exportAll, exportOut, dataDir); err != nil {
+		logger.Error("Nothing was exported", err)
 		return err
 	}
 
@@ -100,6 +113,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 
 	res, err := export.Export(c, export.Options{
 		Declared: &declared,
+		All:      exportAll,
 		Sites:    exportSites,
 		Progress: logger.Info,
 	})
@@ -112,7 +126,7 @@ func runExport(cmd *cobra.Command, args []string) error {
 	if out == "" {
 		out = dataDir
 	}
-	if err := writeExport(os.Stdout, out, res, exportForce, exportDryRun); err != nil {
+	if err := writeExport(os.Stdout, out, res, exportForce, exportDryRun, exportAll); err != nil {
 		logger.Error("Nothing was written", err)
 		return err
 	}
@@ -122,10 +136,39 @@ func runExport(cmd *cobra.Command, args []string) error {
 	return nil
 }
 
+// checkReferenceOut refuses an --all export that would land in the data
+// directory: it repeats what the repository declares, so written there it
+// would declare those objects twice and the next load would fail or, worse,
+// let the exported copy override a hand-written one.
+func checkReferenceOut(all bool, out, data string) error {
+	if !all {
+		return nil
+	}
+	if out == "" {
+		return fmt.Errorf("--all needs --out: a reference export repeats what the repository declares and must not be written into the data directory")
+	}
+	absOut, err := filepath.Abs(out)
+	if err != nil {
+		return err
+	}
+	absData, err := filepath.Abs(data)
+	if err != nil {
+		return err
+	}
+	for _, sub := range []string{"", "definitions", "inventory"} {
+		base := filepath.Join(absData, sub)
+		if absOut == base || (sub != "" && strings.HasPrefix(absOut, base+string(filepath.Separator))) {
+			return fmt.Errorf("--out %s is inside the data directory; write a reference export (--all) somewhere else", out)
+		}
+	}
+	return nil
+}
+
 // writeExport writes the files of an export under dir and prints what it
 // did. It checks every file before writing any, so a refusal leaves no
-// half-written export behind.
-func writeExport(w io.Writer, dir string, res *export.Result, force, dryRun bool) error {
+// half-written export behind. reference marks an --all export, which is
+// summarized as something to compare against instead of something to merge.
+func writeExport(w io.Writer, dir string, res *export.Result, force, dryRun, reference bool) error {
 	var conflicts []string
 	for _, f := range res.Files {
 		if _, err := os.Stat(filepath.Join(dir, f.Path)); err == nil && !force {
@@ -160,13 +203,21 @@ func writeExport(w io.Writer, dir string, res *export.Result, force, dryRun bool
 	}
 
 	fmt.Fprintln(w)
-	fmt.Fprintln(w, "Objects exported (already declared in the repository):")
+	if reference {
+		fmt.Fprintln(w, "Objects exported (everything NetBox holds, declared in the repository or not):")
+	} else {
+		fmt.Fprintln(w, "Objects exported (already declared in the repository):")
+	}
 	for _, kind := range export.Kinds {
 		n, d := res.Exported[kind], res.AlreadyDeclared[kind]
 		if n == 0 && d == 0 {
 			continue
 		}
-		fmt.Fprintf(w, "  %-16s %5d  (%d)\n", kind, n, d)
+		if reference {
+			fmt.Fprintf(w, "  %-16s %5d\n", kind, n)
+		} else {
+			fmt.Fprintf(w, "  %-16s %5d  (%d)\n", kind, n, d)
+		}
 	}
 
 	if len(res.Warnings) > 0 {
@@ -178,6 +229,14 @@ func writeExport(w io.Writer, dir string, res *export.Result, force, dryRun bool
 		}
 	}
 
+	if reference {
+		if len(res.Files) > 0 {
+			fmt.Fprintln(w, "\nThis is a reference export. Compare it with your YAML and copy over what is")
+			fmt.Fprintln(w, "missing there (a `tenant:`, a description). Do not merge these files: they")
+			fmt.Fprintln(w, "repeat objects the repository already declares.")
+		}
+		return nil
+	}
 	if len(res.Files) > 0 {
 		fmt.Fprintln(w, "\nNext: review the files, run `make check` and `./netbox-gitops --dry-run`,")
 		fmt.Fprintln(w, "and expect the plan to add the gitops tag and little else. Then open the merge request.")

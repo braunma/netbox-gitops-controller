@@ -14,6 +14,13 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`export --all`** also writes the objects the repository already declares,
+  into a separate `--out` directory: a reference of everything NetBox holds.
+  Use it to find what an earlier export could not carry yet, such as the
+  `tenant:` of objects adopted before the YAML had that field, and copy those
+  lines into your files. It is refused inside `definitions/` or `inventory/`,
+  because it would declare objects twice. In GitLab, run `netbox_export` with
+  `EXPORT_REFERENCE=true` to get it as the `export-reference/` artifact.
 - **`tenant:` on sites, racks, devices, VRFs, VLANs and prefixes.** A tenant
   declared in `definitions/tenants` can now be assigned to every kind that has
   a tenant in NetBox, not only to clusters and VMs. It is referenced by slug

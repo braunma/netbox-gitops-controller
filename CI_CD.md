@@ -65,6 +65,7 @@ Everything the pipeline reads, and what setting it does. Set them in
 | `NETBOX_PRUNE` | `true` | Exactly `"false"` drops `--prune` from `go_plan` and `go_apply`, so objects removed from the YAML stay in NetBox. Any other value prunes: a `gitops`-tagged object no longer declared is deleted. Untagged objects are never touched. |
 | `INGEST_SCHEDULE` | unset | Exactly `"true"`, set on a **pipeline schedule**, runs the optional fact-ingestion jobs. Only read when `.gitlab-ci.ingest.example.yml` is included. |
 | `EXPORT_SITES` | unset | Comma-separated site slugs for a `netbox_export` run: only objects at those sites are exported (shared definitions always). Set it under **Run pipeline** to adopt a site at a time. |
+| `EXPORT_REFERENCE` | unset | Set to `true` for a `netbox_export` run to also get `export-reference/` in the job artifacts: everything NetBox holds as YAML, including what the repository already declares (`export --all`). For comparing, not merging; it is never committed. |
 | `GITOPS_PUSH_TOKEN` | — | Required by `netbox_export` and the ingestion jobs: a project access token with `write_repository` and `api` scope, so they can push a branch and open a merge request. Mask it. |
 | `COVERAGE_THRESHOLD` | `65` | Minimum total statement coverage (%) for `go_test` over `./pkg/...`. Coverage there is ~79% (August 2026). A non-numeric or empty value fails the job rather than disabling the gate. |
 | `GITLAB_RUNNER_TAG` | `docker` | Runner tag every job requests. |
