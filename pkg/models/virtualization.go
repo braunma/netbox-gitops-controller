@@ -64,8 +64,8 @@ type VMInterfaceConfig struct {
 	MTU         int    `yaml:"mtu,omitempty" json:"mtu,omitempty"`
 	// MACAddress becomes the interface's primary MAC address in NetBox, where
 	// a MAC address is an object of its own. Any common spelling is accepted
-	// and stored as AA:BB:CC:DD:EE:FF. Leaving it out leaves the interface's
-	// MAC addresses as they are.
+	// and stored as AA:BB:CC:DD:EE:FF. A MAC address that is no longer
+	// declared is removed by a sync with --prune.
 	MACAddress   string    `yaml:"mac_address,omitempty" json:"mac_address,omitempty"`
 	Mode         string    `yaml:"mode,omitempty" json:"mode,omitempty"`
 	UntaggedVLAN string    `yaml:"untagged_vlan,omitempty" json:"untagged_vlan,omitempty"`

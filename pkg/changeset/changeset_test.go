@@ -424,3 +424,25 @@ func TestMoveToAnotherSiteOrClusterIsAnnouncedAsRemoval(t *testing.T) {
 		t.Errorf("an unmoved VM is listed as removed:\n%s", joined)
 	}
 }
+
+// A MAC address is an object of its own in NetBox. One the YAML replaced or
+// dropped waits for a prune, so the plan lists it.
+func TestChangedVMMACIsAnnouncedAsRemoval(t *testing.T) {
+	vms := func(mac string) []*models.VMConfig {
+		return []*models.VMConfig{{Name: "vm-1", Interfaces: []models.VMInterfaceConfig{{Name: "eth0", MACAddress: mac}}}}
+	}
+	base, head := dataset(), dataset()
+	base.VMs, head.VMs = vms("02:00:00:aa:bb:01"), vms("02:00:00:AA:BB:02")
+	res := Compare(base, head, nil)
+	if !res.VMs["vm-1"] {
+		t.Error("the VM whose MAC changed is not selected")
+	}
+	if joined := strings.Join(res.Removed, "\n"); !strings.Contains(joined, "MAC address 02:00:00:AA:BB:01 of vm-1") {
+		t.Errorf("removed = %q, want the old MAC address", joined)
+	}
+
+	head.VMs = vms("")
+	if joined := strings.Join(Compare(base, head, nil).Removed, "\n"); !strings.Contains(joined, "MAC address 02:00:00:AA:BB:01") {
+		t.Errorf("a dropped MAC is not listed: %q", joined)
+	}
+}

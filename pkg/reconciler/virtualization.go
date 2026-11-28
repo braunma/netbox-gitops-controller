@@ -4,7 +4,6 @@ package reconciler
 
 import (
 	"fmt"
-	"strings"
 
 	"github.com/braunma/netbox-gitops-controller/internal/constants"
 	"github.com/braunma/netbox-gitops-controller/pkg/client"
@@ -378,11 +377,11 @@ func (vr *VirtualizationReconciler) reconcileVMInterfaces(vmID, siteID int, vm *
 // interface shows as its mac_address. So the address is ensured as an object
 // first and made primary second.
 //
-// A MAC address the YAML no longer declares stays assigned (and is removed by
-// a pruning sync, once it is no longer primary); an interface without
-// mac_address in the YAML is left as it is.
+// A MAC address the YAML no longer declares stays assigned until a pruning
+// sync removes it, like an address or an interface that is no longer
+// declared. Nothing is written for an interface without mac_address.
 func (vr *VirtualizationReconciler) reconcileVMMAC(ifaceID int, ifaceObj client.Object, vmName string, iface *models.VMInterfaceConfig) error {
-	mac := canonicalMAC(iface.MACAddress)
+	mac := utils.CanonicalMAC(iface.MACAddress)
 
 	macObj, err := vr.client.Apply("dcim", "mac-addresses",
 		map[string]interface{}{
@@ -417,21 +416,6 @@ func (vr *VirtualizationReconciler) reconcileVMMAC(ifaceID int, ifaceObj client.
 		return fmt.Errorf("failed to set the primary MAC address: %w", err)
 	}
 	return nil
-}
-
-// canonicalMAC writes a MAC address the way NetBox returns it (upper case,
-// colon-separated), so that a different spelling in the YAML is not a
-// difference on every run.
-func canonicalMAC(mac string) string {
-	hex := strings.ToUpper(strings.NewReplacer(":", "", "-", "", ".", "").Replace(strings.TrimSpace(mac)))
-	if len(hex) != 12 {
-		return strings.ToUpper(strings.TrimSpace(mac))
-	}
-	parts := make([]string, 0, 6)
-	for i := 0; i < 12; i += 2 {
-		parts = append(parts, hex[i:i+2])
-	}
-	return strings.Join(parts, ":")
 }
 
 // reconcileVMIP reconciles an IP address bound to a VM interface, and

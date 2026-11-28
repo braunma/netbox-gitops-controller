@@ -507,17 +507,3 @@ func TestReconcileVMInterfaceMACAddress(t *testing.T) {
 		t.Errorf("primary_mac_address = %d, want the new MAC %d", macID, newID)
 	}
 }
-
-func TestCanonicalMAC(t *testing.T) {
-	for in, want := range map[string]string{
-		"02:00:00:aa:bb:01": "02:00:00:AA:BB:01",
-		"02-00-00-AA-BB-01": "02:00:00:AA:BB:01",
-		"0200.00aa.bb01":    "02:00:00:AA:BB:01",
-		" 020000aabb01 ":    "02:00:00:AA:BB:01",
-		"not-a-mac":         "NOT-A-MAC",
-	} {
-		if got := canonicalMAC(in); got != want {
-			t.Errorf("canonicalMAC(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
