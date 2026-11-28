@@ -14,7 +14,7 @@ LDFLAGS    := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildD
 COVERAGE_SCOPE     ?= ./...
 COVERAGE_THRESHOLD ?= 65
 
-.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-changed e2e-export e2e-export-more e2e-scan e2e-local clean
+.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-changed e2e-export e2e-export-more e2e-scan e2e-local schema clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
