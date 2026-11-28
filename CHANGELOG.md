@@ -135,6 +135,11 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **`make schema` regenerates the schemas again.** The target was missing from
+  `.PHONY`, and because a directory named `schema/` exists, make reported
+  "'schema' is up to date" and ran nothing. `go run ./cmd/schemagen` always
+  worked, and `make lint` still caught a stale `schema/`.
+
 - **Front ports are wired on NetBox 4.5.** The `rear_ports` list of port
   mappings came with NetBox 4.5.0, not 4.6 as the controller assumed. Against
   a 4.5 instance it kept sending the removed `rear_port` /
