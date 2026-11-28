@@ -91,6 +91,15 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **A rename no longer lists what it keeps as "no longer declared".** A
+  change-based plan compared objects by the names at hand, so renaming a
+  site, a VRF or a cluster with `rename_from` listed the VLANs, devices,
+  prefixes, addresses and VMs in it as pending deletions, and renaming a
+  cabled interface or a cable's peer device listed the cable. A renamed rack
+  was listed itself. NetBox was always left as declared; only the list was
+  wrong. A real move (a device to another site, a VM to another cluster, a
+  cable to another port) is still listed.
+
 - **`mac_address` on a VM interface is applied, once.** NetBox 4.2 made a MAC
   address an object of its own and the interface's `mac_address` field
   read-only; the controller still wrote that field, so the MAC never reached

@@ -446,3 +446,106 @@ func TestChangedVMMACIsAnnouncedAsRemoval(t *testing.T) {
 		t.Errorf("a dropped MAC is not listed: %q", joined)
 	}
 }
+
+// A cable is the same cable after one of its ends was renamed with
+// rename_from: the port it starts on, the device at the far end, or the port
+// there. None of those may list it as "no longer declared". A cable that
+// really moved still is.
+func TestRenamedCableEndsAreNotListedAsRemoved(t *testing.T) {
+	cables := func(res Result) string {
+		var out []string
+		for _, r := range res.Removed {
+			if strings.HasPrefix(r, "cable ") {
+				out = append(out, r)
+			}
+		}
+		return strings.Join(out, "; ")
+	}
+	sw := func(ds *loader.Dataset) *models.DeviceConfig { return ds.Devices[0] }
+
+	base, head := dataset(), dataset()
+	sw(base).Interfaces = []models.InterfaceConfig{{Name: "Eth1"}}
+	sw(head).Interfaces = []models.InterfaceConfig{{Name: "Eth1"}}
+
+	// The port the cable starts on.
+	device(head, "srv-01").Interfaces[1].Name = "data0"
+	device(head, "srv-01").Interfaces[1].RenameFrom = "eth1"
+	if got := cables(Compare(base, head, nil)); got != "" {
+		t.Errorf("after renaming the cabled interface: %s", got)
+	}
+
+	// The device at the far end, and the port there, on top of it.
+	sw(head).Name, sw(head).RenameFrom = "switch-01", "sw-01"
+	sw(head).Interfaces[0].Name, sw(head).Interfaces[0].RenameFrom = "Ethernet1", "Eth1"
+	device(head, "srv-01").Interfaces[1].Link = &models.LinkConfig{PeerDevice: "switch-01", PeerPort: "Ethernet1"}
+	if got := cables(Compare(base, head, nil)); got != "" {
+		t.Errorf("after renaming the peer device and its port as well: %s", got)
+	}
+
+	// A cable moved to another port is a removed cable.
+	head = dataset()
+	device(head, "srv-01").Interfaces[1].Link = &models.LinkConfig{PeerDevice: "sw-01", PeerPort: "Eth2"}
+	if got := cables(Compare(base, head, nil)); !strings.Contains(got, "cable eth1 <-> sw-01[Eth1] of srv-01") {
+		t.Errorf("a moved cable is not listed: %q", got)
+	}
+}
+
+// Renaming a site, a VRF or a cluster with rename_from renames the scope the
+// objects in it are identified by. They are the same objects afterwards, so
+// none of them is "no longer declared" — while a real move still is.
+func TestRenamedScopesDoNotMakeTheirContentsLookRemoved(t *testing.T) {
+	build := func() *loader.Dataset {
+		ds := dataset()
+		ds.VRFs = []*models.VRF{{Name: "mgmt"}}
+		ds.VLANGroups = []*models.VLANGroup{{Name: "Berlin", Slug: "berlin-vlans", SiteSlug: "berlin"}}
+		ds.Prefixes = []*models.Prefix{{Prefix: "10.0.0.0/24", VRFName: "mgmt", SiteSlug: "berlin"}}
+		device(ds, "srv-01").Interfaces[0].IP.VRF = "mgmt"
+		ds.VMs = []*models.VMConfig{{Name: "vm-1", Cluster: "prod",
+			Interfaces: []models.VMInterfaceConfig{{Name: "eth0", IP: &models.IPConfig{Address: "10.0.0.9/24", VRF: "mgmt"}}}}}
+		return ds
+	}
+	base, head := build(), build()
+
+	head.Sites[0].Slug, head.Sites[0].RenameFrom = "berlin-one", "berlin"
+	head.Racks[0].SiteSlug, head.VLANs[0].SiteSlug, head.VLANGroups[0].SiteSlug, head.Prefixes[0].SiteSlug = "berlin-one", "berlin-one", "berlin-one", "berlin-one"
+	for _, d := range head.Devices {
+		d.SiteSlug = "berlin-one"
+	}
+	head.VRFs[0].Name, head.VRFs[0].RenameFrom = "management", "mgmt"
+	head.Prefixes[0].VRFName = "management"
+	device(head, "srv-01").Interfaces[0].IP.VRF = "management"
+	head.VMs[0].Interfaces[0].IP.VRF = "management"
+	head.Clusters[0].Name, head.Clusters[0].RenameFrom = "production", "prod"
+	head.VMs[0].Cluster = "production"
+
+	res := Compare(base, head, nil)
+	if len(res.Removed) != 0 {
+		t.Errorf("removed after renaming a site, a VRF and a cluster:\n  %s", strings.Join(res.Removed, "\n  "))
+	}
+	for _, e := range res.Entries {
+		if e.Why == "new" {
+			t.Errorf("%s %s is listed as new", e.Kind, e.Name)
+		}
+	}
+
+	// A rack is found by its name: a new name with rename_from is a rename,
+	// a new YAML slug alone is nothing NetBox ever sees.
+	base, head = build(), build()
+	head.Racks[0].Name, head.Racks[0].Slug, head.Racks[0].RenameFrom = "A1", "a1", "A01"
+	if res := Compare(base, head, nil); len(res.Removed) != 0 || why(res, "rack", "berlin/a1") != "renamed from berlin/A01" {
+		t.Errorf("rack rename: removed %v, entries %+v", res.Removed, res.Entries)
+	}
+
+	// Without rename_from the same edits are real moves.
+	base, head = build(), build()
+	head.Sites = append(head.Sites, &models.Site{Name: "Munich", Slug: "munich"})
+	device(head, "srv-02").SiteSlug = "munich"
+	head.Clusters = append(head.Clusters, &models.Cluster{Name: "other"})
+	head.VMs[0].Cluster = "other"
+	joined := strings.Join(Compare(base, head, nil).Removed, "\n")
+	for _, want := range []string{"device srv-02 at site berlin", "VM vm-1 in cluster prod"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("a real move is not listed, want %q in:\n%s", want, joined)
+		}
+	}
+}
