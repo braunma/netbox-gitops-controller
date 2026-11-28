@@ -14,6 +14,17 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **A commit that only edits YAML no longer pays for the code** (GitLab
+  pipeline). `go_test`, `go_lint` and `ingest_check` run only when code
+  changed; `yaml_check` always runs. With the new `REUSE_BUILD="true"`,
+  `go_build` compiles once per code version and later pipelines download that
+  binary from the project's package registry; the key is made from the Go
+  source, so a stored binary is never older than the code. It is off by
+  default, see "Building once" in `CI_CD.md` for who can write to the
+  registry. The jobs no longer run `go mod download` up front: the ones that
+  compile fetch what they need, the ones that only run the binary need
+  nothing.
+
 - **A sync in a git checkout is change-based by default.** It reconciles only
   the objects whose YAML changed since the commit NetBox was last synced to,
   instead of comparing every declared object with NetBox on every run. Against
