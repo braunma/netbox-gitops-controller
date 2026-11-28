@@ -184,3 +184,22 @@ func TestAuthHeaderPicksTokenVersion(t *testing.T) {
 		})
 	}
 }
+
+// Port mappings arrived with NetBox 4.5.0. Choosing the old shape on a 4.5
+// instance leaves front ports unwired and re-PATCHed on every run, because
+// NetBox accepts the removed fields without complaint.
+func TestUsesPortMappingsFromNetBox45(t *testing.T) {
+	for version, want := range map[NetBoxVersion]bool{
+		{}:                   false, // unknown: the status endpoint was unavailable
+		{Major: 4, Minor: 4}: false,
+		{Major: 4, Minor: 5}: true, // 4.5.3 parses to this
+		{Major: 4, Minor: 6}: true,
+		{Major: 5}:           true,
+	} {
+		c := &NetBoxClient{}
+		c.SetVersionForTesting(version)
+		if got := c.UsesPortMappings(); got != want {
+			t.Errorf("UsesPortMappings() on %+v = %v, want %v", version, got, want)
+		}
+	}
+}

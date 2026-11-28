@@ -464,7 +464,7 @@ func (dtr *DeviceTypeReconciler) reconcileRearPortTemplates(owner templateOwner,
 }
 
 // setFrontPortTermination writes a front port's rear-port termination in the
-// shape the connected NetBox expects. NetBox 4.6 replaced the singular
+// shape the connected NetBox expects. NetBox 4.5 replaced the singular
 // rear_port/rear_port_position fields with a rear_ports list of mappings, and
 // accepts the old fields silently rather than rejecting them — so sending the
 // wrong shape leaves the port created but unwired, and re-PATCHed forever.

@@ -14,7 +14,12 @@ import (
 // {position, rear_port, rear_port_position} mappings. NetBox accepts the old
 // fields silently on newer releases instead of rejecting them, so the shape
 // must be chosen by version rather than discovered from an error.
-var PortMappingsVersion = NetBoxVersion{Major: 4, Minor: 6}
+//
+// The release is 4.5.0 ("Advanced Port Mappings" in its release notes: the
+// rear_port and rear_port_position fields were removed, positions and
+// rear_ports added). This was set to 4.6 at first, which left front ports on
+// a 4.5 instance unwired and re-PATCHed on every run.
+var PortMappingsVersion = NetBoxVersion{Major: 4, Minor: 5}
 
 // MinSupportedNetBoxVersion is the oldest NetBox release this controller is
 // known to work against. The reconcilers write `role` on devices rather than
@@ -129,7 +134,7 @@ func (c *NetBoxClient) CheckVersion() error {
 }
 
 // UsesPortMappings reports whether the connected NetBox expects front port
-// terminations as a rear_ports list. Unknown versions keep the pre-4.6 shape,
+// terminations as a rear_ports list. Unknown versions keep the pre-4.5 shape,
 // which is what every release before the check existed understood.
 func (c *NetBoxClient) UsesPortMappings() bool {
 	if c.version.Major == 0 {

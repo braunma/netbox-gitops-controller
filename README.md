@@ -998,13 +998,13 @@ than silently matching nothing.
 
 ### Front Ports Across NetBox Releases
 
-NetBox 4.6 replaced a front port's singular `rear_port` / `rear_port_position`
+NetBox 4.5 replaced a front port's singular `rear_port` / `rear_port_position`
 fields with a `rear_ports` list of `{position, rear_port, rear_port_position}`
 mappings — and **accepts the old fields silently rather than rejecting them**,
 so sending the wrong shape leaves the port created but unwired.
 
 The controller picks the shape from the release reported by `/api/status/`, so
-patch panels wire correctly on both older releases and 4.6+. Nothing in your
+patch panels wire correctly on both older releases and 4.5+. Nothing in your
 YAML changes; `rear_port` and `rear_port_position` stay as they are.
 
 ### NetBox Version Compatibility

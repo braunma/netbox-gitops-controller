@@ -110,6 +110,14 @@ are about to run before applying a sync with pruning enabled.
 
 ### Fixed
 
+- **Front ports are wired on NetBox 4.5.** The `rear_ports` list of port
+  mappings came with NetBox 4.5.0, not 4.6 as the controller assumed. Against
+  a 4.5 instance it kept sending the removed `rear_port` /
+  `rear_port_position` fields, which NetBox accepts and ignores: front ports
+  and front port templates stayed unwired to their rear ports, and every run
+  planned the same update for each of them. The first sync after this fix
+  wires them, once.
+
 - **A rename no longer lists what it keeps as "no longer declared".** A
   change-based plan compared objects by the names at hand, so renaming a
   site, a VRF or a cluster with `rename_from` listed the VLANs, devices,
