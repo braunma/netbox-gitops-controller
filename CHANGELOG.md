@@ -12,13 +12,38 @@ are about to run before applying a sync with pruning enabled.
 
 ## [Unreleased]
 
-### Known issues
+### Added
 
-- **`--dry-run --detailed-exitcode` reports changes on a converged instance.**
-  Against NetBox 4.6.10 it plans updates for sites, racks, VRFs, VLAN groups,
-  VLANs and prefixes that an apply then does not make, and exits 2. The
-  controller before this release behaves the same, so it is a comparison
-  problem in the dry-run, not drift; `tests/e2e/repo-data.sh` flags it.
+- **`netbox-gitops export`** writes what a NetBox instance already holds as
+  this repository's YAML, so objects created by hand can be adopted instead of
+  retyped. Only objects the repository does not declare yet are written, under
+  the identity they already have and with their existing tags, so the first
+  sync after merging adds the `gitops` tag and changes nothing else. What the
+  YAML cannot carry is reported, not silently dropped. Adopted objects are
+  managed from then on, including by `--prune`. Read-only against NetBox.
+- **`netbox_export` GitLab job** (manual, default branch) runs the export and
+  opens a merge request from `chore/netbox-export`, so adoption goes through
+  the same review and `go_apply` as every other change. `EXPORT_SITES` limits
+  it to some sites. It force-adds the files, because `.gitignore` would
+  otherwise drop the new ones from the commit.
+
+### Fixed
+
+- **A dry run plans with the managed tag.** The client resolved the `gitops`
+  tag's ID only when writing, so every planned payload lacked it: an object
+  with tags of its own was planned as an update on every run (on a converged
+  instance too), and an unmanaged object about to be adopted was planned as
+  unchanged — the plan said the opposite of what the apply did. A dry run now
+  looks the tag up (read-only) before planning. This was the known issue
+  "`--dry-run --detailed-exitcode` reports changes on a converged instance"
+  (sites, racks, VRFs, VLAN groups, VLANs and prefixes: the objects the sample
+  data tags): `tests/e2e/repo-data.sh` fails its drift check before this fix
+  and passes after it, against NetBox 4.6.7.
+- **`--dry-run --prune` against a NetBox the controller never wrote to** no
+  longer fails with `Select a valid choice. gitops is not one of the available
+  choices`: with no managed tag in NetBox, nothing can carry it, so nothing is
+  planned for deletion.
+- **A cable's adoption is counted in the plan**, as it is in the apply.
 
 ### Changed
 

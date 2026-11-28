@@ -101,6 +101,35 @@ Where the three checks sit: `yamlcheck` needs no NetBox and answers "is this
 repository coherent"; `validate` needs one and answers "will this instance
 accept these values"; `--dry-run` needs one and answers "what would change".
 
+### `netbox-gitops export`
+
+Reads the live instance and writes every object the repository does not
+declare yet as YAML, so that the next sync adopts it. Only GET requests are
+made. See [Adopting what NetBox already holds](../README.md#-adopting-what-netbox-already-holds).
+
+```bash
+./netbox-gitops export --dry-run
+./netbox-gitops export --site berlin-dc --site hamburg-dc
+```
+
+| Flag | Default | What it does |
+|---|---|---|
+| `--out <dir>` | the data directory | Where the `definitions/` and `inventory/` files are written. |
+| `--site <slug>` | every site | Only export objects at these sites (comma-separated or repeated). Tags, roles, types and the other shared definitions are always exported. |
+| `--force` | off | Overwrite files that already exist. Without it, one existing file stops the export before anything is written. |
+| `--dry-run` | off | List the files and the report, and write nothing. |
+| `--detailed-exitcode` | off | Exit `2` when there was something to export, `0` when the repository already declares everything. What the `netbox_export` CI job uses to decide whether to open a merge request. |
+
+It inherits `--config`, `--data-dir`, `--devicetype-library` and
+`--moduletype-library` from the root command. Unlike the sync, it does not
+fall back to `example/` when the data directory holds no `definitions/`, and
+it reads parked (`_*.yaml`) files regardless of `--ignore-file`: an object
+declared only in a parked file counts as declared. Exit `0` on success, `1`
+when the repository's YAML does not load or NetBox cannot be read.
+
+In GitLab the manual `netbox_export` job runs it and opens the merge request;
+`EXPORT_SITES` sets `--site`. See [`CI_CD.md`](../CI_CD.md#adopting-existing-objects).
+
 ### `netbox-gitops collect` and `netbox-gitops ingest`
 
 Two front doors on one pipeline. `collect` fetches a snapshot from the sources

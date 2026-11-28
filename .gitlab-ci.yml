@@ -245,6 +245,9 @@ e2e:
       fi
   script:
     - echo "🔁 Running end-to-end tests against ${NETBOX_URL}..."
+    # First, while the service is still empty: it refuses any other NetBox.
+    - echo "🔁 Adopting a hand-made NetBox with export, and proving nothing but tags changes..."
+    - tests/e2e/export.sh
     - tests/e2e/run.sh
     - echo "🔁 Verifying that renames edit objects instead of duplicating them..."
     - tests/e2e/rename.sh
@@ -337,6 +340,97 @@ go_apply:
       when: manual
   environment:
     name: production
+
+# =============================================================================
+# ADOPTING EXISTING NETBOX OBJECTS
+# =============================================================================
+
+# Export what NetBox already holds and the repository does not declare yet,
+# and open a merge request with it. Merging that MR and running go_apply is
+# what adopts the objects; this job only reads NetBox.
+#
+# Manual, and only on the default branch, so the export starts from what is
+# actually merged. Run it again after a merge and it exports what is still
+# left (it skips everything declared). Set EXPORT_SITES="site-a,site-b" in
+# "Run pipeline" to adopt a site at a time — a smaller plan to review.
+#
+# Needs NETBOX_URL/NETBOX_TOKEN (read access is enough) and GITOPS_PUSH_TOKEN
+# (write_repository) to push the branch. Without the push token the exported
+# files are kept as a job artifact instead.
+netbox_export:
+  extends: .go_base
+  stage: validate
+  dependencies:
+    - go_build
+  variables:
+    GIT_STRATEGY: clone
+    EXPORT_BRANCH: "chore/netbox-export"
+  script:
+    # Do not add `set -x`: it would print the Authorization header below.
+    - |
+      set -e
+      SITE_FLAG=""
+      if [ -n "${EXPORT_SITES}" ]; then SITE_FLAG="--site ${EXPORT_SITES}"; fi
+
+      # 0 = nothing left to adopt, 2 = files written, anything else failed.
+      set +e
+      ./netbox-gitops export --detailed-exitcode ${SITE_FLAG} > export-report.txt 2>&1
+      STATUS=$?
+      set -e
+      cat export-report.txt
+      if [ "${STATUS}" = "0" ]; then
+        echo "✅ Nothing to export: the repository already declares everything in NetBox."
+        exit 0
+      fi
+      if [ "${STATUS}" != "2" ]; then
+        echo "❌ Export failed (exit ${STATUS})."
+        exit "${STATUS}"
+      fi
+
+      if [ -z "${GITOPS_PUSH_TOKEN}" ]; then
+        echo "⚠️  GITOPS_PUSH_TOKEN is not set: download the exported files from the job artifacts."
+        exit 0
+      fi
+
+      git config user.email "gitops-bot@example.com"
+      git config user.name "NetBox GitOps"
+      git checkout -B "${EXPORT_BRANCH}"
+      # -f: /definitions/ and /inventory/* are in .gitignore, so a plain
+      # `git add` would silently leave every new exported file out of the MR.
+      # This is a fresh clone, so the only untracked files there are the
+      # export's.
+      git add -f -- definitions/ inventory/
+      git commit -q -F - <<MSG
+      chore(export): adopt objects that already exist in NetBox
+
+      Written by netbox_export from pipeline ${CI_PIPELINE_ID}${EXPORT_SITES:+ (sites: ${EXPORT_SITES})}.
+      Every object here already exists in NetBox; merging and applying adds the
+      gitops tag and manages it from then on. Check go_plan's plan-output.txt:
+      it should be tag additions. The export report is in the job's artifacts.
+      MSG
+
+      # The token goes in a header, never in the URL (git echoes URLs in errors).
+      AUTH=$(printf 'gitlab-ci-token:%s' "${GITOPS_PUSH_TOKEN}" | base64 | tr -d '\n')
+      git -c http.extraheader="Authorization: Basic ${AUTH}" push -f \
+        -o merge_request.create \
+        -o merge_request.target="${CI_DEFAULT_BRANCH}" \
+        -o merge_request.title="chore(export): adopt objects that already exist in NetBox" \
+        -o merge_request.description="Exported by \`netbox_export\`. Nothing has been written to NetBox. Read the report at the end of the job log (also in its artifacts) before merging: it lists what the YAML cannot carry." \
+        "https://${CI_SERVER_HOST}/${CI_PROJECT_PATH}.git" \
+        "HEAD:${EXPORT_BRANCH}"
+  artifacts:
+    when: always
+    paths:
+      - export-report.txt
+      - definitions/**/imported*.yaml
+      - definitions/**/imported/
+      - inventory/**/imported*.yaml
+      - inventory/**/imported/
+    expire_in: 1 week
+  rules:
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+      when: manual
+      allow_failure: true
 
 # =============================================================================
 # UTILITY JOBS

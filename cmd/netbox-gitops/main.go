@@ -89,6 +89,7 @@ func main() {
 	rootCmd.AddCommand(newValidateCommand())
 	rootCmd.AddCommand(newCollectCommand())
 	rootCmd.AddCommand(newIngestCommand())
+	rootCmd.AddCommand(newExportCommand())
 
 	if err := rootCmd.Execute(); err != nil {
 		os.Exit(1)
@@ -167,6 +168,11 @@ func runSync(cmd *cobra.Command, args []string) error {
 	// Fail fast and legibly on a NetBox too old for the API fields used below.
 	if err := c.CheckVersion(); err != nil {
 		logger.Error("Unsupported NetBox version", err)
+		return err
+	}
+	// Plan with the managed tag the apply will send (a dry run only reads).
+	if err := c.ResolveManagedTagForPlan(); err != nil {
+		logger.Error("Failed to look up the managed tag", err)
 		return err
 	}
 

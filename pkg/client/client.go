@@ -33,6 +33,9 @@ type NetBoxClient struct {
 	recorder     *ChangeRecorder
 	dryRun       bool
 	managedTagID int
+	// managedTagMissing is set by a dry run that found no managed tag in
+	// NetBox: nothing can carry it, so there is nothing to prune.
+	managedTagMissing bool
 	// version is the NetBox release reported by /api/status/, learned by
 	// CheckVersion. The zero value means "not determined".
 	version NetBoxVersion

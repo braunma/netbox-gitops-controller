@@ -89,6 +89,10 @@ func (c *NetBoxClient) pruneTarget(t PruneTarget) (int, error) {
 		if c.reconcileIncomplete(t.App, t.Endpoint) {
 			c.logger.Warning("  ⚠ Skipping prune for %s/%s: reconciliation was incomplete; not deleting to avoid removing a declared object",
 				t.App, t.Endpoint)
+		} else if c.managedTagMissing {
+			// A dry run against a NetBox the controller never wrote to: no
+			// object carries a tag that does not exist, and NetBox answers a
+			// filter on an unknown tag with a 400, not an empty list.
 		} else {
 			managed, err := c.Filter(t.App, t.Endpoint, map[string]interface{}{
 				"tag": constants.ManagedTagSlug,

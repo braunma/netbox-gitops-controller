@@ -346,10 +346,8 @@ func (cr *CableReconciler) claim(cable client.Object) {
 		return
 	}
 	cr.logger.Info("│ Adopting cable ID %d: adding the managed tag", id)
-	if cr.client.IsDryRun() {
-		cr.logger.DryRun("UPDATE", "Cable ID %d: add managed tag", id)
-		return
-	}
+	// Update sends nothing in a dry run but still records the change, so the
+	// plan counts the adoption the apply will make.
 	update := cr.client.Tags().InjectTag(map[string]interface{}{"tags": cable["tags"]}, managed)
 	if err := cr.client.Update("dcim", "cables", id, update); err != nil {
 		cr.logger.Warning("│ Could not tag cable ID %d: %v", id, err)
