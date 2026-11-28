@@ -345,6 +345,7 @@ func (v *validator) collectReferences() map[string]reference {
 		need("device type", device.DeviceTypeSlug, "dcim", "device-types", "slug")
 		need("rack", device.RackSlug, "dcim", "racks", "slug")
 		need("device", device.ParentDevice, "dcim", "devices", "name")
+		need("tenant", device.Tenant, "tenancy", "tenants", "slug")
 		for _, iface := range device.Interfaces {
 			if iface.IP != nil {
 				need("VRF", iface.IP.VRF, "ipam", "vrfs", "name")
@@ -371,6 +372,28 @@ func (v *validator) collectReferences() map[string]reference {
 		need("cluster", vm.Cluster, "virtualization", "clusters", "name")
 		need("platform", vm.Platform, "dcim", "platforms", "slug")
 		need("tenant", vm.Tenant, "tenancy", "tenants", "slug")
+	}
+
+	// A tenant is optional everywhere, and the sync leaves an unknown one off
+	// with a warning instead of failing; asking NetBox here turns that
+	// run-time warning into a finding before anything is written.
+	for _, site := range v.ds.Sites {
+		need("tenant", site.Tenant, "tenancy", "tenants", "slug")
+	}
+	for _, rack := range v.ds.Racks {
+		need("tenant", rack.Tenant, "tenancy", "tenants", "slug")
+	}
+	for _, vrf := range v.ds.VRFs {
+		need("tenant", vrf.Tenant, "tenancy", "tenants", "slug")
+	}
+	for _, vlan := range v.ds.VLANs {
+		need("tenant", vlan.Tenant, "tenancy", "tenants", "slug")
+	}
+	for _, prefix := range v.ds.Prefixes {
+		need("tenant", prefix.Tenant, "tenancy", "tenants", "slug")
+	}
+	for _, cluster := range v.ds.Clusters {
+		need("tenant", cluster.Tenant, "tenancy", "tenants", "slug")
 	}
 
 	return pending

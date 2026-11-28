@@ -14,6 +14,14 @@ are about to run before applying a sync with pruning enabled.
 
 ### Added
 
+- **`tenant:` on sites, racks, devices, VRFs, VLANs and prefixes.** A tenant
+  declared in `definitions/tenants` can now be assigned to every kind that has
+  a tenant in NetBox, not only to clusters and VMs. It is referenced by slug
+  (the name works too) and can be set for a whole file under `defaults:`.
+  Leaving `tenant:` out sends nothing, so a tenant assigned in the UI is kept;
+  an unknown tenant is reported by `validate` (`unknown-tenant`, now checked
+  on every kind including clusters) and left off with a warning by a sync.
+  `export` writes the tenant of each of these kinds.
 - **`netbox-gitops export`** writes what a NetBox instance already holds as
   this repository's YAML, so objects created by hand can be adopted instead of
   retyped. Only objects the repository does not declare yet are written, under

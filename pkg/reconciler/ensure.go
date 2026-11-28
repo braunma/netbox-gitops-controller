@@ -120,6 +120,55 @@ func ensureManufacturer(c *client.NetBoxClient, name string) (int, error) {
 	return id, nil
 }
 
+// setTenant resolves an object's declared tenant into its payload, with one
+// behavior for every kind that can belong to a tenant (sites, racks, devices,
+// VRFs, VLANs, prefixes, clusters, VMs). A tenant is referenced by slug, with
+// its name accepted as fallback, like every other reference.
+//
+// An object that declares no tenant gets no `tenant` field: the controller
+// writes what the YAML declares and says nothing about anything else, so a
+// tenant somebody assigned in the NetBox UI survives a sync.
+//
+// A tenant that cannot be resolved is left off with a warning instead of
+// failing the object: define it in definitions/tenants and the next run sets
+// it. A tenant only planned in this --dry-run (ID 0) is left off too, since
+// there is no ID to send yet; that is logged, so the plan says where it
+// differs from the apply.
+func setTenant(c *client.NetBoxClient, payload map[string]interface{}, tenant, forKind, forName string) {
+	if tenant == "" {
+		return
+	}
+	id, ok := resolveTenant(c, tenant)
+	if !ok {
+		c.Logger().Warning("Tenant %s not found for %s %s, leaving unset (define it in definitions/tenants)", tenant, forKind, forName)
+		return
+	}
+	if id == 0 {
+		c.Logger().Info("Tenant %s for %s %s is only planned in this run; the apply sends it", tenant, forKind, forName)
+		return
+	}
+	payload["tenant"] = id
+}
+
+// resolveTenant looks a tenant up in the run's reference cache, then live by
+// slug and by name. ok is true for a tenant only planned in this --dry-run,
+// with ID 0.
+func resolveTenant(c *client.NetBoxClient, tenant string) (int, bool) {
+	if id, ok := c.Cache().GetGlobalID("tenants", tenant); ok {
+		return id, true
+	}
+	for _, field := range []string{"slug", "name"} {
+		objs, err := c.Filter("tenancy", "tenants", map[string]interface{}{field: tenant})
+		if err == nil && len(objs) > 0 {
+			if id := utils.GetIDFromObject(objs[0]); id != 0 {
+				c.Cache().Register("tenants", id, tenant)
+				return id, true
+			}
+		}
+	}
+	return 0, false
+}
+
 // setTags resolves an object's declared tags into its payload as tag IDs. A tag
 // is referenced by slug, with its name accepted as fallback, like every other
 // reference. The client adds the managed tag on top, so the object ends up

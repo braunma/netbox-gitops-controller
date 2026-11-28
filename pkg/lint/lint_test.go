@@ -1039,3 +1039,23 @@ func TestMessagesNameTheWayOut(t *testing.T) {
 		}
 	}
 }
+
+// A `tenant:` that names nothing declared is reported on every kind that can
+// carry one, not only on virtual machines.
+func TestUnknownTenantIsReportedOnEveryKind(t *testing.T) {
+	ds := baseDataset()
+	ds.Tenants = []*models.Tenant{{Name: "Platform", Slug: "platform"}}
+	ds.Sites = []*models.Site{
+		{Name: "Berlin", Slug: "berlin", Tenant: "platform"},
+		{Name: "Bonn", Slug: "bonn", Tenant: "Platform"},
+		{Name: "Bremen", Slug: "bremen", Tenant: "platfrm"},
+	}
+	ds.Racks = []*models.Rack{{Name: "R01", Slug: "r01", SiteSlug: "berlin", Tenant: "platfrm"}}
+	ds.VRFs = []*models.VRF{{Name: "prod", Tenant: "platfrm"}}
+	ds.VLANs = []*models.VLAN{{Name: "mgmt", VID: 100, SiteSlug: "berlin", Tenant: "platfrm"}}
+	ds.Prefixes = []*models.Prefix{{Prefix: "10.0.0.0/24", Tenant: "platfrm"}}
+	ds.Devices = []*models.DeviceConfig{{Name: "srv-01", SiteSlug: "berlin", Tenant: "platfrm"}}
+	ds.Clusters = []*models.Cluster{{Name: "pve", Tenant: "platfrm"}}
+
+	assertCheck(t, Check(ds, Options{}), "unknown-tenant", 7)
+}

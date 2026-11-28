@@ -5,6 +5,10 @@
 - name: "Berlin DC"
   slug: "berlin-dc"
   time_zone: "Europe/Berlin"
+  # Declared in definitions/tenants. `tenant` works the same way on racks,
+  # devices, VRFs, VLANs, prefixes, clusters and VMs.
+  tenant: "platform-engineering"
+  description: "Primary data center"
   tags: ["production"]
 
 - name: "Test Lab"

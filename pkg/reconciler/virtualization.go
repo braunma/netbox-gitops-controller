@@ -139,13 +139,7 @@ func (vr *VirtualizationReconciler) ReconcileClusters(clusters []*models.Cluster
 				vr.logger.Warning("Site %s not found for cluster %s, leaving unset", cl.SiteSlug, cl.Name)
 			}
 		}
-		if cl.Tenant != "" {
-			if tenantID, ok := vr.lookupID("tenancy", "tenants", cl.Tenant); ok {
-				payload["tenant"] = tenantID
-			} else {
-				vr.logger.Warning("Tenant %s not found for cluster %s, leaving unset", cl.Tenant, cl.Name)
-			}
-		}
+		setTenant(vr.client, payload, cl.Tenant, "cluster", cl.Name)
 
 		if _, err := ensure(vr.client, "virtualization", "clusters", ensureSpec{
 			kind:        "cluster",
@@ -251,13 +245,7 @@ func (vr *VirtualizationReconciler) ReconcileVMs(vms []*models.VMConfig) error {
 				vr.logger.Warning("Platform %s not found for VM %s, leaving unset", vm.Platform, vm.Name)
 			}
 		}
-		if vm.Tenant != "" {
-			if tenantID, ok := vr.lookupID("tenancy", "tenants", vm.Tenant); ok {
-				payload["tenant"] = tenantID
-			} else {
-				vr.logger.Warning("Tenant %s not found for VM %s, leaving unset", vm.Tenant, vm.Name)
-			}
-		}
+		setTenant(vr.client, payload, vm.Tenant, "VM", vm.Name)
 
 		lookup := map[string]interface{}{"name": vm.Name}
 		if hasCluster {

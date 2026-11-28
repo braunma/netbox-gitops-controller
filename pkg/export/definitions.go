@@ -174,8 +174,9 @@ func (e *exporter) exportSites() {
 		// leaves the site's region as it is.
 		out = append(out, &models.Site{
 			Name: str(o, "name"), Slug: slug, Status: status(o),
-			TimeZone: str(o, "time_zone"), Description: str(o, "description"),
-			Comments: str(o, "comments"), Tags: e.tags(o),
+			TimeZone: str(o, "time_zone"), Tenant: nestedStr(o, "tenant", "slug"),
+			Description: str(o, "description"),
+			Comments:    str(o, "comments"), Tags: e.tags(o),
 		})
 	}
 	sortBy(out, func(s *models.Site) string { return s.Slug })
@@ -205,8 +206,9 @@ func (e *exporter) exportRacks() {
 		}
 		r := &models.Rack{
 			Name: name, Slug: e.rackRef(site, name), SiteSlug: site,
-			Status: status(o), Description: str(o, "description"),
-			Tags: e.tags(o),
+			Status: status(o), Tenant: nestedStr(o, "tenant", "slug"),
+			Description: str(o, "description"),
+			Tags:        e.tags(o),
 		}
 		if w, _, ok := whole(o, "width"); ok {
 			r.Width = w
@@ -230,7 +232,8 @@ func (e *exporter) exportVRFs() {
 		}
 		out = append(out, &models.VRF{
 			Name: name, RD: str(o, "rd"), Description: str(o, "description"),
-			EnforceUnique: boolean(o, "enforce_unique"), Tags: e.tags(o),
+			EnforceUnique: boolean(o, "enforce_unique"),
+			Tenant:        nestedStr(o, "tenant", "slug"), Tags: e.tags(o),
 		})
 	}
 	sortBy(out, func(v *models.VRF) string { return v.Name })
@@ -300,6 +303,7 @@ func (e *exporter) exportVLANs() {
 		out = append(out, &models.VLAN{
 			Name: str(o, "name"), VID: vid, SiteSlug: site,
 			GroupSlug: nestedStr(o, "group", "slug"), Status: status(o),
+			Tenant:      nestedStr(o, "tenant", "slug"),
 			Description: str(o, "description"), Tags: e.tags(o),
 		})
 	}
@@ -340,6 +344,7 @@ func (e *exporter) exportPrefixes() {
 		pr := &models.Prefix{
 			Prefix: p, SiteSlug: site, VRFName: nestedStr(o, "vrf", "name"),
 			Status: status(o), IsPool: boolean(o, "is_pool"),
+			Tenant:      nestedStr(o, "tenant", "slug"),
 			Description: str(o, "description"), Tags: e.tags(o),
 		}
 		if v := e.vlanByID[nestedID(o, "vlan")]; v != nil {

@@ -116,6 +116,9 @@
           },
           "type": "array"
         },
+        "tenant": {
+          "type": "string"
+        },
         "vid": {
           "type": "integer"
         }
@@ -187,6 +190,9 @@
           },
           "type": "array"
         },
+        "tenant": {
+          "type": "string"
+        },
         "vid": {
           "type": "integer"
         }
@@ -253,6 +259,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "tenant": {
+          "type": "string"
         },
         "vid": {
           "type": "integer"

@@ -13,6 +13,7 @@ type Site struct {
 	Status      string   `yaml:"status,omitempty" json:"status,omitempty"`
 	Region      string   `yaml:"region,omitempty" json:"region,omitempty"`
 	TimeZone    string   `yaml:"time_zone,omitempty" json:"time_zone,omitempty"`
+	Tenant      string   `yaml:"tenant,omitempty" json:"tenant,omitempty"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Comments    string   `yaml:"comments,omitempty" json:"comments,omitempty"`
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
@@ -33,6 +34,7 @@ type Rack struct {
 	Status      string   `yaml:"status,omitempty" json:"status,omitempty"`
 	Width       int      `yaml:"width,omitempty" json:"width,omitempty"`
 	UHeight     int      `yaml:"u_height,omitempty" json:"u_height,omitempty"`
+	Tenant      string   `yaml:"tenant,omitempty" json:"tenant,omitempty"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
@@ -112,8 +114,9 @@ type CustomField struct {
 	Required    bool   `yaml:"required,omitempty" json:"required,omitempty"`
 }
 
-// Tenant represents a NetBox tenant (tenancy app). Referenced by slug from
-// clusters, VMs and devices.
+// Tenant represents a NetBox tenant (tenancy app). Referenced by slug, in a
+// `tenant:` field, from sites, racks, devices, VRFs, VLANs, prefixes,
+// clusters and VMs.
 //
 // In YAML the references are usually written by their short names (group for
 // group_slug); see YAMLAliases.

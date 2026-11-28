@@ -19,6 +19,7 @@ type VLAN struct {
 	RenameFrom  string   `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	Status      string   `yaml:"status,omitempty" json:"status,omitempty"`
 	Role        string   `yaml:"role,omitempty" json:"role,omitempty"`
+	Tenant      string   `yaml:"tenant,omitempty" json:"tenant,omitempty"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
@@ -51,6 +52,7 @@ type VRF struct {
 	RenameFrom    string   `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	Description   string   `yaml:"description,omitempty" json:"description,omitempty"`
 	EnforceUnique bool     `yaml:"enforce_unique,omitempty" json:"enforce_unique,omitempty"`
+	Tenant        string   `yaml:"tenant,omitempty" json:"tenant,omitempty"`
 	Tags          []string `yaml:"tags,omitempty" json:"tags,omitempty"`
 }
 
@@ -74,6 +76,7 @@ type Prefix struct {
 	RenameFrom  string   `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
 	Status      string   `yaml:"status,omitempty" json:"status,omitempty"`
 	Role        string   `yaml:"role,omitempty" json:"role,omitempty"`
+	Tenant      string   `yaml:"tenant,omitempty" json:"tenant,omitempty"`
 	IsPool      bool     `yaml:"is_pool,omitempty" json:"is_pool,omitempty"`
 	Description string   `yaml:"description,omitempty" json:"description,omitempty"`
 	Tags        []string `yaml:"tags,omitempty" json:"tags,omitempty"`

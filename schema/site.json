@@ -78,6 +78,9 @@
           },
           "type": "array"
         },
+        "tenant": {
+          "type": "string"
+        },
         "time_zone": {
           "type": "string"
         }
@@ -125,6 +128,9 @@
           },
           "type": "array"
         },
+        "tenant": {
+          "type": "string"
+        },
         "time_zone": {
           "type": "string"
         }
@@ -167,6 +173,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "tenant": {
+          "type": "string"
         },
         "time_zone": {
           "type": "string"

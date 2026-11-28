@@ -107,6 +107,9 @@
           },
           "type": "array"
         },
+        "tenant": {
+          "type": "string"
+        },
         "vlan": {
           "description": "Short for vlan_name.",
           "type": "string"
@@ -193,6 +196,9 @@
           },
           "type": "array"
         },
+        "tenant": {
+          "type": "string"
+        },
         "vlan": {
           "description": "Short for vlan_name.",
           "type": "string"
@@ -275,6 +281,9 @@
             "type": "string"
           },
           "type": "array"
+        },
+        "tenant": {
+          "type": "string"
         },
         "vlan": {
           "description": "Short for vlan_name.",

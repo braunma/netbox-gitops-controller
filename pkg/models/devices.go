@@ -230,6 +230,7 @@ type DeviceConfig struct {
 	Status         string `yaml:"status,omitempty" json:"status,omitempty"`
 	Serial         string `yaml:"serial,omitempty" json:"serial,omitempty"`
 	AssetTag       string `yaml:"asset_tag,omitempty" json:"asset_tag,omitempty"`
+	Tenant         string `yaml:"tenant,omitempty" json:"tenant,omitempty"`
 	// CustomFields holds values for NetBox custom fields defined on the device
 	// content type, keyed by field name. Only the fields declared here are
 	// written; a field NetBox holds but the YAML does not mention is left
