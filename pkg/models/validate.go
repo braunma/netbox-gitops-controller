@@ -197,7 +197,7 @@ func (m *ModuleType) Validate() error {
 
 // Validate checks required fields of a DeviceType and all its templates.
 // Interface templates without a type are the most common cause of
-// "400 Bad Request: type may not be blank" errors (see README).
+// "400 Bad Request: type may not be blank" errors (see docs/CONCEPTS.md).
 func (d *DeviceType) Validate() error {
 	errs := requireFields(map[string]string{
 		"model":        d.Model,

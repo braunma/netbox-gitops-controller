@@ -14,6 +14,20 @@ are about to run before applying a sync with pruning enabled.
 
 ### Changed
 
+- **The README is a landing page; the reference moved to `docs/`.** The README
+  went from about 1,600 lines to about 230: what the tool does, one example,
+  the Quickstart, the features and an index of guides. The sections it used to
+  hold are now `docs/WRITING_YAML.md`, `docs/CHECKS.md`, `docs/USAGE.md`,
+  `docs/CONCEPTS.md` and `docs/ADOPTING.md`, with three new diagrams. Links to
+  README sections from elsewhere point at the new pages. Every statement was
+  checked against the code on the way, and the ones that were wrong are
+  corrected, among them: the phase order (module types run before device
+  types; per device, ports and bays come before modules), the `scope` key of
+  the JSON plan, that `--prune` needs `--full` in a git checkout, that a sync
+  stops on load errors but not on `yamlcheck`'s cross-object findings, and
+  that a cable blocking a declared connection is deleted without `--prune`
+  and whether or not it carries the `gitops` tag. No behaviour changed.
+
 - **A commit that only edits YAML no longer pays for the code** (GitLab
   pipeline). `go_test`, `go_lint` and `ingest_check` run only when code
   changed; `yaml_check` always runs. With the new `REUSE_BUILD="true"`,

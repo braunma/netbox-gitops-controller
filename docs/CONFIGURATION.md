@@ -49,7 +49,7 @@ NetBox variables above and the BMC credentials its sources name.
 | Flag | Default | What it does |
 |---|---|---|
 | `--dry-run` | off | Plans without writing. Every run ends with `Plan: N to create, N to update, N to delete, N unchanged`. |
-| `--full` | off | Reconciles everything the YAML declares. Without it, a run in a git checkout is change-based: only what changed since the commit NetBox was last synced to (recorded in the tag `gitops-state`) is reconciled. See [What a sync looks at](../README.md#what-a-sync-looks-at) for the cases that are full anyway. |
+| `--full` | off | Reconciles everything the YAML declares. Without it, a run in a git checkout is change-based: only what changed since the commit NetBox was last synced to (recorded in the tag `gitops-state`) is reconciled. See [What a sync looks at](USAGE.md#what-a-sync-looks-at) for the cases that are full anyway. |
 | `--changed-since <commit>` | the recorded commit | Compares against the commit you name instead of the one NetBox has on record. Not combinable with `--full` or the four scope flags below. |
 | `--verbose` | off | Prints a line for everything the sync looks at: what is loaded, each derived value and cable path, and every object found unchanged. Without it the output is the scope, the changes, the warnings and the summary. `validate` always prints derived values. |
 | `--only <phases>` | all phases | Comma-separated or repeated: `foundation`, `network`, `device-types`, `devices`, `virtualization`. Selected phases always run in dependency order regardless of the order you list them. An unknown phase is rejected by name. |
@@ -109,7 +109,7 @@ accept these values"; `--dry-run` needs one and answers "what would change".
 
 Reads the live instance and writes every object the repository does not
 declare yet as YAML, so that the next sync adopts it. Only GET requests are
-made. See [Adopting what NetBox already holds](../README.md#-adopting-what-netbox-already-holds).
+made. See [Adopting what NetBox already holds](ADOPTING.md).
 
 ```bash
 ./netbox-gitops export --dry-run
@@ -277,8 +277,8 @@ go run ./cmd/yamlcheck path/to/data-dir # a directory holding definitions/ or in
 | `-no-lint` | off | Syntax and model validation only, skipping the cross-object checks. |
 | `-warnings` | `true` | `-warnings=false` prints errors only. |
 
-The full list of checks is in the README section *Checking the YAML before it
-reaches NetBox*.
+The full list of checks is in
+[Checking the YAML](CHECKS.md#checking-the-yaml-before-it-reaches-netbox).
 
 ## GitLab CI/CD variables
 

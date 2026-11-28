@@ -8,8 +8,8 @@
 # mappings such as `link` are merged key by key.
 #
 # References use the short field names (`site`, `role`, `device_type`,
-# `rack`); the older `*_slug` spellings are still accepted. See the README
-# section "Field names".
+# `rack`); the older `*_slug` spellings are still accepted. See "Field names" in
+# docs/WRITING_YAML.md.
 #
 # Conventions demonstrated here:
 #   - Interface `type` and `enabled` are NOT repeated: the ports come from

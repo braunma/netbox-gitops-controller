@@ -254,7 +254,7 @@ type DeviceConfig struct {
 // when the device has a rack position but names no face. NetBox requires a
 // face with every position and answers 400 otherwise; nearly every device is
 // front-mounted, so the YAML only has to say so when it is not. The default
-// is documented in the README under "Conventions that keep the YAML small".
+// is documented in docs/WRITING_YAML.md, "Conventions that keep the YAML small".
 func (d *DeviceConfig) EffectiveFace() string {
 	if d.Face == "" && d.Position > 0 {
 		return "front"
