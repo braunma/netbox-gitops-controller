@@ -141,8 +141,25 @@ func runCollect(cmd *cobra.Command, args []string) error {
 		logger.Error("Unknown source", err)
 		return err
 	}
+	// Scan sources belong to `scan`, which writes to NetBox; nothing in this
+	// command does. One named explicitly is a mistake worth stopping for; one
+	// swept up by "every source" is simply not this command's.
+	collectable := sources[:0:0]
+	for _, src := range sources {
+		switch {
+		case !src.IsScan():
+			collectable = append(collectable, src)
+		case len(collectSources) > 0:
+			err := fmt.Errorf("source %q is of type %q, which `scan` reads, not `collect`", src.Name, src.Type)
+			logger.Error("Unusable --source", err)
+			return err
+		default:
+			logger.Info("Skipping %s: a source of type %s is read by `netbox-gitops scan`", src.Name, src.Type)
+		}
+	}
+	sources = collectable
 	if len(sources) == 0 {
-		logger.Warning("The collector configuration declares no sources; nothing to do")
+		logger.Warning("The collector configuration declares no source for collect; nothing to do")
 		return nil
 	}
 

@@ -14,7 +14,7 @@ LDFLAGS    := -X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildD
 COVERAGE_SCOPE     ?= ./...
 COVERAGE_THRESHOLD ?= 65
 
-.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-changed e2e-export e2e-export-more e2e-local clean
+.PHONY: help build version test coverage lint check ingest-preview e2e e2e-ingest e2e-rename e2e-repo e2e-changed e2e-export e2e-export-more e2e-scan e2e-local clean
 
 help: ## Show this help
 	@grep -hE '^[a-zA-Z0-9_-]+:.*?## ' $(MAKEFILE_LIST) | awk 'BEGIN{FS=":.*?## "}{printf "  \033[36m%-12s\033[0m %s\n", $$1, $$2}'
@@ -98,6 +98,9 @@ e2e-repo: ## Apply this repository's own data (needs NETBOX_URL and NETBOX_TOKEN
 
 e2e-export: ## Adoption by `export` (needs an EMPTY throwaway NetBox: it deletes everything)
 	./tests/e2e/export.sh
+
+e2e-scan: ## `scan` against a fake iDRAC (needs NETBOX_URL and NETBOX_TOKEN of a throwaway NetBox)
+	./tests/e2e/scan.sh
 
 e2e-export-more: ## Adoption on 10 random inventories and a 400-server instance (EMPTY throwaway NetBox; slow)
 	./tests/e2e/export-more.sh

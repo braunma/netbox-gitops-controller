@@ -94,6 +94,13 @@ var hardwareFields = []hardwareField{
 		// Text in NetBox, to two decimals, matching what the importer writes.
 		return fmt.Sprintf("%.2f", h.StorageTotalTB), h.StorageTotalTB > 0
 	}},
+	{"gpu_count", func(h discovery.HardwareFacts) (interface{}, bool) {
+		// No GPU is a fact, so 0 is written once the source has looked: a
+		// card that was removed must not stay on record.
+		return h.GPUCount, h.GPUsRead || h.GPUCount > 0
+	}},
+	{"gpu_model", func(h discovery.HardwareFacts) (interface{}, bool) { return h.GPUModel, h.GPUModel != "" }},
+	{"gpu_memory_gb", func(h discovery.HardwareFacts) (interface{}, bool) { return h.GPUMemoryGB, h.GPUMemoryGB > 0 }},
 	{"bios_version", func(h discovery.HardwareFacts) (interface{}, bool) { return h.BIOSVersion, h.BIOSVersion != "" }},
 	{"power_state", func(h discovery.HardwareFacts) (interface{}, bool) { return h.PowerState, h.PowerState != "" }},
 	{"power_consumed_watts", func(h discovery.HardwareFacts) (interface{}, bool) {
@@ -129,6 +136,19 @@ func hardwareCustomFields(hw discovery.HardwareFacts, prefix string) []keyValue 
 			continue
 		}
 		out = append(out, keyValue{Key: prefix + f.suffix, Value: value})
+	}
+	return out
+}
+
+// HardwareFieldValues returns the reported facts as custom field name → value,
+// for a caller that writes them somewhere other than the YAML. It is the same
+// mapping the YAML writer uses, so every route to NetBox produces the same
+// fields. Unreported facts are absent, not zero.
+func HardwareFieldValues(hw discovery.HardwareFacts, prefix string) map[string]interface{} {
+	fields := hardwareCustomFields(hw, prefix)
+	out := make(map[string]interface{}, len(fields))
+	for _, kv := range fields {
+		out[kv.Key] = kv.Value
 	}
 	return out
 }

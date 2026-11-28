@@ -39,7 +39,8 @@ cp .env.example .env      # then fill in NETBOX_URL and NETBOX_TOKEN
 
 `collect` and `ingest` read none of the three. They never contact NetBox; the
 credentials they need are the read-only ones for the systems being scanned, and
-those are named in [`collectors.yaml`](#collectorsyaml).
+those are named in [`collectors.yaml`](#collectorsyaml). `scan` needs both: the
+NetBox variables above and the BMC credentials its sources name.
 
 ## `netbox-gitops`
 
@@ -180,9 +181,35 @@ Both inherit `--config`, `--data-dir`, `--ignore-file` and
 it would generate a second copy of a machine somebody has already started
 documenting.
 
+### `netbox-gitops scan`
+
+Scans the BMCs of declared devices and writes their hardware facts to NetBox as
+`hw_` custom fields — the one route that does not pass through the YAML. The
+hosts are the addresses the inventory declares; see
+[`INGEST.md`](INGEST.md#hardware-facts-straight-to-netbox-scan) for what it
+writes and what it never touches.
+
+```bash
+./netbox-gitops scan --dry-run              # scan and compare, write nothing
+./netbox-gitops scan                        # every source of type idrac
+./netbox-gitops scan --source idrac-ceph    # one source
+```
+
+| Flag | Environment | Default | What it does |
+|---|---|---|---|
+| `--dry-run` | — | off | Scans the BMCs and reads NetBox, prints every field that would change, writes nothing. |
+| `--source <name>` | — | every scan source | Comma-separated or repeated. Naming a source `collect` reads is an error. Sources that are not selected still take part in the overlap check. |
+| `--collectors-config <file>` | `COLLECTORS_CONFIG` | `<data-dir>/collectors.yaml` | The source configuration, shared with `collect`. |
+| `--custom-field-prefix <prefix>` | — | `hw_` | The prefix of the custom fields a scan owns. Nothing outside it is ever written. |
+| `--strict` | — | off | Exit `1` when a selected host could not be scanned or a selected device is missing in NetBox. Without it those are warnings and the run exits `0`. |
+
+Exit `1` also means: the YAML does not load, two sources select the same
+device, a credential variable is unset, no `hw_` custom field is declared for
+devices, or NetBox refused a write.
+
 ### `collectors.yaml`
 
-Read by `collect`. Each entry under `sources:` configures one source. No secret
+Read by `collect` and `scan`. Each entry under `sources:` configures one source. No secret
 is ever written here — the file names the *environment variable* holding the
 token — so it is safe to commit. A key this parser does not recognise is an
 error naming the key: a mistyped `verify_tsl: false` that was silently dropped
@@ -201,12 +228,37 @@ sources:
 | Key | Required | Default | What it does |
 |---|---|---|---|
 | `name` | yes | — | Identifies the source in logs, in `--source`, in the run summary and in the path of any file generated from it. Must be unique and must not contain a path separator. |
-| `type` | yes | — | Selects the collector. Currently only `proxmox`. An unknown type is an error listing the ones that exist. |
+| `type` | yes | — | Selects the collector: `proxmox` (read by `collect`) or `idrac` (read by `scan`, keys below). An unknown type is an error listing the ones that exist. |
 | `url` | yes | — | The source's API base URL, e.g. `https://pve.example.com:8006`. |
 | `token_env` | yes | — | The **name** of the environment variable holding the token, never the token. For Proxmox that variable holds `user@realm!tokenid=secret`; `PVEAuditor` on `/` is enough, since every request is a GET. An unset variable is an error naming the variable. |
 | `verify_tls` | no | `true` | `false` skips TLS certificate verification for this source only, and logs a warning naming the source on every run — the same bargain `IGNORE_SSL_ERRORS` strikes for the NetBox client. |
 | `timeout_seconds` | no | `30` | Bounds a single API request. A whole scan may take longer: one request per guest is made to read its NICs. |
 | `cluster` | no | — | The NetBox cluster the source's guests belong to. Proxmox reports no name a NetBox cluster can be matched on, so it is declared rather than guessed. Guests from a source without one are written to a *parked* file, since a VM needs a cluster or a site. |
+
+A source of type `idrac` takes `name`, `type`, `verify_tls` and
+`timeout_seconds` as above, and these instead of `url`, `token_env` and
+`cluster`. A key of the other kind is an error, not ignored.
+
+```yaml
+sources:
+  - name: idrac-ceph
+    type: idrac
+    username_env: IDRAC_CEPH_USER
+    password_env: IDRAC_CEPH_PASS
+    targets: inventory
+    interface: idrac
+    select: { tags: ["ceph"] }
+```
+
+| Key | Required | Default | What it does |
+|---|---|---|---|
+| `username_env`, `password_env` | yes | — | The **names** of the environment variables holding the BMC credentials. An unset one is an error naming it, before any host is contacted. A read-only iDRAC user is enough. |
+| `targets` | yes | — | `inventory`, the only value: the hosts are the addresses the selected devices declare on `interface`. |
+| `interface` | yes | — | The device interface whose address is scanned, e.g. `idrac`. Declared rather than assumed, so the file says which port a scan talks to. |
+| `select` | no | every device with an address on `interface` | Narrows the source: `site`, `rack`, `role`, `tags` (a list; the device must carry all) and `prefix` (a CIDR the scanned address must fall into). Every key that is set must match. A device selected by two sources is an error. |
+| `port` | no | `443` | The HTTPS port of the BMC. |
+| `concurrency` | no | `5` | Hosts scanned at once, 1–50. |
+| `timeout_seconds` | no | `30` | Bounds a single Redfish request. A host takes one request per processor, DIMM slot and drive. |
 
 ## `yamlcheck`
 

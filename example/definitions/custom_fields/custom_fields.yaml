@@ -31,8 +31,10 @@
 # These fields hold what an out-of-band scan reports about a physical machine:
 # its CPUs, memory, storage, firmware and power draw. `netbox-gitops ingest`
 # writes the values into the device's YAML block, they are reviewed as a merge
-# request diff, and a normal sync puts them in NetBox — nothing writes them
-# directly.
+# request diff, and a normal sync puts them in NetBox. `netbox-gitops scan`
+# is the other route: it reads the iDRACs the inventory declares and writes
+# these fields to NetBox directly. A scan writes only the fields declared
+# here, so removing one switches it off.
 #
 # The names and types match the sibling idrac-netbox-importer, so a device
 # documented through either path carries the same fields. The list is the
@@ -148,6 +150,27 @@
   type: "integer"
   label: "Power Consumed (W)"
   description: "Power draw at the last scan (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_gpu_count"
+  type: "integer"
+  label: "GPU Count"
+  description: "Installed GPUs and accelerators, 0 when there are none (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_gpu_model"
+  type: "text"
+  label: "GPU Model"
+  description: "GPUs grouped by model, e.g. 3× Tesla T4 (source of truth: hardware scan)"
+  object_types:
+    - "dcim.device"
+
+- name: "hw_gpu_memory_gb"
+  type: "integer"
+  label: "GPU Memory (GB)"
+  description: "Memory of all GPUs together, where the controller reports it (source of truth: hardware scan)"
   object_types:
     - "dcim.device"
 

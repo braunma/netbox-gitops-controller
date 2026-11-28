@@ -72,6 +72,7 @@ make check
   * **Coverage:** Manages DCIM (sites, racks, device types, module types, devices, installed modules, cabling), IPAM (VRFs, VLAN groups, VLANs, prefixes), platforms/tenants, custom fields, and **virtualization** (cluster types/groups, clusters, virtual machines and VM interfaces with VLAN/IP assignment).
   * **Device & module type libraries:** Reads the community `devicetype-library` layout (`device-types/` and `module-types/`) alongside the native format, so vendor definitions can be vendored in as-is instead of retyped. Local definitions win over library ones of the same identity. See the Device type library section below.
   * **Fact ingestion (`collect` / `ingest`):** Facts discovered *about* running infrastructure — a Proxmox cluster's guests, an iDRAC scan's hardware inventory — are written **into this repository's YAML**, reviewed as a merge request, and become NetBox truth through the same reconcile every hand-written line takes. Nothing on that path writes to NetBox. See [Documenting what is actually out there](#-documenting-what-is-actually-out-there) and [`docs/INGEST.md`](docs/INGEST.md).
+  * **Hardware scan (`scan`):** The iDRACs of the servers the inventory declares are read over Redfish, and their CPU, memory, storage, firmware and power facts are written straight to NetBox as `hw_` custom fields. No host list, no address ranges: the targets are the addresses in the YAML. See [`docs/INGEST.md`](docs/INGEST.md#hardware-facts-straight-to-netbox-scan).
   * **Type Safety:** All input data is validated against typed Go models before interacting with the API to prevent bad requests.
 
 
@@ -108,10 +109,11 @@ make check
 │   ├── CONFIGURATION.md # Every flag, variable and CI setting
 │   ├── INGEST.md        # Sources → YAML → MR → NetBox
 │   └── ROADMAP.md       # What is not built yet
-├── collectors.yaml      # Sources `collect` reads (copy the .example)
+├── collectors.yaml      # Sources `collect` and `scan` read (copy the .example)
 ├── pkg/                 # Go Implementation (Core Logic)
 │   ├── client/          # NetBox API Client
-│   ├── collectors/      # Compiled-in source adapters (Proxmox)
+│   ├── collectors/      # Compiled-in source adapters (Proxmox, iDRAC)
+│   ├── facts/           # Scanned hardware facts → NetBox custom fields
 │   ├── discovery/       # The normalized model every source funnels into
 │   ├── ingest/          # Snapshot → YAML file changes (writes no NetBox)
 │   ├── ingestfmt/       # External scan documents (idrac-json)
@@ -827,6 +829,18 @@ NetBox client and cannot acquire one. A discovered fact reaches NetBox by being
 committed, reviewed and reconciled — exactly like a hand-written line, because
 the whole value of documenting infrastructure in git is that somebody looked at
 the change.
+
+There is one deliberate exception. Hardware facts — CPUs, memory, drives,
+firmware, power draw — are not decisions anybody reviews, so `scan` reads them
+from the iDRACs of the servers the inventory declares and writes them straight
+to NetBox as `hw_` custom fields. It never touches `serial`, `asset_tag` or
+anything else the YAML declares; see
+[`docs/INGEST.md`](docs/INGEST.md#hardware-facts-straight-to-netbox-scan).
+
+```bash
+./netbox-gitops scan --dry-run                                # scan the declared iDRACs, write nothing
+./netbox-gitops scan                                          # write hw_ fields to NetBox
+```
 
 ```bash
 ./netbox-gitops collect --dry-run                             # print the diffs, write nothing

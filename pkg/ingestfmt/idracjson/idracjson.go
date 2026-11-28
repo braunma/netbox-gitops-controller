@@ -20,7 +20,6 @@ import (
 	"fmt"
 	"io"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/braunma/netbox-gitops-controller/pkg/discovery"
@@ -262,24 +261,11 @@ func displayName(srv entry) string {
 	}
 }
 
-// storageSummary groups drives by whole-GB capacity, e.g. "2x745GB, 16x14306GB".
-// The format is the importer's, so a device documented by either path reads the
-// same in NetBox.
+// storageSummary renders the drives of one entry in the shared format.
 func storageSummary(drives []drive) string {
-	groups := make(map[int]int, len(drives))
+	capacities := make([]int, 0, len(drives))
 	for _, d := range drives {
-		groups[int(d.CapacityGB)]++
+		capacities = append(capacities, int(d.CapacityGB))
 	}
-
-	capacities := make([]int, 0, len(groups))
-	for capacity := range groups {
-		capacities = append(capacities, capacity)
-	}
-	sort.Ints(capacities)
-
-	parts := make([]string, 0, len(capacities))
-	for _, capacity := range capacities {
-		parts = append(parts, fmt.Sprintf("%dx%dGB", groups[capacity], capacity))
-	}
-	return strings.Join(parts, ", ")
+	return discovery.StorageSummary(capacities)
 }

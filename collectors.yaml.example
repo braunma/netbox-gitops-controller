@@ -1,4 +1,4 @@
-# Sources the `netbox-gitops collect` command reads.
+# Sources the `netbox-gitops collect` and `netbox-gitops scan` commands read.
 #
 # Copy this to collectors.yaml (or point --collectors-config somewhere else)
 # and edit it. The file is safe to commit: it names the environment variable
@@ -27,3 +27,33 @@ sources:
   #   verify_tls: false
   #   timeout_seconds: 60
   #   cluster: lab-cluster
+
+  # ---------------------------------------------------------------------------
+  # Scan sources (type: idrac), read by `netbox-gitops scan`.
+  #
+  # These are the one kind that writes to NetBox: the hardware facts a BMC
+  # reports become hw_ custom fields on the device they were read from. There
+  # is no host list. `targets: inventory` means the hosts are the addresses the
+  # selected devices declare on `interface` in inventory/.
+  #
+  # One source per group of machines that shares credentials and network
+  # reach. A device two sources select is an error, so `select` has to divide
+  # the inventory cleanly; its keys are site, rack, role, tags and prefix.
+  # ---------------------------------------------------------------------------
+  # - name: idrac-ceph
+  #   type: idrac
+  #   username_env: IDRAC_CEPH_USER # a read-only iDRAC user is enough
+  #   password_env: IDRAC_CEPH_PASS
+  #   targets: inventory
+  #   interface: idrac              # the interface whose address is scanned
+  #   select: { tags: ["ceph"] }
+  #
+  # - name: idrac-lab
+  #   type: idrac
+  #   username_env: IDRAC_LAB_USER
+  #   password_env: IDRAC_LAB_PASS
+  #   verify_tls: false             # factory iDRAC certificates are self-signed
+  #   targets: inventory
+  #   interface: idrac
+  #   select: { site: "test-lab" }
+  #   concurrency: 10               # hosts scanned at once (default 5)

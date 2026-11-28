@@ -36,6 +36,19 @@ The corollaries hold everywhere:
   [Adopting a discovered object](#adopting-a-discovered-object));
 - ingest **never removes a key it did not write**.
 
+### The one exception: `scan`
+
+Hardware facts read from a BMC can also be written **straight to NetBox**, with
+`netbox-gitops scan`. That is a second route on purpose, not a loophole in the
+first: a CPU count is not a decision anybody reviews, the BMC is its source,
+and one scan refills it if NetBox were ever lost. Putting it through a merge
+request adds a diff every night and protects nothing.
+
+The route is narrow enough that it cannot collide with the reconciler; see
+[Hardware facts straight to NetBox](#hardware-facts-straight-to-netbox-scan).
+Everything else in this document — Proxmox guests, the idrac-json document,
+unknown machines — still reaches NetBox only through the YAML.
+
 ## Two sources, one model
 
 | Source | Command | How it gets its facts |
@@ -144,6 +157,9 @@ The `hw_` custom fields, in the order they are written:
 | `hw_disk_count` | Integer | Installed drives |
 | `hw_storage_summary` | Text | Drives grouped by capacity, e.g. `2x894GB, 16x14901GB` |
 | `hw_storage_total_tb` | Text | Total raw storage, two decimals |
+| `hw_gpu_count` | Integer | Installed GPUs and accelerators; `0` when there are none. Written by `scan` only |
+| `hw_gpu_model` | Text | GPUs grouped by model, e.g. `3× Tesla T4`. Written by `scan` only |
+| `hw_gpu_memory_gb` | Integer | Memory of all GPUs together, where the controller reports it. Written by `scan` only |
 | `hw_bios_version` | Text | System firmware version |
 | `hw_power_state` | Text | `On` / `Off` at the last scan |
 | `hw_power_consumed_watts` | Integer | Power draw at the last scan |
@@ -329,7 +345,111 @@ nightly scan gives you one merge request a night with a readable power history
 in the file's git log. An hourly one gives you twenty-four, which nobody will
 read. Pick the interval you will actually review; if you want the inventory
 facts without the churn, the honest options are to scan less often or to stop
-declaring the volatile fields in `definitions/custom_fields/`.
+declaring the volatile fields in `definitions/custom_fields/`. Or take hardware
+facts out of git altogether and let [`scan`](#hardware-facts-straight-to-netbox-scan)
+write them to NetBox directly.
+
+## Hardware facts straight to NetBox (`scan`)
+
+```
+  inventory YAML ──→ which hosts ──→ iDRAC (Redfish, GET only) ──→ hw_ custom fields in NetBox
+```
+
+`scan` reads the sources of type `idrac` in `collectors.yaml`. There is no host
+list and no address range: **the hosts a source scans are the addresses the
+inventory declares** on the interface the source names.
+
+```yaml
+sources:
+  - name: idrac-ceph
+    type: idrac
+    username_env: IDRAC_CEPH_USER # names the variable, never the value
+    password_env: IDRAC_CEPH_PASS
+    targets: inventory            # the only value: scan what the YAML declares
+    interface: idrac              # the address on each device's `idrac` interface
+    select: { tags: ["ceph"] }    # only devices carrying this tag
+
+  - name: idrac-playground
+    type: idrac
+    username_env: IDRAC_PLAY_USER
+    password_env: IDRAC_PLAY_PASS
+    targets: inventory
+    interface: idrac
+    select: { site: "playground" }
+```
+
+Because the address came from a device's own block, the result belongs to that
+device. Nothing is matched by serial or hostname, and a scan cannot write to
+the wrong machine.
+
+**One source per group of machines that shares credentials and network reach.**
+`select` picks devices by what the YAML already says about them — `site`,
+`rack`, `role`, `tags` (all must be carried) and `prefix` (a CIDR the scanned
+address falls into). Every key that is set must match.
+
+- A device two sources select is an **error before anything is scanned**: each
+  source carries its own credentials, and no machine should be sent the wrong
+  password.
+- A device that declares an address on a scanned interface and that no source
+  selects is listed as a warning. It is a gap, not a failure.
+- `--source` runs one source, so each can run on the runner that reaches its
+  management network, with only its own credentials in that job.
+
+### What a scan writes, and what it never does
+
+| | |
+|---|---|
+| Written | Custom fields with the `hw_` prefix (`--custom-field-prefix`), **and only the ones `definitions/custom_fields/` declares for `dcim.device`**. Declaring a field is what switches it on; a fact with no declared field is left out and named in the summary. Do not want the power draw in NetBox? Do not declare `hw_power_consumed_watts`. |
+| Never written | `serial`, `asset_tag`, the name, and every custom field outside the prefix. |
+| Never created | Devices. A device NetBox does not hold yet is reported (`not in NetBox yet; run the sync first`) and skipped. |
+| Left to the YAML | A `hw_` field a device sets under `custom_fields:` in the YAML. The YAML owns it, the scan says so and does not write it — the next sync would write the YAML value back anyway. |
+
+The sync, for its part, only enforces the custom fields the YAML sets and
+leaves every other custom field on a device alone. So **keep `hw_` values out
+of the YAML** and the two never touch the same field: a sync after a scan has
+nothing to do.
+
+### Serial and service tag are compared, not written
+
+The BMC reports a serial number and a service tag; the YAML declares `serial`
+and `asset_tag`. A scan compares them and changes neither:
+
+```
+⚠ srv-b: serial MISMATCH — the YAML declares "TYPO-B", the BMC at 192.0.2.12
+  reports "SERIAL-B". Nothing was changed; correct the YAML or check the machine.
+```
+
+A mismatch is a typo or swapped hardware, and which of the two is for a human
+to say. Where the YAML declares none, the reported value is printed so it can
+be copied in.
+
+### When a BMC does not answer
+
+A host that cannot be reached, or rejects the credentials, is reported by name
+and does not stop the others; the run still exits `0`, because a BMC being down
+should not turn a nightly pipeline red. `--strict` makes it exit `1` instead,
+for when it should.
+
+A BMC that answers for the system but not for one part (the power readings on
+an older firmware, say) is scanned as far as it goes. The facts of the missing
+part are not written, so the values NetBox already holds stay in place rather
+than being zeroed.
+
+### Running it
+
+```bash
+netbox-gitops scan --dry-run            # scan and compare, write nothing
+netbox-gitops scan                      # every idrac source
+netbox-gitops scan --source idrac-ceph  # one source, e.g. on its own runner
+```
+
+`scan` needs `NETBOX_URL` and `NETBOX_TOKEN`, the credential variables the
+selected sources name, and network reach to both NetBox and the BMCs. Every
+request it sends to a BMC is a GET, so a read-only iDRAC user is enough.
+
+`collect` skips sources of type `idrac`, and `scan` reads nothing else: each
+source type belongs to exactly one command, so a `collectors.yaml` holding both
+kinds is fine.
 
 ## Commands
 
@@ -397,6 +517,10 @@ switched on deliberately.
 
 The credentials involved are read-only ones for the scanned systems. The
 ingestion jobs need **no** `NETBOX_TOKEN` — they never talk to NetBox.
+
+`scan` is the exception here as well: its job does hold a `NETBOX_TOKEN`, and
+opens no merge request. The example file has one scan job per source at its
+end.
 
 ## Seeing it work
 
