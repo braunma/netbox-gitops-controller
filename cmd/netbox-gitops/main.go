@@ -740,6 +740,11 @@ func pruneTargets(phases map[string]bool) []client.PruneTarget {
 		// then cluster groups and types. Ordered before network/foundation so
 		// the VLANs, sites and tenants these point at are still present.
 		targets = append(targets,
+			// MAC addresses before the interfaces they are assigned to. One
+			// that is still an interface's primary cannot be deleted in
+			// NetBox, which is right: the reconciler moved the primary to
+			// the declared address before this runs.
+			client.PruneTarget{App: "dcim", Endpoint: "mac-addresses"},
 			client.PruneTarget{App: "virtualization", Endpoint: "interfaces"},
 			client.PruneTarget{App: "virtualization", Endpoint: "virtual-machines"},
 			client.PruneTarget{App: "virtualization", Endpoint: "clusters"},

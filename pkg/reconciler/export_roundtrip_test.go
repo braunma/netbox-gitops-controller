@@ -179,6 +179,11 @@ func seedHandMadeInstance(f *fakeNetBox) {
 	vmIf := f.seed("virtualization", "interfaces", client.Object{"virtual_machine": ref(vm), "name": "eth0", "enabled": true,
 		"description": "", "mtu": nil, "mac_address": "AA:BB:CC:DD:EE:01", "mode": val("access"),
 		"untagged_vlan": ref(data), "tagged_vlans": []interface{}{}, "parent": nil, "tags": tagRefs()})
+	// The MAC address as NetBox 4.2+ holds it: an object assigned to the
+	// interface, named as its primary, and mirrored read-only in mac_address.
+	vmMAC := f.seed("dcim", "mac-addresses", client.Object{"mac_address": "AA:BB:CC:DD:EE:01",
+		"assigned_object_type": "virtualization.vminterface", "assigned_object_id": vmIf["id"], "tags": tagRefs()})
+	vmIf["primary_mac_address"] = ref(vmMAC)
 	vmIP := f.seed("ipam", "ip-addresses", client.Object{"address": "10.0.1.5/24", "vrf": nil, "status": val("active"),
 		"dns_name": "", "description": "", "assigned_object_type": "virtualization.vminterface",
 		"assigned_object_id": vmIf["id"], "family": val("4"), "tags": tagRefs()})

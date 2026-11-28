@@ -58,10 +58,14 @@ type VMInterfaceConfig struct {
 	// RenameFrom is this object's previous name. Set it to correct a typo
 	// so the existing object is renamed instead of a second one being
 	// created; remove it once the sync has run.
-	RenameFrom   string    `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
-	Enabled      *bool     `yaml:"enabled,omitempty" json:"enabled,omitempty"`
-	Description  string    `yaml:"description,omitempty" json:"description,omitempty"`
-	MTU          int       `yaml:"mtu,omitempty" json:"mtu,omitempty"`
+	RenameFrom  string `yaml:"rename_from,omitempty" json:"rename_from,omitempty"`
+	Enabled     *bool  `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	Description string `yaml:"description,omitempty" json:"description,omitempty"`
+	MTU         int    `yaml:"mtu,omitempty" json:"mtu,omitempty"`
+	// MACAddress becomes the interface's primary MAC address in NetBox, where
+	// a MAC address is an object of its own. Any common spelling is accepted
+	// and stored as AA:BB:CC:DD:EE:FF. Leaving it out leaves the interface's
+	// MAC addresses as they are.
 	MACAddress   string    `yaml:"mac_address,omitempty" json:"mac_address,omitempty"`
 	Mode         string    `yaml:"mode,omitempty" json:"mode,omitempty"`
 	UntaggedVLAN string    `yaml:"untagged_vlan,omitempty" json:"untagged_vlan,omitempty"`
